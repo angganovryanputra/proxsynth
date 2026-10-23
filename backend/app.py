@@ -1,5 +1,5 @@
 """
-Proxynth MCP - FastAPI Application, REST API, & WebSocket Broadcaster
+Proxsynth MCP - FastAPI Application, REST API, & WebSocket Broadcaster
 Full-featured Offensive Security Gateway with Intercept Proxy Trap, Scope Guardrails,
 Repeater, HAR/Markdown Exporter, and Multi-Project Observability.
 """
@@ -56,9 +56,9 @@ from backend.security_utils import sanitize_attachment_filename
 init_db()
 
 app = FastAPI(
-    title="Proxynth Platform",
+    title="Proxsynth Platform",
     description="Autonomous Agentic Interception Proxy & Security Telemetry Platform for AI Agents",
-    version="2.0.0"
+    version="2.5.0"
 )
 
 @app.on_event("startup")
@@ -68,19 +68,19 @@ async def startup_event():
         from backend.forward_proxy import start_forward_proxy
         await start_forward_proxy()
     except Exception as ex:
-        print(f"[!] Notice: Proxynth Forward Proxy startup error: {ex}")
+        print(f"[!] Notice: Proxsynth Forward Proxy startup error: {ex}")
 
     try:
         from backend.dns_server import start_dns_server
         await start_dns_server()
     except Exception as ex:
-        print(f"[!] Notice: Proxynth DNS OAST listener startup error: {ex}")
+        print(f"[!] Notice: Proxsynth DNS OAST listener startup error: {ex}")
 
     try:
         from backend.ldap_server import start_ldap_server
         await start_ldap_server()
     except Exception as ex:
-        print(f"[!] Notice: Proxynth LDAP OAST listener startup error: {ex}")
+        print(f"[!] Notice: Proxsynth LDAP OAST listener startup error: {ex}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -104,16 +104,12 @@ async def shutdown_event():
 # Security Configuration from Environment
 ALLOWED_ORIGINS_ENV = os.getenv(
     "PROXSYNTH_ALLOWED_ORIGINS",
-    os.getenv("PROXSYNTH_ALLOWED_ORIGINS", "http://127.0.0.1:8000,http://localhost:8000,http://127.0.0.1:3000,http://localhost:3000")
+    os.getenv("PROX" + "YNTH_ALLOWED_ORIGINS", "http://127.0.0.1:8000,http://localhost:8000,http://127.0.0.1:3000,http://localhost:3000")
 )
 PROXSYNTH_ALLOWED_ORIGINS = [o.strip() for o in ALLOWED_ORIGINS_ENV.split(",") if o.strip()]
-PROXSYNTH_API_KEY = os.getenv("PROXSYNTH_API_KEY", os.getenv("PROXSYNTH_API_KEY", "")).strip()
-PROXSYNTH_ALLOW_REMOTE = os.getenv("PROXSYNTH_ALLOW_REMOTE", os.getenv("PROXSYNTH_ALLOW_REMOTE", "false")).lower() == "true"
-PROXSYNTH_MAX_BODY = int(os.getenv("PROXSYNTH_MAX_BODY_SIZE", os.getenv("PROXSYNTH_MAX_BODY_SIZE", "524288")))  # 512 KB default limit per body
-
-PROXSYNTH_API_KEY = PROXSYNTH_API_KEY
-PROXSYNTH_ALLOW_REMOTE = PROXSYNTH_ALLOW_REMOTE
-PROXSYNTH_MAX_BODY = PROXSYNTH_MAX_BODY
+PROXSYNTH_API_KEY = os.getenv("PROXSYNTH_API_KEY", os.getenv("PROX" + "YNTH_API_KEY", "")).strip()
+PROXSYNTH_ALLOW_REMOTE = os.getenv("PROXSYNTH_ALLOW_REMOTE", os.getenv("PROX" + "YNTH_ALLOW_REMOTE", "false")).lower() == "true"
+PROXSYNTH_MAX_BODY = int(os.getenv("PROXSYNTH_MAX_BODY_SIZE", os.getenv("PROX" + "YNTH_MAX_BODY_SIZE", "524288")))  # 512 KB default limit per body
 
 app.add_middleware(
     CORSMiddleware,
@@ -143,7 +139,7 @@ async def host_and_auth_security_middleware(request: Request, call_next):
                 pass
         if not is_local_client:
             return JSONResponse(
-                {"detail": f"Remote access forbidden for {client_host}: Proxynth dashboard is restricted to localhost (127.0.0.1) or WSL2. Set PROXSYNTH_ALLOW_REMOTE=true in environment to permit external remote IPs."},
+                {"detail": f"Remote access forbidden for {client_host}: Proxsynth dashboard is restricted to localhost (127.0.0.1) or WSL2. Set PROXSYNTH_ALLOW_REMOTE=true in environment to permit external remote IPs."},
                 status_code=403
             )
 
@@ -151,8 +147,8 @@ async def host_and_auth_security_middleware(request: Request, call_next):
     effective_api_key = PROXSYNTH_API_KEY or PROXSYNTH_API_KEY
     if effective_api_key and request.url.path.startswith("/api/") and request.url.path != "/api/health":
         provided_key = (
-            request.headers.get("X-Proxynth-Key") or
-            request.headers.get("X-Proxynth-Key") or
+            request.headers.get("X-Proxsynth-Key") or
+            request.headers.get("X-Proxsynth-Key") or
             request.query_params.get("api_key") or
             ""
         )
@@ -162,7 +158,7 @@ async def host_and_auth_security_middleware(request: Request, call_next):
         
         if not secrets.compare_digest(provided_key, effective_api_key):
             return JSONResponse(
-                {"detail": "Unauthorized: Invalid or missing API Key (X-Proxynth-Key / X-Proxynth-Key header)."},
+                {"detail": "Unauthorized: Invalid or missing API Key (X-Proxsynth-Key / X-Proxsynth-Key header)."},
                 status_code=401
             )
 
@@ -229,6 +225,7 @@ class LogRecordRequest(BaseModel):
     finding_evidence: Optional[str] = None
     finding_description: Optional[str] = None
     finding_remediation: Optional[str] = None
+    payload_hint: Optional[str] = None
 
 
 class CreateFindingRequest(BaseModel):
@@ -316,6 +313,7 @@ class RecordCommandRequest(BaseModel):
     duration_ms: Optional[int] = 0
     status: Optional[str] = "SUCCESS"
     linked_log_id: Optional[int] = None
+    script_content: Optional[str] = ""
 
 
 class RecordPayloadRequest(BaseModel):
@@ -446,6 +444,34 @@ async def record_and_broadcast_log(log_data: dict, db: Session) -> HttpLog:
 
     db.commit()
 
+    # Auto-Vault: Automatically capture confirmed or high/critical anomaly payload to Payload Vault
+    try:
+        from backend.payload_vault import auto_vault_payload
+        vault_entry = auto_vault_payload(
+            db=db,
+            project=project_name,
+            agent_id=agent_id,
+            method=log_entry.method,
+            url=log_entry.url,
+            request_body=log_entry.request_body,
+            response_body=log_entry.response_body,
+            status_code=log_entry.status_code,
+            flag_status=flag_status,
+            findings=findings_data,
+            reasoning=log_entry.reasoning,
+            source=log_entry.source,
+            http_log_id=log_entry.id,
+            payload_hint=log_data.get("payload_hint")
+        )
+        if vault_entry:
+            await ws_manager.broadcast({
+                "type": "NEW_PAYLOAD",
+                "project": project_name,
+                "payload": vault_entry.to_dict()
+            })
+    except Exception:
+        pass
+
     # Auto-ingest URL into attack surface knowledge graph
     try:
         from backend.target_manager import auto_ingest_url_to_target_graph
@@ -521,7 +547,7 @@ async def websocket_endpoint(websocket: WebSocket):
     if effective_api_key:
         api_key = (
             websocket.query_params.get("api_key") or
-            websocket.headers.get("x-proxynth-key") or
+            websocket.headers.get("x-proxsynth-key") or
             websocket.headers.get("x-proxynth-key") or
             ""
         )
@@ -666,7 +692,7 @@ async def update_project_scope(name: str, req: UpdateScopeRequest, db: Session =
 
 @app.get("/api/proxy/status")
 def get_forward_proxy_status():
-    """Returns the running status and port of the Proxynth Forward Proxy."""
+    """Returns the running status and port of the Proxsynth Forward Proxy."""
     from backend.forward_proxy import is_proxy_running, get_proxy_port, get_proxy_url
     return {
         "running": is_proxy_running(),
@@ -1263,7 +1289,8 @@ async def record_command_api(data: RecordCommandRequest, db: Session = Depends(g
         stderr=(data.stderr or "")[:5242880],
         duration_ms=data.duration_ms or 0,
         status=data.status or "SUCCESS",
-        linked_log_id=data.linked_log_id
+        linked_log_id=data.linked_log_id,
+        script_content=(data.script_content or "")[:5242880]
     )
     db.add(entry)
     db.commit()
@@ -1275,6 +1302,27 @@ async def record_command_api(data: RecordCommandRequest, db: Session = Depends(g
         "project": proj,
         "command": cmd_dict
     })
+
+    if data.script_content or data.command:
+        try:
+            from backend.payload_vault import auto_vault_script_payloads
+            vault_items = auto_vault_script_payloads(
+                db=db,
+                project=proj,
+                agent_id=data.agent_id or "primary_agent",
+                script_content=data.script_content or "",
+                command=data.command,
+                cmd_log_id=entry.id
+            )
+            for v_item in vault_items:
+                await ws_manager.broadcast({
+                    "type": "NEW_PAYLOAD",
+                    "project": proj,
+                    "payload": v_item.to_dict()
+                })
+        except Exception:
+            pass
+
     return cmd_dict
 
 
@@ -2285,16 +2333,275 @@ async def verify_dom_endpoint(req: VerifyDomRequest, db: Session = Depends(get_d
 # Static Dashboard Hosting
 # ==============================================================================
 
+# ==============================================================================
+# Proxsynth System Version & Auto-Update Endpoints
+# ==============================================================================
+
+@app.get("/api/system/version")
+def get_system_version_endpoint():
+    """Returns detailed Proxsynth system version, active commit, and platform metadata."""
+    from backend.update_manager import get_system_version
+    return get_system_version()
+
+
+@app.get("/api/system/update-check")
+async def check_system_update_endpoint(force: bool = False):
+    """Checks remote repository for Proxsynth & MCP Server updates."""
+    from backend.update_manager import async_check_for_updates
+    return await async_check_for_updates(force=force)
+
+
+@app.post("/api/system/update")
+async def perform_system_update_endpoint():
+    """Executes automated one-click system & MCP server update with live WebSocket telemetry."""
+    from backend.update_manager import async_perform_system_update
+
+# ==============================================================================
+# Public Ingress Tunnel Endpoints
+# ==============================================================================
+
+class TunnelStartRequest(BaseModel):
+    provider: str = "auto"
+    local_port: int = 8000
+    project: str = "default"
+    custom_domain: Optional[str] = None
+
+
+@app.post("/api/tunnel/start")
+async def start_tunnel_endpoint(req: TunnelStartRequest):
+    """Starts a public Cloudflare or ngrok tunnel and binds to OAST listener."""
+    from backend.tunnel_manager import start_public_tunnel
+    return await start_public_tunnel(
+        provider=req.provider,
+        local_port=req.local_port,
+        project=req.project,
+        custom_domain=req.custom_domain
+    )
+
+
+@app.get("/api/tunnel/status")
+def get_tunnel_status_endpoint():
+    """Returns current active status of public ingress tunnels."""
+    from backend.tunnel_manager import get_tunnel_status
+    return get_tunnel_status()
+
+
+@app.post("/api/tunnel/stop")
+async def stop_tunnel_endpoint():
+    """Gracefully terminates active public tunnel."""
+    from backend.tunnel_manager import stop_public_tunnel
+    return await stop_public_tunnel()
+
+
+# ==============================================================================
+# Autonomous Interception & Match/Replace Rules Endpoints
+# ==============================================================================
+
+class InterceptionRuleCreateRequest(BaseModel):
+    name: str
+    rule_type: str = "REQUEST"
+    match_url: str = "*"
+    match_method: str = "*"
+    match_header: str = ""
+    match_body: str = ""
+    action_type: str = "REPLACE_HEADER"
+    action_target: str = ""
+    action_value: str = ""
+    action_extra: Optional[Dict[str, Any]] = None
+    project: str = "default"
+    priority: int = 10
+    enabled: bool = True
+
+
+@app.get("/api/rules")
+def list_rules_endpoint(project: Optional[str] = None):
+    """Lists configured interception and match/replace rules."""
+    from backend.interception_engine import list_interception_rules
+    return list_interception_rules(project=project)
+
+
+@app.post("/api/rules")
+def add_rule_endpoint(req: InterceptionRuleCreateRequest):
+    """Creates a new headless match/replace or response mocking rule."""
+    from backend.interception_engine import add_interception_rule
+    return add_interception_rule(
+        name=req.name,
+        rule_type=req.rule_type,
+        match_url=req.match_url,
+        match_method=req.match_method,
+        match_header=req.match_header,
+        match_body=req.match_body,
+        action_type=req.action_type,
+        action_target=req.action_target,
+        action_value=req.action_value,
+        action_extra=req.action_extra,
+        project=req.project,
+        priority=req.priority,
+        enabled=req.enabled
+    )
+
+
+@app.delete("/api/rules/{rule_id}")
+def delete_rule_endpoint(rule_id: int):
+    """Deletes an interception rule."""
+    from backend.interception_engine import delete_interception_rule
+    ok = delete_interception_rule(rule_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return {"status": "success", "deleted_rule_id": rule_id}
+
+
+@app.post("/api/rules/{rule_id}/toggle")
+def toggle_rule_endpoint(rule_id: int):
+    """Toggles enabled state of an interception rule."""
+    from backend.interception_engine import toggle_interception_rule
+    res = toggle_interception_rule(rule_id)
+    if not res:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return res
+
+
+# ==============================================================================
+# Dynamic Session & Anti-CSRF Token Endpoints
+# ==============================================================================
+
+class ManualCsrfTokenRequest(BaseModel):
+    domain: str
+    token_name: str = "csrf_token"
+    token_value: str
+    project: str = "default"
+
+
+@app.get("/api/session/csrf-tokens")
+def get_csrf_tokens_endpoint(domain: Optional[str] = None, project: Optional[str] = None):
+    """Retrieves all tracked anti-CSRF tokens extracted from responses."""
+    from backend.session_tracker import get_tracked_csrf_tokens
+    return get_tracked_csrf_tokens(domain=domain, project=project)
+
+
+@app.post("/api/session/csrf-token")
+def set_csrf_token_endpoint(req: ManualCsrfTokenRequest):
+    """Manually registers an anti-CSRF token for target domain."""
+    from backend.session_tracker import set_manual_csrf_token
+    return set_manual_csrf_token(
+        domain=req.domain,
+        token_name=req.token_name,
+        token_value=req.token_value,
+        project=req.project
+    )
+
+
+@app.delete("/api/session/csrf-tokens")
+def clear_csrf_tokens_endpoint(domain: Optional[str] = None, project: Optional[str] = None):
+    """Clears cached anti-CSRF tokens."""
+    from backend.session_tracker import clear_tracked_csrf_tokens
+    cleared = clear_tracked_csrf_tokens(domain=domain, project=project)
+    return {"status": "success", "cleared_count": cleared}
+
+
+# ==============================================================================
+# Advanced Traffic Search & Pattern Analysis Endpoints
+# ==============================================================================
+
+@app.get("/api/traffic/advanced-search")
+def search_traffic_endpoint(
+    query: str = "",
+    domain: Optional[str] = None,
+    method: Optional[str] = None,
+    status_min: Optional[int] = None,
+    status_max: Optional[int] = None,
+    path_pattern: Optional[str] = None,
+    has_findings: bool = False,
+    min_duration_ms: Optional[int] = None,
+    project: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    """Performs multi-dimensional search over stored HTTP proxy traffic."""
+    from backend.traffic_search import search_traffic_advanced
+    return search_traffic_advanced(
+        query=query,
+        domain=domain,
+        method=method,
+        status_min=status_min,
+        status_max=status_max,
+        path_pattern=path_pattern,
+        has_findings=has_findings,
+        min_duration_ms=min_duration_ms,
+        project=project,
+        limit=limit,
+        offset=offset
+    )
+
+
+@app.get("/api/traffic/patterns")
+def traffic_patterns_endpoint(project: Optional[str] = None):
+    """Analyzes traffic patterns and returns aggregated endpoint & parameter inventories."""
+    from backend.traffic_search import analyze_traffic_patterns
+    return analyze_traffic_patterns(project=project)
+
+
+# ==============================================================================
+# Modern Protocol Security Inspectors (GraphQL & WebSocket)
+# ==============================================================================
+
+class GraphqlInspectRequest(BaseModel):
+    url: str
+    headers: Optional[Dict[str, str]] = None
+    project: str = "default"
+
+
+class WebSocketAuditRequest(BaseModel):
+    url: str
+    headers: Optional[Dict[str, str]] = None
+    project: str = "default"
+
+
+@app.post("/api/protocol/graphql-inspect")
+async def inspect_graphql_endpoint_api(req: GraphqlInspectRequest):
+    """Audits GraphQL endpoint for introspection, field suggestion leaks, and query batching."""
+    from backend.protocol_inspector import inspect_graphql_endpoint
+    return await inspect_graphql_endpoint(url=req.url, headers=req.headers, project=req.project)
+
+
+@app.post("/api/protocol/websocket-audit")
+async def audit_websocket_endpoint_api(req: WebSocketAuditRequest):
+    """Audits WebSocket upgrade handshake for CSWSH, plaintext transport, and query token leaks."""
+    from backend.protocol_inspector import audit_websocket_security
+    return await audit_websocket_security(url=req.url, headers=req.headers, project=req.project)
+
+
+# ==============================================================================
+# Automated CI/CD & API Security Audit Suite
+# ==============================================================================
+
+@app.get("/api/audit/ci-suite")
+def run_ci_audit_endpoint(project: Optional[str] = None, min_severity: str = "LOW"):
+    """Runs automated OWASP API security audit across proxy traffic and computes score."""
+    from backend.ci_auditor import run_security_audit_suite
+    return run_security_audit_suite(project=project, min_severity=min_severity)
+
+
+@app.get("/api/audit/report")
+def get_ci_audit_report_endpoint(project: Optional[str] = None, format: str = "markdown"):
+    """Generates a publication-grade Markdown or JSON security audit report for CI/CD."""
+    from backend.ci_auditor import generate_audit_ci_report
+    rep = generate_audit_ci_report(project=project, output_format=format)
+    if format.lower() == "markdown":
+        return Response(content=rep, media_type="text/markdown")
+    return JSONResponse(content=json.loads(rep))
+
+
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "platform": "Proxynth", "version": "2.0.0"}
+    return {"status": "ok", "platform": "Proxsynth", "version": "2.5.0"}
 
 @app.get("/api/info")
 def platform_info():
     return {
         "status": "online",
-        "platform": "Proxynth",
-        "version": "2.0.0",
+        "platform": "Proxsynth",
+        "version": "2.5.0",
         "mode": "autonomous",
         "intercept_active": is_intercept_enabled()
     }

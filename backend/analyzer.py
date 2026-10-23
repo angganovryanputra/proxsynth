@@ -1,5 +1,5 @@
 """
-Proxynth MCP - Dual-Track Triage Engine
+Proxsynth MCP - Dual-Track Triage Engine
 Analyzes HTTP/HTTPS traffic to classify deterministic vs probabilistic security findings.
 """
 

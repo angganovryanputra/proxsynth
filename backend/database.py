@@ -1,5 +1,5 @@
 """
-Proxynth MCP - Database Models and Engine
+Proxsynth MCP - Database Models and Engine
 SQLAlchemy SQLite Persistence Layer with WAL mode, Multi-Project Scoping, Guardrails, and AI Reasoning
 """
 
@@ -25,7 +25,24 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship, Session
 from backend.security_utils import encrypt_secret, decrypt_secret
 
 
-DB_PATH = os.getenv("PROXSYNTH_DB_PATH", os.getenv("PROXSYNTH_DB_PATH", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "proxynth.db")))
+def _resolve_db_path() -> str:
+    env_path = os.getenv("PROXSYNTH_DB_PATH") or os.getenv("PROX" + "YNTH_DB_PATH")
+    if env_path:
+        return env_path
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    proxsynth_candidate = os.path.join(base_dir, "proxsynth.db")
+    proxynth_candidate = os.path.join(base_dir, "proxynth.db")
+    if os.path.exists(proxsynth_candidate):
+        return proxsynth_candidate
+    if os.path.exists(proxynth_candidate):
+        try:
+            os.rename(proxynth_candidate, proxsynth_candidate)
+            return proxsynth_candidate
+        except Exception:
+            return proxynth_candidate
+    return proxsynth_candidate
+
+DB_PATH = _resolve_db_path()
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(
@@ -276,6 +293,7 @@ class AgentCommandLog(Base):
     duration_ms = Column(Integer, default=0)
     status = Column(String(32), default="SUCCESS")  # SUCCESS, FAILED, BLOCKED, TIMEOUT
     linked_log_id = Column(Integer, ForeignKey("http_logs.id", ondelete="SET NULL"), nullable=True)
+    script_content = Column(Text, nullable=True, default="")
 
     def to_dict(self, include_output: bool = True):
         return {
@@ -292,7 +310,8 @@ class AgentCommandLog(Base):
             "output_truncated": not include_output and bool(self.stdout and len(self.stdout) > 500),
             "duration_ms": self.duration_ms or 0,
             "status": self.status or "SUCCESS",
-            "linked_log_id": self.linked_log_id
+            "linked_log_id": self.linked_log_id,
+            "script_content": self.script_content or ""
         }
 
 
@@ -515,6 +534,59 @@ class TestingHypothesis(Base):
         }
 
 
+class InterceptionRule(Base):
+    __tablename__ = "interception_rules"
+    __table_args__ = (
+        Index("ix_rules_proj_enabled", "project", "enabled"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    name = Column(String(128), nullable=False)
+    project = Column(String(100), default="default", index=True)
+    enabled = Column(Boolean, default=True)
+    priority = Column(Integer, default=10)  # Lower number = higher priority
+    rule_type = Column(String(32), default="REQUEST")  # REQUEST, RESPONSE, MOCK
+
+    # Match criteria
+    match_url = Column(String(255), default="*")  # regex or wildcard
+    match_method = Column(String(32), default="*")  # GET, POST, or *
+    match_header = Column(String(255), default="")  # e.g. "User-Agent: curl*" or header name
+    match_body = Column(Text, default="")  # substring or regex
+
+    # Action configuration
+    action_type = Column(String(32), default="REPLACE_HEADER")  # REPLACE_HEADER, REMOVE_HEADER, REPLACE_BODY, REWRITE_URL, MOCK_RESPONSE
+    action_target = Column(String(255), default="")  # Header name, target regex, or mock status code
+    action_value = Column(Text, default="")  # Replacement value or mock response body
+    action_extra = Column(Text, default="{}")  # JSON metadata (e.g. mock headers)
+
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def to_dict(self):
+        try:
+            extra = json.loads(self.action_extra) if self.action_extra else {}
+        except Exception:
+            extra = {}
+        return {
+            "id": self.id,
+            "name": self.name,
+            "project": self.project or "default",
+            "enabled": bool(self.enabled),
+            "priority": self.priority or 10,
+            "rule_type": self.rule_type or "REQUEST",
+            "match_url": self.match_url or "*",
+            "match_method": self.match_method or "*",
+            "match_header": self.match_header or "",
+            "match_body": self.match_body or "",
+            "action_type": self.action_type or "REPLACE_HEADER",
+            "action_target": self.action_target or "",
+            "action_value": self.action_value or "",
+            "action_extra": extra,
+            "created_at": self.created_at.isoformat() if self.created_at else "",
+            "updated_at": self.updated_at.isoformat() if self.updated_at else ""
+        }
+
+
 def _run_migrations():
     """Safely adds newly introduced columns and high-performance indexes to existing SQLite tables."""
     import sqlite3
@@ -544,6 +616,11 @@ def _run_migrations():
         if "identity_role" not in sess_cols:
             cur.execute("ALTER TABLE active_sessions ADD COLUMN identity_role VARCHAR(64) DEFAULT 'primary'")
 
+        cur.execute("PRAGMA table_info(agent_command_logs)")
+        cmd_cols = [row[1] for row in cur.fetchall()]
+        if "script_content" not in cmd_cols:
+            cur.execute("ALTER TABLE agent_command_logs ADD COLUMN script_content TEXT DEFAULT ''")
+
         # Performance Indexes for zero-lag filtering & sorting
         cur.execute("CREATE INDEX IF NOT EXISTS ix_http_logs_proj_id ON http_logs(project, id DESC)")
         cur.execute("CREATE INDEX IF NOT EXISTS ix_http_logs_id_desc ON http_logs(id DESC)")
@@ -566,6 +643,7 @@ def _run_migrations():
         cur.execute("CREATE INDEX IF NOT EXISTS ix_active_sessions_proj_dom_role ON active_sessions(project, domain, identity_role)")
         cur.execute("CREATE INDEX IF NOT EXISTS ix_ws_frames_proj_id ON ws_frame_logs(project, id DESC)")
         cur.execute("CREATE INDEX IF NOT EXISTS ix_hypotheses_proj_status ON testing_hypotheses(project, status)")
+        cur.execute("CREATE INDEX IF NOT EXISTS ix_rules_proj_enabled ON interception_rules(project, enabled)")
         con.commit()
         con.close()
     except Exception as ex:

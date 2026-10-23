@@ -27,7 +27,7 @@ echo [*] Detected Python command: %PYTHON_CMD%
 :: 2. Verify Python Version (>= 3.10)
 %PYTHON_CMD% -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)"
 if errorlevel 1 (
-    echo [!] WARNING: Proxynth recommends Python 3.10 or higher.
+    echo [!] WARNING: Proxsynth recommends Python 3.10 or higher.
     echo     Current version may encounter dependency compatibility issues.
 )
 
@@ -48,7 +48,7 @@ if not exist "venv\Scripts\activate.bat" (
 echo [*] Upgrading pip...
 venv\Scripts\python.exe -m pip install --upgrade pip --quiet
 
-echo [*] Installing Proxynth dependencies from requirements.txt...
+echo [*] Installing Proxsynth dependencies from requirements.txt...
 venv\Scripts\python.exe -m pip install -r requirements.txt
 if errorlevel 1 (
     echo [!] ERROR: Failed to install Python dependencies.
@@ -77,21 +77,24 @@ copy /Y sitecustomize.py venv\Lib\site-packages\sitecustomize.py >nul
 echo [+] AI Agent transparent proxy hook installed in venv.
 
 :: 8. Initialize CA Certificate and Trust Store
-echo [*] Initializing Proxynth Root CA certificate...
-venv\Scripts\python.exe -c "from backend.ca_manager import get_ca_cert_path; print('[+] Proxynth Root CA ready at:', get_ca_cert_path())"
-if exist ".proxynth_ca\proxynth_ca.crt" (
-    echo [*] Registering Proxynth Root CA in Windows Certificate Store...
-    certutil -addstore -f "Root" .proxynth_ca\proxynth_ca.crt >nul 2>nul
+echo [*] Initializing Proxsynth Root CA certificate...
+venv\Scripts\python.exe -c "from backend.ca_manager import get_ca_cert_path; print('[+] Proxsynth Root CA ready at:', get_ca_cert_path())"
+if exist ".proxsynth_ca\proxsynth_ca.crt" (
+    echo [*] Registering Proxsynth Root CA in Windows Certificate Store...
+    certutil -addstore -f "Root" .proxsynth_ca\proxsynth_ca.crt >nul 2>nul
     if errorlevel 0 (
-        echo [+] Proxynth Root CA successfully trusted in Windows System Store.
+        echo [+] Proxsynth Root CA successfully trusted in Windows System Store.
     ) else (
-        echo [!] Note: To trust CA system-wide, import .proxynth_ca\proxynth_ca.crt into Trusted Root Certification Authorities.
+        echo [!] Note: To trust CA system-wide, import .proxsynth_ca\proxsynth_ca.crt into Trusted Root Certification Authorities.
     )
+) else if exist ".proxynth_ca\proxynth_ca.crt" (
+    echo [*] Registering Proxsynth Root CA in Windows Certificate Store...
+    certutil -addstore -f "Root" .proxynth_ca\proxynth_ca.crt >nul 2>nul
 )
 
 echo.
 echo ========================================================================
-echo   [SUCCESS] Proxynth Installation Complete!
+echo   [SUCCESS] Proxsynth Installation Complete!
 echo ========================================================================
 echo.
 echo   To launch the Web Dashboard:

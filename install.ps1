@@ -1,5 +1,5 @@
 # ==============================================================================
-# Proxynth MCP - Automated PowerShell Installer for Windows
+# Proxsynth MCP - Automated PowerShell Installer for Windows
 # ==============================================================================
 
 [CmdletBinding()]
@@ -36,7 +36,7 @@ Write-Host "[+] Detected Python: $PyVer" -ForegroundColor Green
 # 2. Check Python Version (>= 3.10)
 & $PythonCmd -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)"
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "[!] WARNING: Proxynth recommends Python 3.10 or higher." -ForegroundColor Yellow
+    Write-Host "[!] WARNING: Proxsynth recommends Python 3.10 or higher." -ForegroundColor Yellow
 }
 
 # 3. Setup Virtual Environment
@@ -59,7 +59,7 @@ if (-not (Test-Path $VenvPython)) {
 Write-Host "[*] Upgrading pip..." -ForegroundColor Cyan
 & $VenvPython -m pip install --upgrade pip --quiet
 
-Write-Host "[*] Installing Proxynth dependencies from requirements.txt..." -ForegroundColor Cyan
+Write-Host "[*] Installing Proxsynth dependencies from requirements.txt..." -ForegroundColor Cyan
 & $VenvPython -m pip install -r (Join-Path $PSScriptRoot "requirements.txt")
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[!] ERROR: Failed to install Python dependencies." -ForegroundColor Red
@@ -88,13 +88,16 @@ Copy-Item (Join-Path $PSScriptRoot "sitecustomize.py") $SitePackages -Force
 Write-Host "[+] AI Agent transparent proxy hook installed in venv." -ForegroundColor Green
 
 # 8. Initialize CA Certificate and Trust Store
-Write-Host "[*] Initializing Proxynth Root CA certificate..." -ForegroundColor Cyan
-& $VenvPython -c "from backend.ca_manager import get_ca_cert_path; print('[+] Proxynth Root CA Certificate ready at:', get_ca_cert_path())"
-$CaCert = Join-Path $PSScriptRoot ".proxynth_ca\proxynth_ca.crt"
+Write-Host "[*] Initializing Proxsynth Root CA certificate..." -ForegroundColor Cyan
+& $VenvPython -c "from backend.ca_manager import get_ca_cert_path; print('[+] Proxsynth Root CA Certificate ready at:', get_ca_cert_path())"
+$CaCert = Join-Path $PSScriptRoot ".proxsynth_ca\proxsynth_ca.crt"
+if (-not (Test-Path $CaCert)) {
+    $CaCert = Join-Path $PSScriptRoot ".proxynth_ca\proxynth_ca.crt"
+}
 if (Test-Path $CaCert) {
     try {
         certutil -addstore -f "Root" $CaCert | Out-Null
-        Write-Host "[+] Proxynth Root CA successfully trusted in Windows System Store." -ForegroundColor Green
+        Write-Host "[+] Proxsynth Root CA successfully trusted in Windows System Store." -ForegroundColor Green
     } catch {
         Write-Host "[!] Note: Run PowerShell as Administrator to install CA certificate system-wide." -ForegroundColor Yellow
     }
@@ -102,7 +105,7 @@ if (Test-Path $CaCert) {
 
 Write-Host ""
 Write-Host "========================================================================" -ForegroundColor Green
-Write-Host "  [SUCCESS] Proxynth Installation Complete!                             " -ForegroundColor Green
+Write-Host "  [SUCCESS] Proxsynth Installation Complete!                             " -ForegroundColor Green
 Write-Host "========================================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  To launch the Web Dashboard:"

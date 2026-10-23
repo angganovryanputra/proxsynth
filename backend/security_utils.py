@@ -1,5 +1,5 @@
 """
-Proxynth MCP - Core Security Utilities
+Proxsynth MCP - Core Security Utilities
 Provides authenticated credential encryption, SSRF protection, shell command safe-mode guardrails,
 and header/filename sanitization.
 """
@@ -17,11 +17,18 @@ from cryptography.fernet import Fernet
 # 1. Credential Encryption Engine (Fernet AES-128-CBC + HMAC-SHA256)
 # ==============================================================================
 
-_KEY_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".proxynth_key")
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_KEY_FILE = os.path.join(_BASE_DIR, ".proxsynth_key")
+_OLD_KEY_FILE = os.path.join(_BASE_DIR, ".proxynth_key")
+if not os.path.exists(_KEY_FILE) and os.path.exists(_OLD_KEY_FILE):
+    try:
+        os.rename(_OLD_KEY_FILE, _KEY_FILE)
+    except Exception:
+        _KEY_FILE = _OLD_KEY_FILE
 
 def _get_or_create_fernet_key() -> bytes:
     """Retrieves encryption key from environment, key file, or generates a persistent one."""
-    env_secret = os.getenv("PROXSYNTH_SECRET_KEY")
+    env_secret = os.getenv("PROXSYNTH_SECRET_KEY") or os.getenv("PROXSYNTH_SECRET_KEY")
     if env_secret and env_secret.strip():
         # Derive 32-byte url-safe base64 key using SHA-256
         derived = hashlib.sha256(env_secret.strip().encode("utf-8")).digest()
@@ -173,14 +180,15 @@ def _evaluate_ip_list(hostname: str, ips: List[Any], allow_internal: bool) -> Tu
     return True, None
 
 
-def check_ssrf_safety(url: str, allow_internal: bool = True, proxynth_backend_port: int = 8000) -> Tuple[bool, Optional[str]]:
+def check_ssrf_safety(url: str, allow_internal: bool = True, proxsynth_backend_port: int = 8000, proxynth_backend_port: Optional[int] = None) -> Tuple[bool, Optional[str]]:
     """
     Validates whether a target URL poses an SSRF threat (Synchronous / Cached).
     - Always blocks Cloud Metadata (169.254.169.254).
-    - Always blocks recursive self-loopback requests to Proxynth's own backend port.
+    - Always blocks recursive self-loopback requests to Proxsynth's own backend port.
     - Resolves DNS hostnames to verify that domains do not resolve to private/loopback/metadata IPs.
     - Uses in-memory DNS caching with 60s TTL to prevent thread starvation during fuzzing.
     """
+    effective_port = proxynth_backend_port if proxynth_backend_port is not None and proxynth_backend_port != 8000 else proxsynth_backend_port
     try:
         parsed = urllib.parse.urlparse(url)
     except Exception as ex:
@@ -196,7 +204,7 @@ def check_ssrf_safety(url: str, allow_internal: bool = True, proxynth_backend_po
 
     port = parsed.port or (443 if scheme == "https" else 80)
     detected_port = None
-    backend_url_env = os.getenv("PROXSYNTH_BACKEND_URL", "")
+    backend_url_env = os.getenv("PROXSYNTH_BACKEND_URL") or os.getenv("PROXSYNTH_BACKEND_URL", "")
     if backend_url_env:
         try:
             b_parsed = urllib.parse.urlparse(backend_url_env)
@@ -204,12 +212,12 @@ def check_ssrf_safety(url: str, allow_internal: bool = True, proxynth_backend_po
                 detected_port = b_parsed.port
         except Exception:
             pass
-    current_backend_port = (detected_port if proxynth_backend_port == 8000 and detected_port else proxynth_backend_port) or int(os.getenv("PROXSYNTH_PORT", "8000"))
-    current_proxy_port = int(os.getenv("PROXSYNTH_PROXY_PORT", "8088"))
+    current_backend_port = (detected_port if effective_port == 8000 and detected_port else effective_port) or int(os.getenv("PROXSYNTH_PORT", os.getenv("PROXSYNTH_PORT", "8000")))
+    current_proxy_port = int(os.getenv("PROXSYNTH_PROXY_PORT", os.getenv("PROXSYNTH_PROXY_PORT", "8088")))
 
-    # 1. Anti-Self-Loopback: Prevent recursive infinite loops back to Proxynth
+    # 1. Anti-Self-Loopback: Prevent recursive infinite loops back to Proxsynth
     if hostname in ["localhost", "127.0.0.1", "0.0.0.0", "::1"] and port in [current_backend_port, current_proxy_port]:
-        return False, f"Recursive proxy loop blocked: Target points to Proxynth's own port ({port})."
+        return False, f"Recursive proxy loop blocked: Target points to Proxsynth's own port ({port})."
 
     # 2. Check for obvious metadata hostname aliases
     if hostname in ["metadata.google.internal", "instance-data", "metadata"]:
@@ -226,10 +234,11 @@ def check_ssrf_safety(url: str, allow_internal: bool = True, proxynth_backend_po
     return _evaluate_ip_list(hostname, resolved_ips, allow_internal)
 
 
-async def async_check_ssrf_safety(url: str, allow_internal: bool = True, proxynth_backend_port: int = 8000) -> Tuple[bool, Optional[str]]:
+async def async_check_ssrf_safety(url: str, allow_internal: bool = True, proxsynth_backend_port: int = 8000, proxynth_backend_port: Optional[int] = None) -> Tuple[bool, Optional[str]]:
     """
     Asynchronously validates whether a target URL poses an SSRF threat without blocking the event loop.
     """
+    effective_port = proxynth_backend_port if proxynth_backend_port is not None and proxynth_backend_port != 8000 else proxsynth_backend_port
     try:
         parsed = urllib.parse.urlparse(url)
     except Exception as ex:
@@ -245,7 +254,7 @@ async def async_check_ssrf_safety(url: str, allow_internal: bool = True, proxynt
 
     port = parsed.port or (443 if scheme == "https" else 80)
     detected_port = None
-    backend_url_env = os.getenv("PROXSYNTH_BACKEND_URL", "")
+    backend_url_env = os.getenv("PROXSYNTH_BACKEND_URL") or os.getenv("PROXSYNTH_BACKEND_URL", "")
     if backend_url_env:
         try:
             b_parsed = urllib.parse.urlparse(backend_url_env)
@@ -253,11 +262,11 @@ async def async_check_ssrf_safety(url: str, allow_internal: bool = True, proxynt
                 detected_port = b_parsed.port
         except Exception:
             pass
-    current_backend_port = (detected_port if proxynth_backend_port == 8000 and detected_port else proxynth_backend_port) or int(os.getenv("PROXSYNTH_PORT", "8000"))
-    current_proxy_port = int(os.getenv("PROXSYNTH_PROXY_PORT", "8088"))
+    current_backend_port = (detected_port if effective_port == 8000 and detected_port else effective_port) or int(os.getenv("PROXSYNTH_PORT", os.getenv("PROXSYNTH_PORT", "8000")))
+    current_proxy_port = int(os.getenv("PROXSYNTH_PROXY_PORT", os.getenv("PROXSYNTH_PROXY_PORT", "8088")))
 
     if hostname in ["localhost", "127.0.0.1", "0.0.0.0", "::1"] and port in [current_backend_port, current_proxy_port]:
-        return False, f"Recursive proxy loop blocked: Target points to Proxynth's own port ({port})."
+        return False, f"Recursive proxy loop blocked: Target points to Proxsynth's own port ({port})."
 
     if hostname in ["metadata.google.internal", "instance-data", "metadata"]:
         return False, f"SSRF Guardrail: Target host '{hostname}' matches cloud metadata service."
@@ -330,18 +339,18 @@ def check_command_safe_mode(command: str, allow_internal: bool = True) -> Tuple[
     # 1. Check dangerous system command patterns
     for pat in EXPANDED_DANGEROUS_PATTERNS:
         if re.search(pat, cmd_clean, re.IGNORECASE):
-            return False, f"Command blocked by Proxynth CLI Safe-Mode (Matched dangerous signature: '{pat}')"
+            return False, f"Command blocked by Proxsynth CLI Safe-Mode (Matched dangerous signature: '{pat}')"
 
     # 2. Check metadata service targeting in CLI (e.g. curl 169.254.169.254)
     if re.search(r"\b169\.254\.\d+\.\d+\b", cmd_clean) or "metadata.google.internal" in cmd_clean:
-        return False, "Command blocked by Proxynth SSRF Guard: Targeting cloud instance metadata service (169.254.x.x) is strictly forbidden."
+        return False, "Command blocked by Proxsynth SSRF Guard: Targeting cloud instance metadata service (169.254.x.x) is strictly forbidden."
 
     # 3. Extract and validate any HTTP/HTTPS URLs present in the command
     extracted_urls = re.findall(r"https?://[^\s'\"`]+", cmd_clean)
     for u in extracted_urls:
         safe, reason = check_ssrf_safety(u, allow_internal=allow_internal)
         if not safe:
-            return False, f"Command blocked by Proxynth SSRF Guard: Embedded target '{u}' violates SSRF policy ({reason})"
+            return False, f"Command blocked by Proxsynth SSRF Guard: Embedded target '{u}' violates SSRF policy ({reason})"
 
     return True, None
 
@@ -358,18 +367,18 @@ async def async_check_command_safe_mode(command: str, allow_internal: bool = Tru
     # 1. Check dangerous system command patterns
     for pat in EXPANDED_DANGEROUS_PATTERNS:
         if re.search(pat, cmd_clean, re.IGNORECASE):
-            return False, f"Command blocked by Proxynth CLI Safe-Mode (Matched dangerous signature: '{pat}')"
+            return False, f"Command blocked by Proxsynth CLI Safe-Mode (Matched dangerous signature: '{pat}')"
 
     # 2. Check metadata service targeting in CLI (e.g. curl 169.254.169.254)
     if re.search(r"\b169\.254\.\d+\.\d+\b", cmd_clean) or "metadata.google.internal" in cmd_clean:
-        return False, "Command blocked by Proxynth SSRF Guard: Targeting cloud instance metadata service (169.254.x.x) is strictly forbidden."
+        return False, "Command blocked by Proxsynth SSRF Guard: Targeting cloud instance metadata service (169.254.x.x) is strictly forbidden."
 
     # 3. Extract and asynchronously validate any HTTP/HTTPS URLs present in the command
     extracted_urls = re.findall(r"https?://[^\s'\"`]+", cmd_clean)
     for u in extracted_urls:
         safe, reason = await async_check_ssrf_safety(u, allow_internal=allow_internal)
         if not safe:
-            return False, f"Command blocked by Proxynth SSRF Guard: Embedded target '{u}' violates SSRF policy ({reason})"
+            return False, f"Command blocked by Proxsynth SSRF Guard: Embedded target '{u}' violates SSRF policy ({reason})"
 
     return True, None
 

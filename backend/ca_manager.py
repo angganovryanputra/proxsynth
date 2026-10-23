@@ -1,5 +1,5 @@
 """
-Proxynth CA Manager & Certificate Authority Orchestrator
+Proxsynth CA Manager & Certificate Authority Orchestrator
 Manages Root CA initialization, path resolution, and trust store hooks for TLS MITM proxying.
 """
 import os

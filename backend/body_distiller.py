@@ -1,5 +1,5 @@
 """
-Proxynth - LLM Semantic Response Body Distiller
+Proxsynth - LLM Semantic Response Body Distiller
 Reduces multi-megabyte HTML and massive JSON API responses into high-density,
 security-focused structural representations. Strips styling, SVG assets, base64 blobs,
 and noise to reduce LLM context token usage by 85-95% while highlighting forms,

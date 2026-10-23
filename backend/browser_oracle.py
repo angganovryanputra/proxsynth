@@ -1,5 +1,5 @@
 """
-Proxynth - Browser DOM Execution Oracle Sandbox
+Proxsynth - Browser DOM Execution Oracle Sandbox
 Provides zero-false-positive deterministic client-side execution verification (XSS, DOM Injection, CSP bypass).
 Spawns a sandboxed headless Chromium instance, hooks alert/dialog listeners and console sinks,
 and confirms whether an injected script payload actually fired in the real browser DOM.

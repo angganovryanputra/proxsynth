@@ -1,5 +1,5 @@
 """
-Proxynth MCP - Parameter Fuzzer / Mini-Intruder Engine
+Proxsynth MCP - Parameter Fuzzer / Mini-Intruder Engine
 High-performance asynchronous parameter fuzzing with position markers (§...§),
 automated baseline differential analysis, and offensive anomaly detection.
 """
@@ -290,7 +290,8 @@ async def run_fuzz_attack(
                                 "reasoning": f"[Parameter Fuzzer Anomaly: {', '.join(anomalies)}] Payload: {payload}",
                                 "flag_status": "CONFIRMED" if is_critical else "POTENTIAL",
                                 "finding_title": f"Fuzzing Anomaly Detected: {', '.join(anomalies)}",
-                                "finding_severity": "HIGH" if is_critical else "MEDIUM"
+                                "finding_severity": "HIGH" if is_critical else "MEDIUM",
+                                "payload_hint": payload
                             })
                         except Exception:
                             pass

@@ -1,5 +1,5 @@
 /**
- * Proxynth / AetherGate - OAST (Out-of-Band Application Security Testing) Component
+ * Proxsynth - OAST (Out-of-Band Application Security Testing) Component
  * Features: Multi-protocol listeners (HTTP, DNS, LDAP/JNDI), Token Generator,
  * and Autonomous Multi-Protocol Canary Sprayer (P2).
  */
@@ -44,7 +44,7 @@ window.OastModule = {
 
     async fetchOastEvents() {
       await this.fetchProtocolsStatus();
-      const proj = this.selectedProject || 'default';
+      const proj = this.selectedProject === 'ALL' ? 'all' : (this.selectedProject || 'all');
       try {
         const resp = await fetch(`/api/oast/events?project=${encodeURIComponent(proj)}&limit=100`);
         if (resp.ok) {
@@ -60,8 +60,14 @@ window.OastModule = {
     },
 
     async generateNewOastToken() {
+      let proj = this.selectedProject;
+      if (!proj || proj === 'ALL') {
+        proj = typeof this.resolveConcreteProject === 'function'
+          ? this.resolveConcreteProject('Select target project to generate this OAST canary token:')
+          : prompt('Please enter target project for this token:', 'default');
+        if (!proj) return;
+      }
       this.isGeneratingOast = true;
-      const proj = this.selectedProject === 'ALL' ? 'default' : this.selectedProject;
       try {
         const resp = await fetch('/api/oast/generate', {
           method: 'POST',
@@ -76,7 +82,7 @@ window.OastModule = {
           this.latestOastTokenData = await resp.json();
           this.showToast({
             title: 'OAST Token Generated',
-            message: `Token ${this.latestOastTokenData.token} ready for injection!`
+            message: `Token ${this.latestOastTokenData.token} ready for injection into '${proj}'!`
           });
         }
       } catch (err) {
@@ -92,9 +98,16 @@ window.OastModule = {
         return;
       }
 
+      let proj = this.selectedProject;
+      if (!proj || proj === 'ALL') {
+        proj = typeof this.resolveConcreteProject === 'function'
+          ? this.resolveConcreteProject('Select target project for OAST canary spraying:')
+          : prompt('Please enter target project for canary spray:', 'default');
+        if (!proj) return;
+      }
+
       this.isSprayingCanaries = true;
       this.oastSprayResult = null;
-      const proj = this.selectedProject === 'ALL' ? 'default' : (this.selectedProject || 'default');
 
       let parsedHeaders = null;
       if (this.oastSprayForm.headers_raw.trim()) {

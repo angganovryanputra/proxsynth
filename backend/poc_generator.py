@@ -1,5 +1,5 @@
 """
-Proxynth - One-Click Standalone PoC & Exploit Dossier Generator
+Proxsynth - One-Click Standalone PoC & Exploit Dossier Generator
 Synthesizes verified vulnerability findings into standalone, zero-dependency Python exploit scripts,
 cURL commands, HTML proof-of-concepts, and industry-standard CVSS/CWE remediation dossiers.
 """
@@ -197,10 +197,10 @@ def generate_html_poc(title: str, method: str, url: str, body: str = "") -> str:
     return f'''<!DOCTYPE html>
 <html>
 <head>
-    <title>Proxynth PoC: {safe_title}</title>
+    <title>Proxsynth PoC: {safe_title}</title>
 </head>
 <body>
-    <h3>Proxynth Autonomous Exploit PoC</h3>
+    <h3>Proxsynth Autonomous Exploit PoC</h3>
     <p>Target: <code>{safe_url}</code></p>
     <form id="poc_form" action="{safe_url}" method="{safe_method}">
         {fields_html}

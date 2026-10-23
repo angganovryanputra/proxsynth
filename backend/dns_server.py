@@ -1,5 +1,5 @@
 """
-Proxynth - Multi-Protocol OAST DNS Tunneling Listener
+Proxsynth - Multi-Protocol OAST DNS Tunneling Listener
 Lightweight Asyncio UDP DNS Server that catches DNS queries, extracts correlation tokens,
 and records DNS-based Out-of-Band (OAST) interactions for Blind SSRF, Blind SQLi, and RCE.
 """

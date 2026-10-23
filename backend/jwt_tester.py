@@ -1,5 +1,5 @@
 """
-Proxynth - Autonomous JWT & Session Token Security Audit Suite
+Proxsynth - Autonomous JWT & Session Token Security Audit Suite
 Performs zero-dependency decoding, algorithm-none tampering, dictionary brute-forcing
 against weak secrets, claim escalation forging, and automated live replay verification.
 """

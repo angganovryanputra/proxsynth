@@ -1,5 +1,5 @@
 """
-Proxynth - Adaptive WAF Evasion & Genetic Payload Mutator Engine
+Proxsynth - Adaptive WAF Evasion & Genetic Payload Mutator Engine
 Provides multi-strategy payload obfuscation, intelligent WAF signature fingerprinting,
 and adaptive evasion techniques for bypassing modern web application firewalls (Cloudflare, AWS WAF, Akamai, ModSecurity, Imperva).
 """

@@ -1,5 +1,5 @@
 """
-Proxynth - Exploit Path Chaining Graph Engine
+Proxsynth - Exploit Path Chaining Graph Engine
 Synthesizes verified findings, assets, credentials, and open attack surfaces
 into causal, multi-stage attack paths (Kill Chains) leading to Crown Jewel compromise.
 """
@@ -83,9 +83,14 @@ def build_attack_path_graph(project: str = "default") -> Dict[str, Any]:
 
     db = SessionLocal()
     try:
-        assets = db.query(TargetAsset).filter(TargetAsset.project == target_project).all()
-        findings = db.query(Finding).join(HttpLog).filter(HttpLog.project == target_project).all()
-        sessions = db.query(ActiveSession).filter(ActiveSession.project == target_project).all()
+        if target_project in ["all", "*", "any", "global"]:
+            assets = db.query(TargetAsset).all()
+            findings = db.query(Finding).join(HttpLog).all()
+            sessions = db.query(ActiveSession).all()
+        else:
+            assets = db.query(TargetAsset).filter(TargetAsset.project == target_project).all()
+            findings = db.query(Finding).join(HttpLog).filter(HttpLog.project == target_project).all()
+            sessions = db.query(ActiveSession).filter(ActiveSession.project == target_project).all()
 
         nodes = []
         edges = []

@@ -1,5 +1,5 @@
 """
-Proxynth / AetherGate - Target Knowledge Graph & Attack Surface Manager
+Proxsynth - Target Knowledge Graph & Attack Surface Manager
 Maintains stateful inventory of targets, hosts, ports, services, endpoints,
 and testing progression (Untested -> In Progress -> Tested -> Vulnerable).
 """
@@ -293,7 +293,7 @@ def auto_ingest_url_to_target_graph(project: str, url: str, method: str = "GET")
             return
 
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        # 1. Do not ingest Proxynth's own server infrastructure or common test mock ports
+        # 1. Do not ingest Proxsynth's own server infrastructure or common test mock ports
         if host in ["localhost", "127.0.0.1", "0.0.0.0", "::1"] and (port in [backend_port, proxy_port, 9999] or port >= 9990):
             return
 

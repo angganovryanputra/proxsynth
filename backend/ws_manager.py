@@ -1,5 +1,5 @@
 """
-Proxynth - WebSocket Full-Duplex Frame Interception & Replayer
+Proxsynth - WebSocket Full-Duplex Frame Interception & Replayer
 Captures, audits, and replays WebSocket frame traffic (CLIENT_TO_SERVER, SERVER_TO_CLIENT)
 for security testing real-time communication channels and socket endpoints.
 """

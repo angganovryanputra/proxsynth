@@ -1,5 +1,5 @@
 /**
- * Proxynth / AetherGate - Attack Hypothesis Ledger & Agent Working Memory (P3)
+ * Proxsynth - Attack Hypothesis Ledger & Agent Working Memory (P3)
  * Provides real-time visibility into the AI Agent's hypothesis testing lifecycle:
  * PLANNED -> TESTING -> CONFIRMED -> DISPROVEN -> BLOCKED
  */
@@ -37,7 +37,7 @@ window.HypothesesModule = {
   methods: {
     async fetchHypotheses() {
       this.isLoadingHypotheses = true;
-      const proj = this.selectedProject || 'default';
+      const proj = this.selectedProject === 'ALL' ? 'all' : (this.selectedProject || 'all');
       try {
         const [hypResp, agendaResp] = await Promise.all([
           fetch(`/api/hypotheses?project=${encodeURIComponent(proj)}`),
@@ -69,8 +69,15 @@ window.HypothesesModule = {
         return;
       }
 
+      let proj = this.selectedProject;
+      if (!proj || proj === 'ALL') {
+        proj = typeof this.resolveConcreteProject === 'function'
+          ? this.resolveConcreteProject('Select target project to register this hypothesis:')
+          : prompt('Please enter target project for this hypothesis:', 'default');
+        if (!proj) return;
+      }
+
       this.isSubmittingHypothesis = true;
-      const proj = this.selectedProject === 'ALL' ? 'default' : (this.selectedProject || 'default');
 
       try {
         const resp = await fetch('/api/hypotheses', {
@@ -100,7 +107,7 @@ window.HypothesesModule = {
           };
           this.showToast({
             title: 'Hypothesis Registered',
-            message: `Recorded #${created.id} [${created.vuln_type}] on ${created.target}`
+            message: `Recorded #${created.id} [${created.vuln_type}] on ${created.target} for '${proj}'`
           });
           await this.fetchHypotheses();
         } else {
@@ -115,7 +122,7 @@ window.HypothesesModule = {
     },
 
     async updateHypothesisStatusUI(hypId, newStatus, evidenceNotes = '') {
-      const proj = this.selectedProject || 'default';
+      const proj = this.selectedProject === 'ALL' ? 'all' : (this.selectedProject || 'default');
       try {
         const payload = { status: newStatus };
         if (evidenceNotes) payload.evidence_notes = evidenceNotes;
@@ -144,7 +151,7 @@ window.HypothesesModule = {
 
     async deleteHypothesisUI(hypId) {
       if (!confirm(`Delete hypothesis #${hypId} from agent working memory?`)) return;
-      const proj = this.selectedProject || 'default';
+      const proj = this.selectedProject === 'ALL' ? 'all' : (this.selectedProject || 'default');
 
       try {
         const resp = await fetch(`/api/hypotheses/${hypId}?project=${encodeURIComponent(proj)}`, {

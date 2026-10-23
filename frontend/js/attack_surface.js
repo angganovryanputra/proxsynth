@@ -1,5 +1,5 @@
 /**
- * Proxynth / AetherGate - Attack Surface Knowledge Graph Component
+ * Proxsynth - Attack Surface Knowledge Graph Component
  */
 
 window.AttackSurfaceModule = {
@@ -75,9 +75,16 @@ window.AttackSurfaceModule = {
         alert('Hostname/Domain is required.');
         return;
       }
+      let proj = this.selectedProject;
+      if (!proj || proj === 'ALL') {
+        proj = typeof this.resolveConcreteProject === 'function'
+          ? this.resolveConcreteProject('Select target project to register this asset:')
+          : prompt('Please enter target project for this asset:', 'default');
+        if (!proj) return;
+      }
       try {
         const payload = {
-          project: this.selectedProject === 'ALL' ? 'default' : this.selectedProject,
+          project: proj,
           host: this.newAssetForm.host,
           ip: this.newAssetForm.ip,
           os_info: this.newAssetForm.os_info,
@@ -104,9 +111,16 @@ window.AttackSurfaceModule = {
         alert('Host and Port are required.');
         return;
       }
+      let proj = this.selectedProject;
+      if (!proj || proj === 'ALL') {
+        proj = typeof this.resolveConcreteProject === 'function'
+          ? this.resolveConcreteProject('Select target project to register this service:')
+          : prompt('Please enter target project for this service:', 'default');
+        if (!proj) return;
+      }
       try {
         const payload = {
-          project: this.selectedProject === 'ALL' ? 'default' : this.selectedProject,
+          project: proj,
           host: this.newServiceForm.host,
           port: parseInt(this.newServiceForm.port),
           protocol: this.newServiceForm.protocol || 'tcp',
@@ -226,8 +240,14 @@ window.AttackSurfaceModule = {
     },
 
     async inferHiddenEndpoints() {
+      let proj = this.selectedProject;
+      if (!proj || proj === 'ALL') {
+        proj = typeof this.resolveConcreteProject === 'function'
+          ? this.resolveConcreteProject('Select target project to infer hidden endpoints:')
+          : prompt('Please enter target project to infer routes:', 'default');
+        if (!proj) return;
+      }
       this.isInferringRoutes = true;
-      const proj = this.selectedProject === 'ALL' ? 'default' : this.selectedProject;
       try {
         const resp = await fetch(`/api/attack-surface/infer?project=${encodeURIComponent(proj)}`, { method: 'POST' });
         if (resp.ok) {
@@ -235,7 +255,7 @@ window.AttackSurfaceModule = {
           if (this.showToast) {
             this.showToast({
               title: 'Endpoints Inferred',
-              message: `Successfully synthesized and mapped ${data.inferred_count || 0} speculative API routes!`
+              message: `Successfully synthesized and mapped ${data.inferred_count || 0} speculative API routes for '${proj}'!`
             });
           }
           await this.fetchAttackSurface();
@@ -251,7 +271,7 @@ window.AttackSurfaceModule = {
 
     async viewAttackPaths() {
       this.isGeneratingAttackPaths = true;
-      const proj = this.selectedProject === 'ALL' ? 'default' : this.selectedProject;
+      const proj = this.selectedProject === 'ALL' ? 'all' : (this.selectedProject || 'default');
       try {
         const resp = await fetch(`/api/attack-path?project=${encodeURIComponent(proj)}`);
         if (resp.ok) {

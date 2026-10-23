@@ -1,5 +1,5 @@
 """
-Proxynth - Multi-Step Stateful Business Logic Workflow Engine
+Proxsynth - Multi-Step Stateful Business Logic Workflow Engine
 Executes multi-stage stateful HTTP/HTTPS sequences with dynamic parameter extraction,
 variable chaining ({{var}}), session identity swapping, and automated logic flaw bypass testing.
 """
@@ -203,7 +203,7 @@ async def run_workflow_sequence(
             }
             results.append(step_result)
 
-            # Record step execution to Proxynth HttpLog (Proxy History)
+            # Record step execution to Proxsynth HttpLog (Proxy History)
             try:
                 from backend.forward_proxy import _dispatch_log
                 parsed_step = urllib.parse.urlparse(step_url)

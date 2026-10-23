@@ -1,5 +1,5 @@
 """
-Proxynth MCP - Browser & HITL (Human-in-the-Loop) Login Handler
+Proxsynth MCP - Browser & HITL (Human-in-the-Loop) Login Handler
 Automated Playwright DOM rendering and interactive headed authentication handover.
 """
 
@@ -13,7 +13,7 @@ from typing import Dict, Any, Optional, List
 from backend.database import SessionLocal, ActiveSession
 from backend.security_utils import check_ssrf_safety
 
-logger = logging.getLogger("proxynth.browser")
+logger = logging.getLogger("proxsynth.browser")
 
 # Active interactive login tracking: domain -> asyncio.Event
 active_login_events: Dict[str, asyncio.Event] = {}

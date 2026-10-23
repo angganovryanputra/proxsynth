@@ -6,6 +6,7 @@ Features: Scope Guardrails, Interactive Intercept Proxy Trap, AI Reasoning Corre
 
 import os
 import sys
+import re
 import json
 import time
 import asyncio
@@ -60,13 +61,38 @@ from backend.user_agents import apply_rotating_user_agent, get_random_user_agent
 from backend.fuzzer import run_fuzz_attack, BUILTIN_PAYLOADS, MARKER_REGEX
 
 # Initialize FastMCP Server
-mcp = FastMCP("proxynth")
+mcp = FastMCP("proxsynth")
 
 def get_backend_url() -> str:
     return os.getenv("PROXSYNTH_BACKEND_URL", os.getenv("PROXSYNTH_BACKEND_URL", "http://127.0.0.1:8000")).rstrip("/")
 
 BACKEND_URL = get_backend_url()
 DEFAULT_PROJECT = os.getenv("PROXSYNTH_PROJECT", os.getenv("PROXSYNTH_PROJECT", "default")).strip().lower()
+
+# Session State Scope Management
+_active_project: Optional[str] = None
+
+def _resolve_project(project: Optional[str] = None, allow_all: bool = True) -> str:
+    """
+    Resolusi hierarki project:
+    1. Explicit 'all', '*', 'any', 'global' -> return 'all' (if allow_all else _active_project or DEFAULT_PROJECT)
+    2. Explicit project string -> return sanitized string
+    3. None / empty -> 
+       - If _active_project is set: return _active_project (if allow_all or _active_project != 'all' else DEFAULT_PROJECT)
+       - If _active_project is None: if allow_all return 'all' else DEFAULT_PROJECT
+    """
+    p = (project or "").strip().lower()
+    if p in ("all", "*", "any", "global"):
+        if allow_all:
+            return "all"
+        return _active_project if (_active_project and _active_project not in ("all", "*", "any", "global")) else DEFAULT_PROJECT
+    if p:
+        return p
+    if _active_project:
+        if not allow_all and _active_project in ("all", "*", "any", "global"):
+            return DEFAULT_PROJECT
+        return _active_project
+    return "all" if allow_all else DEFAULT_PROJECT
 
 # Ensure DB is created
 init_db()
@@ -242,6 +268,28 @@ async def _persist_and_stream_log(
             db.add(finding)
         db.commit()
 
+        # Auto-Vault: Automatically capture confirmed or high/critical anomaly payload to Payload Vault
+        try:
+            from backend.payload_vault import auto_vault_payload
+            auto_vault_payload(
+                db=db,
+                project=proj,
+                agent_id=entry.agent_id,
+                method=entry.method,
+                url=entry.url,
+                request_body=entry.request_body,
+                response_body=entry.response_body,
+                status_code=entry.status_code,
+                flag_status=effective_flag,
+                findings=effective_findings,
+                reasoning=entry.reasoning,
+                source=entry.source,
+                http_log_id=entry.id,
+                payload_hint=log_payload.get("payload_hint")
+            )
+        except Exception:
+            pass
+
         try:
             from backend.target_manager import auto_ingest_url_to_target_graph
             auto_ingest_url_to_target_graph(proj, entry.url, entry.method)
@@ -288,11 +336,28 @@ async def _persist_and_stream_command(cmd_payload: Dict[str, Any]) -> Optional[i
             stderr=cmd_payload.get("stderr", "")[:5242880],
             duration_ms=cmd_payload.get("duration_ms", 0),
             status=cmd_payload.get("status", "SUCCESS"),
-            linked_log_id=cmd_payload.get("linked_log_id")
+            linked_log_id=cmd_payload.get("linked_log_id"),
+            script_content=(cmd_payload.get("script_content") or "")[:5242880]
         )
         db.add(entry)
         db.commit()
         db.refresh(entry)
+
+        # Auto-vault any exploit/pentest payloads extracted from script content or command
+        if cmd_payload.get("script_content") or cmd_payload.get("command"):
+            try:
+                from backend.payload_vault import auto_vault_script_payloads
+                auto_vault_script_payloads(
+                    db=db,
+                    project=proj,
+                    agent_id=entry.agent_id,
+                    script_content=cmd_payload.get("script_content", ""),
+                    command=entry.command,
+                    cmd_log_id=entry.id
+                )
+            except Exception:
+                pass
+
         return entry.id
     except Exception:
         db.rollback()
@@ -342,8 +407,9 @@ async def _persist_and_stream_payload(payload_data: Dict[str, Any]) -> Optional[
         db.close()
 
 
-def _extract_domain_cookies(url: str, project: str = "default") -> Dict[str, str]:
+def _extract_domain_cookies(url: str, project: Optional[str] = None) -> Dict[str, str]:
     """Retrieves active session cookies for the target domain and project from SQLite."""
+    target_project = _resolve_project(project, allow_all=False)
     cookies = {}
     try:
         parsed = urllib.parse.urlparse(url)
@@ -351,7 +417,7 @@ def _extract_domain_cookies(url: str, project: str = "default") -> Dict[str, str
         db = SessionLocal()
         try:
             # First match sessions for this project
-            sessions = db.query(ActiveSession).filter(ActiveSession.project == project).all()
+            sessions = db.query(ActiveSession).filter(ActiveSession.project == target_project).all()
             if not sessions:
                 sessions = db.query(ActiveSession).all()
 
@@ -387,6 +453,50 @@ def _extract_domain_cookies(url: str, project: str = "default") -> Dict[str, str
 
 
 # ==============================================================================
+# MCP Scope Session Tools: set_active_project & get_active_project
+# ==============================================================================
+
+@mcp.tool()
+async def set_active_project(project: str) -> str:
+    """
+    Sets the active project workspace scope for the current MCP session.
+    When set, all subsequent tool calls without an explicit project parameter
+    will default to this project instead of 'default'.
+    Passing 'all', '*', 'any', or 'global' enables global visibility stream across all projects.
+    """
+    global _active_project
+    p = (project or "").strip().lower()
+    if p in ("all", "*", "any", "global"):
+        _active_project = "all"
+        return json.dumps({
+            "status": "success",
+            "active_project": "all",
+            "scope_mode": "GLOBAL_ALL_PROJECTS",
+            "message": "Global multi-project stream enabled for reading/querying. Mutation operations will safeguard to default workspace."
+        }, indent=2)
+    _active_project = p if p else DEFAULT_PROJECT
+    return json.dumps({
+        "status": "success",
+        "active_project": _active_project,
+        "scope_mode": "PROJECT_ISOLATED",
+        "message": f"Active project context set to '{_active_project}' for this session."
+    }, indent=2)
+
+
+@mcp.tool()
+async def get_active_project() -> str:
+    """
+    Returns the currently active project workspace scope and the system default project.
+    """
+    return json.dumps({
+        "active_project": _active_project or DEFAULT_PROJECT,
+        "session_active_project": _active_project,
+        "default_project": DEFAULT_PROJECT,
+        "is_global_stream": (_active_project or "").lower() in ("all", "*", "any", "global")
+    }, indent=2)
+
+
+# ==============================================================================
 # MCP Tool 1: send_http_request
 # ==============================================================================
 
@@ -396,7 +506,7 @@ async def send_http_request(
     url: str = "",
     headers: Optional[Dict[str, str]] = None,
     body: str = "",
-    project: str = "default",
+    project: Optional[str] = None,
     agent_id: str = "primary_agent",
     reasoning: str = "",
     max_body_chars: int = 5000,
@@ -430,7 +540,7 @@ async def send_http_request(
       - url: Full target URL
       - headers: Optional custom HTTP headers dict
       - body: Request body string (or JSON payload)
-      - project: Workspace scope (e.g. 'default')
+      - project: Workspace scope (defaults to session active project or global stream)
       - agent_id: Identifier of the AI agent instance (e.g. 'primary_agent')
       - reasoning: The AI agent's hypothesis or intent (e.g. 'Testing SQL injection login bypass on /rest/user/login')
       - max_body_chars: Preview length (default 5000)
@@ -448,7 +558,7 @@ async def send_http_request(
     elif not isinstance(body, str):
         body = str(body)
 
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
     target_agent = (agent_id or "primary_agent").strip()
     method = (method or "GET").upper().strip()
     headers = headers or {}
@@ -794,7 +904,7 @@ async def browser_navigate_and_render(
     url: str,
     click_selector: str = "",
     fill_inputs: Optional[Dict[str, str]] = None,
-    project: str = "default",
+    project: Optional[str] = None,
     agent_id: str = "primary_agent",
     reasoning: str = "",
     max_dom_chars: int = 10000
@@ -804,7 +914,7 @@ async def browser_navigate_and_render(
     intercepts background asynchronous network requests (AJAX/fetch/scripts), and extracts visible DOM content.
     Returns Log ID, list of intercepted API endpoints/scripts, and DOM content preview.
     """
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
     target_agent = (agent_id or "primary_agent").strip()
 
     # Scope & Settings check
@@ -907,7 +1017,7 @@ async def render_webpage(
     url: str,
     click_selector: str = "",
     fill_inputs: Optional[Dict[str, str]] = None,
-    project: str = "default",
+    project: Optional[str] = None,
     agent_id: str = "primary_agent",
     reasoning: str = "",
     max_dom_chars: int = 10000
@@ -936,16 +1046,16 @@ async def render_webpage(
 async def request_manual_login(
     login_url: str,
     domain: str,
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Spawns an interactive headed browser window for Human-in-the-Loop (HITL) authentication.
     Suspends autonomous execution until the human pentester logs in or completes CAPTCHA.
     Extracted cookies and storage tokens are automatically synced to the gateway database.
     """
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
     try:
-        result = await spawn_interactive_login(login_url, domain)
+        result = await spawn_interactive_login(login_url, domain, project=target_project)
         cookie_count = result.get("cookie_count", 0)
         return (
             f"Project: [{target_project}] | Authentication successful. Sockets/cookies updated and active for domain '{domain}'. "
@@ -977,18 +1087,20 @@ async def run_pentest_command(
     command: str,
     reasoning: str = "",
     tool_name: str = "terminal",
-    project: str = "default",
+    project: Optional[str] = None,
     agent_id: str = "primary_agent",
     timeout: int = 60,
     cwd: str = "",
-    output_format: str = "json"
+    output_format: str = "json",
+    script_content: Optional[str] = None
 ) -> str:
     """
     Executes a security testing command in the local shell environment (e.g. nmap, curl, sqlmap, custom scripts),
     streams the command and outputs to Proxynth for full operator observability and audit history,
+    automatically captures script source code and extracted attack payloads into the Payload Vault,
     and applies automated safety guardrails to prevent destructive system commands and SSRF metadata exfiltration.
     """
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
     target_agent = (agent_id or "primary_agent").strip()
     cmd_clean = command.strip()
 
@@ -1030,6 +1142,21 @@ async def run_pentest_command(
     if cwd and os.path.isdir(cwd):
         work_dir = os.path.abspath(cwd)
 
+    # Auto-detect executed script source code if not explicitly provided
+    effective_script_content = (script_content or "").strip()
+    if not effective_script_content:
+        m_script = re.search(r'(?:python3?|bash|sh|node)\s+([^\s\'\"]+\.(?:py|sh|js|rb|pl|php))', cmd_clean, re.IGNORECASE)
+        if m_script:
+            candidate_file = m_script.group(1).strip()
+            resolved_path = candidate_file if os.path.isabs(candidate_file) else os.path.join(work_dir, candidate_file)
+            if os.path.isfile(resolved_path):
+                try:
+                    if os.path.getsize(resolved_path) <= 524288:  # 512KB safety cap
+                        with open(resolved_path, "r", encoding="utf-8", errors="replace") as sf:
+                            effective_script_content = sf.read()
+                except Exception:
+                    pass
+
     start_time = time.time()
     stdout_text = ""
     stderr_text = ""
@@ -1049,6 +1176,8 @@ async def run_pentest_command(
     proxy_url_plain = f"http://127.0.0.1:{proxy_port}"
 
     sub_env = os.environ.copy()
+    existing_pythonpath = sub_env.get("PYTHONPATH", "")
+    sub_env["PYTHONPATH"] = f"{CURRENT_DIR}{os.pathsep}{existing_pythonpath}".rstrip(os.pathsep)
     sub_env["HTTP_PROXY"] = proxy_url_auth
     sub_env["HTTPS_PROXY"] = proxy_url_auth
     sub_env["http_proxy"] = proxy_url_auth
@@ -1139,7 +1268,8 @@ async def run_pentest_command(
         "stdout": stdout_text,
         "stderr": stderr_text,
         "duration_ms": duration_ms,
-        "status": status
+        "status": status,
+        "script_content": effective_script_content
     }
     cmd_id = await _persist_and_stream_command(cmd_log_payload)
     cmd_id_str = f"#{cmd_id}" if cmd_id else "#untracked"
@@ -1158,7 +1288,8 @@ async def run_pentest_command(
             "exit_code": exit_code,
             "duration_ms": duration_ms,
             "stdout": stdout_snippet,
-            "stderr": stderr_text[:2000] if stderr_text else ""
+            "stderr": stderr_text[:2000] if stderr_text else "",
+            "script_captured": bool(effective_script_content)
         }, indent=2)
 
     return (
@@ -1184,7 +1315,7 @@ async def record_test_payload(
     response_signature: str = "",
     http_status: Optional[int] = None,
     reasoning: str = "",
-    project: str = "default",
+    project: Optional[str] = None,
     agent_id: str = "primary_agent"
 ) -> str:
     """
@@ -1192,7 +1323,7 @@ async def record_test_payload(
     crafted or tested by the AI into the Proxynth Payload Vault for operator review, verification, and 1-click replay.
     Returns Payload ID for programmatic chaining.
     """
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
     target_agent = (agent_id or "primary_agent").strip()
 
     payload_data = {
@@ -1219,17 +1350,98 @@ async def record_test_payload(
 
 
 # ==============================================================================
-# MCP Tool 6: get_log_detail (Full Request/Response Body Inspection)
+# MCP Tool 5b: get_captured_payloads (Payload Vault Query & Search)
+# ==============================================================================
+
+@mcp.tool()
+async def get_captured_payloads(
+    project: Optional[str] = None,
+    vuln_type: Optional[str] = None,
+    outcome: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+) -> str:
+    """
+    Retrieves captured security testing payloads from the Proxynth Payload Vault.
+    Supports filtering by project scope ('all' or specific project), vulnerability type (SQLI, XSS, SSRF, RCE, IDOR, etc.),
+    outcome (CONFIRMED, ANOMALY, BLOCKED, TESTED), and full-text keyword search across raw payloads, target URLs, and parameters.
+    Returns structured JSON with payload records and count statistics.
+    """
+    target_proj = _resolve_project(project, allow_all=True)
+    payload_results = None
+
+    # 1. Query running Dashboard API first
+    try:
+        client = await _get_dashboard_client()
+        params = {
+            "project": target_proj,
+            "limit": min(max(1, limit), 500),
+            "offset": max(0, offset)
+        }
+        if vuln_type and vuln_type.upper() != "ALL":
+            params["vuln_type"] = vuln_type.upper()
+        if outcome and outcome.upper() != "ALL":
+            params["outcome"] = outcome.upper()
+        if search:
+            params["search"] = search
+
+        resp = await client.get(f"{get_backend_url()}/api/payloads", params=params)
+        if resp.status_code == 200:
+            payload_results = resp.json()
+    except Exception:
+        pass
+
+    # 2. Local database fallback
+    if payload_results is None:
+        db = SessionLocal()
+        try:
+            q = db.query(CapturedPayload)
+            if target_proj.upper() != "ALL":
+                q = q.filter(CapturedPayload.project == target_proj.lower())
+            if vuln_type and vuln_type.upper() != "ALL":
+                q = q.filter(CapturedPayload.vuln_type == vuln_type.upper())
+            if outcome and outcome.upper() != "ALL":
+                q = q.filter(CapturedPayload.outcome == outcome.upper())
+            if search:
+                pattern = f"%{search}%"
+                q = q.filter(
+                    (CapturedPayload.raw_payload.ilike(pattern)) |
+                    (CapturedPayload.target_param.ilike(pattern)) |
+                    (CapturedPayload.target_url.ilike(pattern)) |
+                    (CapturedPayload.notes.ilike(pattern))
+                )
+            total = q.count()
+            items = q.order_by(CapturedPayload.id.desc()).offset(offset).limit(limit).all()
+            payload_results = {
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "payloads": [p.to_dict() for p in items]
+            }
+        finally:
+            db.close()
+
+    return json.dumps(payload_results, indent=2)
+
+
+# ==============================================================================
+# MCP Tool 6: get_log_detail (Full Request/Response Body Inspection & Distillation)
 # ==============================================================================
 
 @mcp.tool()
 async def get_log_detail(
     log_id: int,
-    max_body_chars: Optional[int] = 100000
+    max_body_chars: Optional[int] = 100000,
+    distill: bool = False,
+    reflected_query: Optional[str] = None
 ) -> str:
     """
     Retrieves complete headers, full request body, full response body, and triaged findings
     for a specific HTTP transaction by its Log ID.
+    When `distill=True`, compresses large HTML/JSON response bodies using Proxynth's Semantic
+    Security Distiller into a compact, high-density summary (saving up to 95% LLM tokens)
+    while highlighting reflected parameters, hidden form fields, and potential endpoints.
     Queries the central Proxynth Dashboard API first (with local database fallback) to ensure
     consistent access in cross-environment (WSL/Windows) setups.
     Essential for bug bounty research to inspect reflected XSS, deep JSON responses, or sensitive leaks without truncation.
@@ -1283,6 +1495,7 @@ async def get_log_detail(
 
     req_body_prev = display_req_body[:max_len]
     res_body_prev = display_res_body[:max_len]
+    distill_label = ""
 
     req_hdrs = log_data.get("request_headers", {})
     if isinstance(req_hdrs, (dict, list)):
@@ -1296,6 +1509,27 @@ async def get_log_detail(
     else:
         res_hdrs_str = str(res_hdrs)
 
+    if distill and raw_res_body:
+        try:
+            from backend.body_distiller import distill_response_body
+            ct = ""
+            if isinstance(res_hdrs, dict):
+                ct = res_hdrs.get("Content-Type") or res_hdrs.get("content-type") or ""
+            dist_res = distill_response_body(
+                body=raw_res_body,
+                content_type=ct,
+                max_length=max_len,
+                reflected_query=reflected_query
+            )
+            dist_summary = dist_res.get("compact_summary", "")
+            orig_sz = dist_res.get("original_size", len(raw_res_body))
+            dist_sz = dist_res.get("distilled_size", len(dist_summary))
+            reduction = dist_res.get("token_reduction_percent", 0.0)
+            res_body_prev = f"[DISTILLED SECURITY VIEW: {orig_sz} -> {dist_sz} bytes (-{reduction}% tokens)]\n{dist_summary}"
+            distill_label = " [Distilled]"
+        except Exception as ex:
+            res_body_prev = f"[Distillation fallback: {str(ex)}]\n{display_res_body[:max_len]}"
+
     return (
         f"=== PROXSYNTH HTTP LOG DETAIL #{log_data.get('id', log_id)} ({source_info}) ===\n"
         f"Project: [{log_data.get('project', 'default')}] | Agent: [{log_data.get('agent_id', 'primary_agent')}] | Source: {log_data.get('source', 'HTTP_CLIENT')}\n"
@@ -1306,7 +1540,7 @@ async def get_log_detail(
         f"--- Request Headers ---\n{req_hdrs_str}\n\n"
         f"--- Request Body ({req_body_len} bytes) ---\n{req_body_prev}\n\n"
         f"--- Response Headers ---\n{res_hdrs_str}\n\n"
-        f"--- Response Body ({res_body_len} bytes) ---\n{res_body_prev}\n"
+        f"--- Response Body ({res_body_len} bytes{distill_label}) ---\n{res_body_prev}\n"
         f"{findings_str}"
     )
 
@@ -1317,7 +1551,7 @@ async def get_log_detail(
 
 @mcp.tool()
 async def get_traffic_history(
-    project: str = "default",
+    project: Optional[str] = None,
     limit: int = 20
 ) -> str:
     """
@@ -1326,7 +1560,7 @@ async def get_traffic_history(
     consistent visibility across WSL/Windows environments.
     Returns Log IDs, HTTP methods, status codes, URLs, and triage flags so the agent can select IDs for deep inspection.
     """
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=True)
     fetch_limit = min(max(limit or 20, 1), 100)
     logs_list = None
     source_info = "Dashboard API"
@@ -1384,7 +1618,7 @@ async def report_vulnerability(
     evidence: str = "",
     description: str = "",
     remediation: str = "",
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Explicitly flags an existing HTTP Log entry (by Log ID) as a confirmed vulnerability finding in Proxynth.
@@ -1402,7 +1636,7 @@ async def report_vulnerability(
       - remediation: Recommended fix for developers.
       - project: Workspace name (defaults to active project).
     """
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
     sev_clean = (severity or "HIGH").strip().upper()
     cat_clean = (category or "General").strip()
     finding_id = None
@@ -1497,7 +1731,7 @@ async def report_vulnerability(
 
 @mcp.tool()
 async def get_attack_surface(
-    project: str = "default",
+    project: Optional[str] = None,
     host: str = "",
     output_format: str = "json"
 ) -> str:
@@ -1507,7 +1741,7 @@ async def get_attack_surface(
     and testing progress (UNTESTED, IN_PROGRESS, TESTED, VULNERABLE).
     Essential for autonomous agents (OpenCode/Hermes) to plan and track reconnaissance and exploitation.
     """
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=True)
     graph_data = get_attack_surface_graph(project=target_project, host=host.strip() or None)
     if (output_format or "json").strip().lower() == "text":
         summary = graph_data.get("summary", {})
@@ -1539,7 +1773,7 @@ async def record_target_asset(
     os_info: str = "",
     tags: Any = None,
     notes: str = "",
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Explicitly registers or updates a target host/machine in the Proxynth Attack Surface Graph.
@@ -1551,7 +1785,7 @@ async def record_target_asset(
       - tags: Comma-separated tags or list of strings (e.g. 'production,dmz,aws' or ['production', 'aws'])
       - notes: Operational notes or architecture context
     """
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
     if isinstance(tags, list):
         tag_list = [str(t).strip() for t in tags if str(t).strip()]
     elif isinstance(tags, str) and tags.strip():
@@ -1587,13 +1821,13 @@ async def record_target_service(
     service_name: str = "unknown",
     banner: str = "",
     state: str = "open",
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Catalogs an open or filtered network port/service discovered during reconnaissance (e.g. from nmap)
     into the Target Knowledge Graph.
     """
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
     srv = add_or_update_service(
         project=target_project,
         host=host,
@@ -1623,13 +1857,13 @@ async def record_target_endpoint(
     auth_required: bool = False,
     tested_status: str = "UNTESTED",
     notes: str = "",
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Catalogs a discovered web route/endpoint into the Target Knowledge Graph and updates its testing status.
     tested_status options: 'UNTESTED', 'IN_PROGRESS', 'TESTED', 'VULNERABLE'.
     """
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
     if isinstance(parameters, list):
         param_list = [str(p).strip() for p in parameters if str(p).strip()]
     elif isinstance(parameters, str) and parameters.strip():
@@ -1663,7 +1897,7 @@ async def generate_oast_token(
     vuln_type: str = "BLIND_CALLBACK",
     description: str = "",
     provider: str = "auto",
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Generates a unique Out-of-Band Application Security Testing (OAST) interaction token
@@ -1672,7 +1906,7 @@ async def generate_oast_token(
     Returns the token and pre-built callback URL to embed inside your exploit payload.
     After injecting the payload into the target, call 'poll_oast_events(token)' to verify if target contacted Proxynth!
     """
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
     oast_meta = engine_generate_oast_token(
         project=target_project,
         description=description,
@@ -1690,14 +1924,14 @@ async def generate_oast_token(
 async def poll_oast_events(
     token: str,
     timeout_seconds: float = 5.0,
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Awaits and retrieves any incoming callbacks received for a specific OAST token.
     If the target server triggered the callback, returns confirmation with target IP, HTTP method,
     headers, and exfiltrated body data.
     """
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=True)
     events = await engine_poll_oast_events(
         token=token,
         project=target_project,
@@ -1731,7 +1965,7 @@ async def set_identity_session(
     domain: str,
     identity_role: str = "attacker",
     raw_cookies: str = "",
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Registers an authenticated session tagged with a specific identity role (e.g. 'attacker', 'victim', 'admin', 'guest').
@@ -1744,8 +1978,9 @@ async def set_identity_session(
       - project: Workspace name (defaults to active project).
     """
     from backend.bola_matrix import set_identity_session as engine_set_identity
+    target_project = _resolve_project(project, allow_all=False)
     res = engine_set_identity(
-        project=project,
+        project=target_project,
         domain=domain,
         identity_role=identity_role,
         raw_cookie_str=raw_cookies
@@ -1764,7 +1999,7 @@ async def set_identity_session(
 @mcp.tool()
 async def test_bola_idor(
     log_id: int,
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Executes an on-demand BOLA/IDOR shadow test on a specific logged endpoint (by Log ID).
@@ -1773,7 +2008,7 @@ async def test_bola_idor(
     """
     from backend.database import SessionLocal, HttpLog
     from backend.bola_matrix import execute_bola_shadow_replay
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
     db = SessionLocal()
     try:
         log = db.query(HttpLog).filter(HttpLog.id == log_id).first()
@@ -1851,7 +2086,7 @@ async def analyze_waf_response(
 @mcp.tool()
 async def infer_hidden_endpoints(
     host: str,
-    project: str = "default",
+    project: Optional[str] = None,
     auto_register_to_graph: bool = True
 ) -> str:
     """
@@ -1860,7 +2095,7 @@ async def infer_hidden_endpoints(
     Optionally auto-registers predictions into the Target Knowledge Graph as 'UNTESTED' endpoints.
     """
     from backend.api_spec_inferrer import infer_endpoints_from_observed
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
     res = infer_endpoints_from_observed(
         host=host,
         project=target_project,
@@ -1875,7 +2110,7 @@ async def infer_hidden_endpoints(
 
 @mcp.tool()
 async def get_attack_paths(
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Constructs an interconnected attack path graph linking:
@@ -1883,7 +2118,7 @@ async def get_attack_paths(
     Returns structured kill chains and Mermaid diagram representation.
     """
     from backend.attack_path import build_attack_path_graph
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=True)
     res = build_attack_path_graph(project=target_project)
     return json.dumps(res, indent=2)
 
@@ -1917,14 +2152,14 @@ async def send_websocket_message(
     message: str,
     headers: Optional[Dict[str, str]] = None,
     timeout: float = 5.0,
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Dispatches a test message frame to a target WebSocket server, captures the server's reply frame,
     and logs the transaction into the database for analysis and replay.
     """
     from backend.ws_manager import send_ws_message
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
     res = await send_ws_message(
         url=url,
         message=message,
@@ -1950,7 +2185,7 @@ async def fuzz_endpoint(
     concurrency: int = 5,
     delay_ms: Optional[float] = 50.0,
     jitter_ms: Optional[float] = 25.0,
-    project: str = "default",
+    project: Optional[str] = None,
     agent_id: str = "primary_agent"
 ) -> str:
     """
@@ -1972,7 +2207,7 @@ async def fuzz_endpoint(
       - project: Project workspace name
       - agent_id: Identifier of calling AI agent
     """
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
 
     # Scope check on baseline URL
     db = SessionLocal()
@@ -2018,7 +2253,7 @@ async def execute_workflow_sequence(
     sequence: Any,
     initial_context: Optional[Dict[str, Any]] = None,
     test_step_skipping: bool = False,
-    project: str = "default",
+    project: Optional[str] = None,
     agent_id: str = "primary_agent"
 ) -> str:
     """
@@ -2043,7 +2278,7 @@ async def execute_workflow_sequence(
     """
     from backend.workflow_engine import execute_workflow
 
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
 
     if isinstance(sequence, str):
         try:
@@ -2087,7 +2322,7 @@ async def test_race_condition(
     headers: Optional[Dict[str, str]] = None,
     body: Optional[str] = "",
     concurrency: int = 20,
-    project: str = "default",
+    project: Optional[str] = None,
     agent_id: str = "primary_agent"
 ) -> str:
     """
@@ -2106,7 +2341,7 @@ async def test_race_condition(
     """
     from backend.race_engine import run_race_attack
 
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
 
     db = SessionLocal()
     proj_proxy = ""
@@ -2145,7 +2380,7 @@ async def mine_javascript_assets(
     content_or_url: str,
     base_url: Optional[str] = None,
     auto_register: bool = True,
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Extracts hidden API routes, endpoints, query/body parameter names, source maps (.map),
@@ -2161,7 +2396,7 @@ async def mine_javascript_assets(
     """
     from backend.js_miner import mine_javascript
 
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
 
     db = SessionLocal()
     proj_proxy = ""
@@ -2256,7 +2491,7 @@ async def audit_jwt_security(
     method: str = "GET",
     headers: Optional[Dict[str, str]] = None,
     claims_override: Optional[Dict[str, Any]] = None,
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Audits JSON Web Tokens (JWT) for critical session vulnerabilities:
@@ -2276,7 +2511,7 @@ async def audit_jwt_security(
     """
     from backend.jwt_tester import audit_jwt_security as run_jwt_audit
 
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
 
     db = SessionLocal()
     proj_proxy = ""
@@ -2313,7 +2548,7 @@ async def audit_jwt_security(
 async def delete_attack_surface_node(
     node_type: str,
     node_id: int,
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Deletes an asset, service (port), or endpoint from the Proxynth attack surface knowledge graph.
@@ -2325,7 +2560,7 @@ async def delete_attack_surface_node(
     """
     from backend.target_manager import delete_target_asset, delete_target_endpoint, delete_target_service
 
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
     ntype = node_type.strip().lower()
 
     if ntype in ["asset", "host", "target"]:
@@ -2354,7 +2589,7 @@ async def delete_attack_surface_node(
 
 @mcp.tool()
 async def clear_attack_surface_graph(
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Clears all target assets, services, and endpoints from the attack surface knowledge graph for a project.
@@ -2364,7 +2599,7 @@ async def clear_attack_surface_graph(
     """
     from backend.target_manager import clear_target_graph
 
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=True)
     cleared_count = clear_target_graph(project=target_project)
     return json.dumps({
         "status": "cleared",
@@ -2418,7 +2653,7 @@ async def spray_oast_canaries(
     body: str = "",
     target_params: Optional[List[str]] = None,
     vuln_types: Optional[List[str]] = None,
-    project: str = "default",
+    project: Optional[str] = None,
     agent_id: str = "primary_agent"
 ) -> str:
     """
@@ -2433,12 +2668,12 @@ async def spray_oast_canaries(
       - body: Optional body data.
       - target_params: Specific parameters to spray (leave empty to auto-discover all parameters).
       - vuln_types: List of vulnerability vectors ('ssrf', 'dns', 'log4j', 'xxe', 'all'). Defaults to ['ssrf', 'dns', 'log4j'].
-      - project: Project workspace name. Defaults to 'default'.
+      - project: Project workspace name. Defaults to active project or 'default'.
       - agent_id: Identifier of the testing agent. Defaults to 'primary_agent'.
     """
     from backend.oast_sprayer import spray_oast_canaries as run_spray
 
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
 
     # Scope validation
     db = SessionLocal()
@@ -2476,7 +2711,7 @@ async def record_testing_hypothesis(
     hypothesis: str,
     status: str = "PLANNED",
     evidence_notes: str = "",
-    project: str = "default",
+    project: Optional[str] = None,
     agent_id: str = "primary_agent"
 ) -> str:
     """
@@ -2489,12 +2724,12 @@ async def record_testing_hypothesis(
       - hypothesis: Specific reasoning and attack hypothesis (e.g. 'Testing IDOR on user_id param because endpoint returns order object').
       - status: Status ('PLANNED', 'TESTING', 'CONFIRMED', 'DISPROVEN', 'BLOCKED'). Defaults to 'PLANNED'.
       - evidence_notes: Preliminary evidence or reasoning notes.
-      - project: Project workspace name. Defaults to 'default'.
+      - project: Project workspace name. Defaults to active project or 'default'.
       - agent_id: Agent identifier. Defaults to 'primary_agent'.
     """
     from backend.hypothesis_manager import create_hypothesis
 
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
     res = create_hypothesis(
         project=target_project,
         target=target,
@@ -2527,18 +2762,18 @@ async def record_testing_hypothesis(
 
 @mcp.tool()
 async def get_testing_agenda(
-    project: str = "default"
+    project: Optional[str] = None
 ):
     """
     Retrieves the agent's active testing agenda and to-do list of unverified attack hypotheses.
     Use this at the beginning of a session or after compaction to know exactly what targets still need testing.
 
     Parameters:
-      - project: Project workspace name. Defaults to 'default'.
+      - project: Project workspace name ('all' for entire scope, or omit for active project).
     """
     from backend.hypothesis_manager import get_testing_agenda as fetch_agenda
 
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=True)
     agenda = fetch_agenda(project=target_project)
     return json.dumps(agenda, indent=2)
 
@@ -2552,7 +2787,7 @@ async def update_hypothesis_status(
     hypothesis_id: int,
     status: str,
     evidence_notes: str = "",
-    project: str = "default"
+    project: Optional[str] = None
 ):
     """
     Updates the status and findings evidence of a recorded attack hypothesis.
@@ -2561,11 +2796,11 @@ async def update_hypothesis_status(
       - hypothesis_id: ID of the hypothesis to update.
       - status: New status ('PLANNED', 'TESTING', 'CONFIRMED', 'DISPROVEN', 'BLOCKED').
       - evidence_notes: Verified findings, response excerpt, or disproof explanation.
-      - project: Project workspace name. Defaults to 'default'.
+      - project: Project workspace name. Defaults to active project or 'all'.
     """
     from backend.hypothesis_manager import update_hypothesis as edit_hypothesis
 
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=True)
     res = edit_hypothesis(
         hypothesis_id=hypothesis_id,
         status=status,
@@ -2602,7 +2837,7 @@ async def verify_dom_execution(
     param_name: Optional[str] = None,
     trigger_event: str = "load",
     wait_timeout_ms: int = 4000,
-    project: str = "default"
+    project: Optional[str] = None
 ) -> str:
     """
     Spawns a sandboxed headless Chromium browser to deterministically verify whether a client-side
@@ -2619,7 +2854,7 @@ async def verify_dom_execution(
     """
     from backend.browser_oracle import verify_dom_execution as run_oracle
 
-    target_project = (project or DEFAULT_PROJECT).strip().lower()
+    target_project = _resolve_project(project, allow_all=False)
 
     # Scope validation
     db = SessionLocal()
@@ -2637,6 +2872,331 @@ async def verify_dom_execution(
         trigger_event=trigger_event,
         wait_timeout_ms=wait_timeout_ms
     )
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# MCP Tools: Public Ingress Tunnel (OAST & Webhooks)
+# ==============================================================================
+
+@mcp.tool()
+async def setup_public_tunnel(
+    provider: str = "auto",
+    local_port: int = 8000,
+    project: Optional[str] = None
+) -> str:
+    """
+    Spins up a public Cloudflare Quick Tunnel or ngrok tunnel, binding the public URL
+    to Proxsynth's OAST callback listener. Enables external targets to deliver callbacks
+    (SSRF, Blind SQLi, XXE, OOB RCE) across NAT and firewalls.
+    """
+    from backend.tunnel_manager import start_public_tunnel
+    proj = _resolve_project(project, allow_all=False)
+    res = await start_public_tunnel(provider=provider, local_port=local_port, project=proj)
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def get_tunnel_status() -> str:
+    """
+    Returns the operational status, provider, public URL, uptime, and callback base URL
+    for the active public ingress tunnel.
+    """
+    from backend.tunnel_manager import get_tunnel_status as get_status
+    return json.dumps(get_status(), indent=2)
+
+
+@mcp.tool()
+async def close_public_tunnel() -> str:
+    """
+    Gracefully terminates the active public tunnel and restores the OAST callback URL to local backend.
+    """
+    from backend.tunnel_manager import stop_public_tunnel
+    res = await stop_public_tunnel()
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# MCP Tools: Autonomous Interception & Match/Replace Rules
+# ==============================================================================
+
+@mcp.tool()
+async def add_interception_rule(
+    name: str,
+    rule_type: str = "REQUEST",  # REQUEST, RESPONSE, MOCK
+    match_url: str = "*",
+    match_method: str = "*",
+    match_header: str = "",
+    match_body: str = "",
+    action_type: str = "REPLACE_HEADER",  # REPLACE_HEADER, REMOVE_HEADER, REPLACE_BODY, REWRITE_URL, MOCK_RESPONSE
+    action_target: str = "",
+    action_value: str = "",
+    action_extra: Optional[Dict[str, Any]] = None,
+    priority: int = 10,
+    project: Optional[str] = None
+) -> str:
+    """
+    Adds a headless interception rule to automatically mutate requests/responses or return synthetic mock responses.
+    Allows AI agents to tamper with headers (e.g. X-Forwarded-For, Authorization), replace body contents, or mock 200/403 responses.
+    """
+    from backend.interception_engine import add_interception_rule as add_rule
+    proj = _resolve_project(project, allow_all=False)
+    rule = add_rule(
+        name=name,
+        rule_type=rule_type,
+        match_url=match_url,
+        match_method=match_method,
+        match_header=match_header,
+        match_body=match_body,
+        action_type=action_type,
+        action_target=action_target,
+        action_value=action_value,
+        action_extra=action_extra,
+        project=proj,
+        priority=priority,
+        enabled=True
+    )
+    return json.dumps(rule, indent=2)
+
+
+@mcp.tool()
+async def list_interception_rules(project: Optional[str] = None) -> str:
+    """
+    Lists all active and configured interception and match/replace rules for the target project.
+    """
+    from backend.interception_engine import list_interception_rules as list_rules
+    proj = _resolve_project(project, allow_all=True)
+    rules = list_rules(project=proj)
+    return json.dumps(rules, indent=2)
+
+
+@mcp.tool()
+async def toggle_interception_rule(rule_id: int, enabled: Optional[bool] = None) -> str:
+    """
+    Toggles or sets the enabled status of an interception rule by rule ID.
+    """
+    from backend.interception_engine import toggle_interception_rule as toggle_rule
+    res = toggle_rule(rule_id=rule_id, enabled=enabled)
+    if not res:
+        return json.dumps({"status": "error", "message": f"Rule #{rule_id} not found"}, indent=2)
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def delete_interception_rule(rule_id: int) -> str:
+    """
+    Permanently deletes an interception rule by rule ID.
+    """
+    from backend.interception_engine import delete_interception_rule as del_rule
+    ok = del_rule(rule_id=rule_id)
+    return json.dumps({"status": "success" if ok else "not_found", "deleted_rule_id": rule_id}, indent=2)
+
+
+# ==============================================================================
+# MCP Tools: Dynamic Anti-CSRF Token Management
+# ==============================================================================
+
+@mcp.tool()
+async def get_csrf_tokens(domain: Optional[str] = None, project: Optional[str] = None) -> str:
+    """
+    Retrieves all auto-tracked and manual anti-CSRF tokens extracted from HTTP responses.
+    """
+    from backend.session_tracker import get_tracked_csrf_tokens
+    proj = _resolve_project(project, allow_all=True)
+    tokens = get_tracked_csrf_tokens(domain=domain, project=proj)
+    return json.dumps(tokens, indent=2)
+
+
+@mcp.tool()
+async def set_csrf_token(
+    domain: str,
+    token_value: str,
+    token_name: str = "csrf_token",
+    project: Optional[str] = None
+) -> str:
+    """
+    Manually sets an anti-CSRF token for a target domain, which will be auto-injected
+    into subsequent POST/PUT/PATCH/DELETE requests.
+    """
+    from backend.session_tracker import set_manual_csrf_token
+    proj = _resolve_project(project, allow_all=False)
+    rec = set_manual_csrf_token(domain=domain, token_name=token_name, token_value=token_value, project=proj)
+    return json.dumps(rec, indent=2)
+
+
+@mcp.tool()
+async def clear_csrf_tokens(domain: Optional[str] = None, project: Optional[str] = None) -> str:
+    """
+    Clears cached anti-CSRF tokens for a domain or project.
+    """
+    from backend.session_tracker import clear_tracked_csrf_tokens
+    proj = _resolve_project(project, allow_all=True)
+    cleared = clear_tracked_csrf_tokens(domain=domain, project=proj)
+    return json.dumps({"status": "success", "cleared_count": cleared}, indent=2)
+
+
+# ==============================================================================
+# MCP Tools: Advanced Multi-Dimensional Traffic Search
+# ==============================================================================
+
+@mcp.tool()
+async def search_traffic_advanced(
+    query: str = "",
+    domain: Optional[str] = None,
+    method: Optional[str] = None,
+    status_min: Optional[int] = None,
+    status_max: Optional[int] = None,
+    path_pattern: Optional[str] = None,
+    has_findings: bool = False,
+    min_duration_ms: Optional[int] = None,
+    limit: int = 30,
+    project: Optional[str] = None
+) -> str:
+    """
+    Performs high-performance multi-dimensional queries across captured HTTP proxy traffic.
+    Filter by status ranges (e.g. 500-599), latency thresholds, URL path patterns, and body full-text.
+    """
+    from backend.traffic_search import search_traffic_advanced as search_adv
+    proj = _resolve_project(project, allow_all=True)
+    res = search_adv(
+        query=query,
+        domain=domain,
+        method=method,
+        status_min=status_min,
+        status_max=status_max,
+        path_pattern=path_pattern,
+        has_findings=has_findings,
+        min_duration_ms=min_duration_ms,
+        project=proj,
+        limit=limit
+    )
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def analyze_traffic_patterns(project: Optional[str] = None) -> str:
+    """
+    Analyzes all captured traffic in a workspace, returning endpoint route inventories,
+    status code distributions, discovered GET/POST/JSON parameter inventories, and latency statistics.
+    """
+    from backend.traffic_search import analyze_traffic_patterns as analyze_patterns
+    proj = _resolve_project(project, allow_all=True)
+    res = analyze_patterns(project=proj)
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# MCP Tools: GraphQL & WebSocket Protocol Security Inspector
+# ==============================================================================
+
+@mcp.tool()
+async def inspect_graphql_endpoint(
+    url: str,
+    headers: Optional[Dict[str, str]] = None,
+    project: Optional[str] = None
+) -> str:
+    """
+    Performs automated security inspection on a GraphQL endpoint:
+    - Tests for schema introspection disclosure and maps queries/mutations
+    - Identifies sensitive field names (passwords, tokens, secrets)
+    - Tests for Clairvoyance / field suggestion leakage when introspection is disabled
+    - Tests for query batching amplification support
+    """
+    from backend.protocol_inspector import inspect_graphql_endpoint as inspect_gql
+    proj = _resolve_project(project, allow_all=False)
+    res = await inspect_gql(url=url, headers=headers, project=proj)
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def audit_websocket_security(
+    url: str,
+    headers: Optional[Dict[str, str]] = None,
+    project: Optional[str] = None
+) -> str:
+    """
+    Performs security audit on a WebSocket handshake:
+    - Tests for Cross-Site WebSocket Hijacking (CSWSH) via untrusted Origin validation
+    - Checks for unencrypted plaintext ws:// transport
+    - Audits sensitive authentication credentials exposed in query parameters
+    """
+    from backend.protocol_inspector import audit_websocket_security as audit_ws
+    proj = _resolve_project(project, allow_all=False)
+    res = await audit_ws(url=url, headers=headers, project=proj)
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# MCP Tools: Automated CI/CD & API Security Auditor
+# ==============================================================================
+
+@mcp.tool()
+async def run_security_audit_suite(
+    project: Optional[str] = None,
+    min_severity: str = "LOW"
+) -> str:
+    """
+    Runs automated OWASP API security audit across proxy-captured traffic, computing
+    an overall security score (0-100), letter grade (A+ to F), and violation breakdown.
+    """
+    from backend.ci_auditor import run_security_audit_suite as run_audit
+    proj = _resolve_project(project, allow_all=True)
+    res = run_audit(project=proj, min_severity=min_severity)
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def generate_audit_ci_report(
+    project: Optional[str] = None,
+    output_format: str = "markdown"
+) -> str:
+    """
+    Generates a publication-grade Markdown or JSON security report for CI/CD pipelines (GitHub Actions, GitLab CI).
+    """
+    from backend.ci_auditor import generate_audit_ci_report as gen_report
+    proj = _resolve_project(project, allow_all=True)
+    return gen_report(project=proj, output_format=output_format)
+
+
+# ==============================================================================
+# MCP Tool: update_proxsynth_system (Autonomous Self-Update & Codebase Sync)
+# ==============================================================================
+
+@mcp.tool()
+async def update_proxsynth_system(
+    confirm: bool = False,
+    force_check: bool = False
+) -> str:
+    """
+    Checks for and applies updates to the Proxsynth platform and FastMCP Server directly from Git.
+    When `confirm=False` (default), performs a non-destructive check against the remote repository,
+    returning current version, latest version, commits behind, and changelog highlights.
+    When `confirm=True`, automatically executes git pull, updates dependencies via pip, and
+    synchronizes the Proxsynth runtime without operator manual intervention.
+    """
+    from backend.update_manager import async_check_for_updates, async_perform_system_update
+
+    if not confirm:
+        chk = await async_check_for_updates(force=force_check)
+        if chk.get("update_available"):
+            cl_text = "\n".join([f"- {c}" for c in chk.get("changelog", [])])
+            return (
+                f"[⚡ PROXSYNTH UPDATE AVAILABLE]\n"
+                f"Current Version: v{chk.get('current_version')} (#{chk.get('current_commit')})\n"
+                f"Latest Available: v{chk.get('latest_version')} (#{chk.get('latest_commit')})\n"
+                f"Commits Behind: {chk.get('commits_behind')}\n\n"
+                f"Changelog:\n{cl_text}\n\n"
+                f"To apply this update now, call `update_proxsynth_system(confirm=True)`."
+            )
+        else:
+            return (
+                f"[✓ PROXSYNTH IS UP TO DATE]\n"
+                f"Version: v{chk.get('current_version')} (#{chk.get('current_commit')}) on branch [{chk.get('branch')}].\n"
+                f"Checked at: {chk.get('checked_at')}"
+            )
+
+    # Perform automated update
+    res = await async_perform_system_update()
     return json.dumps(res, indent=2)
 
 

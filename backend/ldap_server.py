@@ -1,5 +1,5 @@
 """
-Proxynth - Multi-Protocol OAST LDAP & JNDI Callback Listener
+Proxsynth - Multi-Protocol OAST LDAP & JNDI Callback Listener
 Catches incoming LDAP bind/search queries (e.g. jndi:ldap://host:port/{token})
 for detecting Blind Log4j, Spring4Shell, and JNDI Injection vulnerabilities.
 """

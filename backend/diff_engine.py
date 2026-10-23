@@ -1,5 +1,5 @@
 """
-Proxynth - Semantic Structural Diffing & Noise Reduction Engine
+Proxsynth - Semantic Structural Diffing & Noise Reduction Engine
 Normalizes dynamic tokens, timestamps, nonces, and volatile session parameters to deliver
 deterministic differential analysis, eliminating token bloat and detecting Soft-403 / Soft-404 heuristics.
 """

@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 :: Check if virtual environment exists; if not, trigger installer
 if not exist "venv\Scripts\python.exe" (
-    echo [*] Proxynth environment not detected. Running automated installer...
+    echo [*] Proxsynth environment not detected. Running automated installer...
     call install.bat
     if %errorlevel% neq 0 (
         echo [!] Installation failed. Aborting.
@@ -17,7 +17,7 @@ set "MODE=%~1"
 if "%MODE%"=="" set "MODE=dashboard"
 if /i "%MODE%"=="dashboard" (
     echo ========================================================================
-    echo   Starting Proxynth Web Dashboard
+    echo   Starting Proxsynth Web Dashboard
     echo   URL: http://127.0.0.1:8000
     echo ========================================================================
     venv\Scripts\python.exe -m uvicorn backend.app:app --host 127.0.0.1 --port 8000 --reload
@@ -31,9 +31,9 @@ if /i "%MODE%"=="mcp" (
 )
 
 if /i "%MODE%"=="all" (
-    echo [*] Starting Proxynth Dashboard in background window...
-    start "Proxynth Dashboard Port 8000" venv\Scripts\python.exe -m uvicorn backend.app:app --host 127.0.0.1 --port 8000 --reload
-    echo [*] Starting Proxynth MCP Server in foreground...
+    echo [*] Starting Proxsynth Dashboard in background window...
+    start "Proxsynth Dashboard Port 8000" venv\Scripts\python.exe -m uvicorn backend.app:app --host 127.0.0.1 --port 8000 --reload
+    echo [*] Starting Proxsynth MCP Server in foreground...
     venv\Scripts\python.exe mcp_server.py
     exit /b %errorlevel%
 )

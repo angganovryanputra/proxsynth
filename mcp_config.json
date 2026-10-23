@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "proxynth": {
+    "proxsynth": {
       "command": "d:/PROJECT/01/venv/Scripts/python.exe",
       "args": [
         "d:/PROJECT/01/mcp_server.py"

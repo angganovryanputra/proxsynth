@@ -1,11 +1,11 @@
 """
-Proxynth / AetherGate - OAST (Out-of-Band Application Security Testing) Engine
+Proxsynth - OAST (Out-of-Band Application Security Testing) Engine
 Handles generation of unique correlation tokens, listener endpoints,
 and real-time callback capture for Blind SSRF, Blind SQLi, Out-of-Band RCE, and DNS queries.
 Supports:
   1. Interactsh Cloud / Public OAST (ProjectDiscovery protocol via oast.fun / oast.live)
   2. Custom Public Callback URL / Domain (e.g. ngrok, VPS, collaborator)
-  3. Local Loopback / Lab listener (127.0.0.1:8000 / *.proxynth.local)
+  3. Local Loopback / Lab listener (127.0.0.1:8000 / *.proxsynth.local)
 """
 
 import os
@@ -123,7 +123,7 @@ class InteractshSession:
     async def poll_and_record(self) -> List[Dict[str, Any]]:
         """
         Polls Interactsh server, decrypts received payloads,
-        and records them into the Proxynth SQLite database.
+        and records them into the Proxsynth SQLite database.
         """
         if not self._registered:
             ok = await self.register()
@@ -267,7 +267,7 @@ def generate_oast_token(
                           custom URL if set, or local listener if offline.
       - 'interactsh': Forces ProjectDiscovery Interactsh out-of-band listener.
       - 'custom': Uses PROXSYNTH_OAST_CALLBACK_URL / PROXSYNTH_OAST_DOMAIN.
-      - 'local': Uses local Proxynth listener (127.0.0.1:8000 / *.proxynth.local).
+      - 'local': Uses local Proxsynth listener (127.0.0.1:8000 / *.proxsynth.local).
     """
     target_project = (project or "default").strip().lower()
     clean_provider = (provider or "auto").strip().lower()
@@ -313,7 +313,7 @@ def generate_oast_token(
     if effective_provider == "local":
         base_url = get_base_callback_url()
         callback_url = f"{base_url}/oast/{token}"
-        dns_hostname = f"{token}.oast.proxynth.local"
+        dns_hostname = f"{token}.oast.proxsynth.local"
 
     # Pre-register waiter event in memory
     _active_waiters[token] = asyncio.Event()

@@ -1,5 +1,5 @@
 """
-Proxynth MCP - Intercept & Scope Guardrail Manager
+Proxsynth MCP - Intercept & Scope Guardrail Manager
 Manages real-time request traps (breakpoints) and out-of-scope domain boundaries.
 """
 
@@ -134,7 +134,7 @@ def _get_project_scope_data(project_name: str, db: Session) -> Optional[Dict[str
 
 
 def _is_self_loop(url: str) -> Tuple[bool, Optional[str]]:
-    """Prevents recursive infinite proxy loops directed at Proxynth's own service ports."""
+    """Prevents recursive infinite proxy loops directed at Proxsynth's own service ports."""
     try:
         parsed = urllib.parse.urlparse(url)
         hostname = (parsed.hostname or "").strip().lower()
@@ -151,7 +151,7 @@ def _is_self_loop(url: str) -> Tuple[bool, Optional[str]]:
                 except Exception:
                     pass
             if port in [current_proxy_port, current_backend_port]:
-                return True, f"Recursive proxy loop blocked: Target points to Proxynth's own service port ({port})."
+                return True, f"Recursive proxy loop blocked: Target points to Proxsynth's own service port ({port})."
     except Exception:
         pass
     return False, None
@@ -205,7 +205,7 @@ def check_scope(project_name: str, url: str, db: Session) -> Tuple[bool, Optiona
     """
     Validates whether a URL is within authorized scope (Synchronous).
     - If scope_enabled is False (DEFAULT): NO GUARDRAILS (all internal/external targets permitted).
-    - Only anti-self-loopback to Proxynth's own proxy/backend port is prevented to avoid crash loops.
+    - Only anti-self-loopback to Proxsynth's own proxy/backend port is prevented to avoid crash loops.
     - When scope_enabled is True: enforces configured allowed hosts, blocked patterns, and SSRF policies.
     """
     is_loop, loop_reason = _is_self_loop(url)
@@ -230,7 +230,7 @@ async def async_check_scope(project_name: str, url: str, db: Session) -> Tuple[b
     """
     Asynchronously validates whether a URL is within authorized scope.
     - If scope_enabled is False (DEFAULT): NO GUARDRAILS (all internal/external targets permitted).
-    - Only anti-self-loopback to Proxynth's own proxy/backend port is prevented to avoid crash loops.
+    - Only anti-self-loopback to Proxsynth's own proxy/backend port is prevented to avoid crash loops.
     - When scope_enabled is True: enforces configured allowed hosts, blocked patterns, and SSRF policies.
     """
     is_loop, loop_reason = _is_self_loop(url)

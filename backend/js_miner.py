@@ -1,5 +1,5 @@
 """
-Proxynth - Passive & Active JavaScript Recon, Endpoint & Secret Miner
+Proxsynth - Passive & Active JavaScript Recon, Endpoint & Secret Miner
 Extracts hidden API endpoints, routes, query/body parameters, source maps,
 and leaked credentials (AWS, JWT, Slack, API keys) from client-side JavaScript assets.
 """

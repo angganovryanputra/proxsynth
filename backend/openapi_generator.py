@@ -1,5 +1,5 @@
 """
-Proxynth MCP - Auto-Reverse OpenAPI 3.0.3 Specification Generator
+Proxsynth MCP - Auto-Reverse OpenAPI 3.0.3 Specification Generator
 Extracts real-time observed HTTP proxy traffic and synthesizes a valid, structured OpenAPI 3.0 specification.
 """
 
@@ -50,7 +50,7 @@ def generate_openapi_spec(project_name: str, db: Session) -> Dict[str, Any]:
     
     # Query project info
     proj = db.query(Project).filter(Project.name == clean_project).first()
-    proj_desc = proj.description if proj and proj.description else f"Observed API endpoints captured by Proxynth MCP for project '{clean_project}'"
+    proj_desc = proj.description if proj and proj.description else f"Observed API endpoints captured by Proxsynth MCP for project '{clean_project}'"
 
     # Query logs
     query = db.query(HttpLog)
@@ -84,7 +84,7 @@ def generate_openapi_spec(project_name: str, db: Session) -> Dict[str, Any]:
             paths[raw_path][method] = {
                 "tags": [tag],
                 "summary": f"{method.upper()} {raw_path}",
-                "description": f"Observed from Proxynth MCP proxy traffic (Last reasoning: {log.reasoning or 'Automated AI Pentest'})",
+                "description": f"Observed from Proxsynth MCP proxy traffic (Last reasoning: {log.reasoning or 'Automated AI Pentest'})",
                 "parameters": [],
                 "responses": {}
             }
@@ -169,12 +169,12 @@ def generate_openapi_spec(project_name: str, db: Session) -> Dict[str, Any]:
     spec = {
         "openapi": "3.0.3",
         "info": {
-            "title": f"Proxynth MCP Auto-Reverse API - {clean_project.upper()}",
-            "version": "1.0.0",
+            "title": f"Proxsynth MCP Auto-Reverse API - {clean_project.upper()}",
+            "version": "2.5.0",
             "description": proj_desc,
             "contact": {
-                "name": "Proxynth Observability Engine",
-                "url": "https://github.com/proxynth-mcp"
+                "name": "Proxsynth Observability Engine",
+                "url": "https://github.com/proxsynth-mcp"
             }
         },
         "servers": servers,
