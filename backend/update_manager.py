@@ -12,7 +12,7 @@ import subprocess
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
 
-PROXSYNTH_VERSION = "2.5.0"
+PROXSYNTH_VERSION = "0.1.0-beta"
 CURRENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 _last_update_check: Optional[Dict[str, Any]] = None
@@ -96,7 +96,7 @@ async def async_check_for_updates(force: bool = False) -> Dict[str, Any]:
         res = {
             "update_available": True,
             "current_version": PROXSYNTH_VERSION,
-            "latest_version": "2.5.1",
+            "latest_version": "0.1.1-beta",
             "current_commit": current_commit,
             "latest_commit": "a1b2c3d",
             "branch": branch,

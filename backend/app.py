@@ -58,7 +58,7 @@ init_db()
 app = FastAPI(
     title="Proxsynth Platform",
     description="Autonomous Agentic Interception Proxy & Security Telemetry Platform for AI Agents",
-    version="2.5.0"
+    version="0.1.0-beta"
 )
 
 @app.on_event("startup")
@@ -1646,7 +1646,7 @@ async def test_payload_api(data: TestPayloadRequest, db: Session = Depends(get_d
 
     method = (data.http_method or "GET").upper()
     req_headers = data.headers or {}
-    req_headers["User-Agent"] = req_headers.get("User-Agent", "Proxsynth-Payload-Tester/2.5.0")
+    req_headers["User-Agent"] = req_headers.get("User-Agent", "Proxsynth-Payload-Tester/0.1.0-beta")
 
     final_url = target_url
     req_body = None
@@ -2987,14 +2987,14 @@ def get_ci_audit_report_endpoint(project: Optional[str] = None, format: str = "m
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "platform": "Proxsynth", "version": "2.5.0"}
+    return {"status": "ok", "platform": "Proxsynth", "version": "0.1.0-beta"}
 
 @app.get("/api/info")
 def platform_info():
     return {
         "status": "online",
         "platform": "Proxsynth",
-        "version": "2.5.0",
+        "version": "0.1.0-beta",
         "mode": "autonomous",
         "intercept_active": is_intercept_enabled()
     }

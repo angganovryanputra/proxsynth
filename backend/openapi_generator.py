@@ -170,7 +170,7 @@ def generate_openapi_spec(project_name: str, db: Session) -> Dict[str, Any]:
         "openapi": "3.0.3",
         "info": {
             "title": f"Proxsynth MCP Auto-Reverse API - {clean_project.upper()}",
-            "version": "2.5.0",
+            "version": "0.1.0-beta",
             "description": proj_desc,
             "contact": {
                 "name": "Proxsynth Observability Engine",

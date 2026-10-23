@@ -159,14 +159,47 @@
       </button>
     </div>
 
+    <!-- PROJECT SCOPE SELECTOR (Top of Sidebar for Immediate Scope Context) -->
+    <div x-show="sidebarExpanded" class="px-2.5 pt-2.5 pb-1 shrink-0">
+      <div class="bg-[#111827] border border-[#1E293B] rounded-lg p-2 space-y-1.5 focus-within:border-sky-500/50 shadow-sm transition">
+        <div class="flex items-center justify-between text-[10px] text-slate-400 uppercase font-mono tracking-wider">
+          <span class="flex items-center space-x-1.5">
+            <i data-lucide="folder-git-2" class="w-3.5 h-3.5 text-indigo-400"></i>
+            <span class="font-bold text-slate-300">Project Scope</span>
+          </span>
+          <button @click="openNewProjectModal = true" class="text-indigo-400 hover:text-indigo-300 font-bold px-1.5 py-0.2 rounded hover:bg-indigo-950/60 transition flex items-center space-x-1"
+            title="Create New Project">
+            <span class="text-xs">+</span>
+            <span class="text-[9px]">NEW</span>
+          </button>
+        </div>
+        <select x-model="selectedProject" @change="onProjectChange()"
+          class="w-full bg-[#0B0F17] text-xs text-sky-300 font-mono font-semibold focus:outline-none cursor-pointer border border-[#1E293B] hover:border-slate-700 focus:border-sky-500 rounded px-2 py-1 truncate">
+          <option value="ALL">🌐 ALL PROJECTS (Global Scope)</option>
+          <template x-for="p in projects" :key="p.id">
+            <option :value="p.name" x-text="p.name + ' (' + p.requests_count + ' reqs)'"></option>
+          </template>
+        </select>
+      </div>
+    </div>
+
+    <!-- Project Scope Trigger (Collapsed Mode) -->
+    <div x-show="!sidebarExpanded" class="pt-2.5 pb-1 flex justify-center shrink-0">
+      <button @click="toggleSidebar()"
+        class="w-10 h-10 rounded-lg bg-[#111827] border border-[#1E293B] hover:border-indigo-500/60 flex items-center justify-center text-indigo-400 hover:text-indigo-300 shadow-sm transition"
+        :title="'Target Project Scope: ' + selectedProject + ' (Click to expand)'">
+        <i data-lucide="folder-git-2" class="w-4 h-4"></i>
+      </button>
+    </div>
+
     <!-- Sidebar Navigation Scroll Area -->
     <div class="flex-1 overflow-y-auto px-2 py-3 space-y-4 smooth-scroll">
 
-      <!-- CLUSTER 1: GATEWAY & TESTING -->
+      <!-- CLUSTER 1: CORE TRAFFIC -->
       <div>
         <div x-show="sidebarExpanded"
           class="px-3 mb-1.5 text-[10px] font-mono font-bold tracking-wider uppercase text-slate-500">
-          Gateway &amp; Testing
+          Core Traffic
         </div>
         <div x-show="!sidebarExpanded" class="h-px bg-[#1E293B] mx-2 mb-2"></div>
 
@@ -251,55 +284,11 @@
         </nav>
       </div>
 
-      <!-- CLUSTER 2: RECON & TARGETS -->
+      <!-- CLUSTER 2: INTELLIGENCE & AI -->
       <div>
         <div x-show="sidebarExpanded"
           class="px-3 mb-1.5 text-[10px] font-mono font-bold tracking-wider uppercase text-slate-500">
-          Recon &amp; Discovery
-        </div>
-        <div x-show="!sidebarExpanded" class="h-px bg-[#1E293B] mx-2 mb-2"></div>
-
-        <nav class="space-y-1 font-mono text-xs">
-          <!-- Attack Surface Graph -->
-          <button @click="currentAppTab = 'attack_surface'; fetchAttackSurface()"
-            :class="currentAppTab === 'attack_surface' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'Attack Surface Graph' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center relative"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="network" class="w-4 h-4 shrink-0 text-cyan-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">Attack Surface</span>
-            </div>
-            <span
-              x-show="attackSurfaceData && attackSurfaceData.summary && attackSurfaceData.summary.total_endpoints > 0"
-              class="px-1.5 py-0.5 rounded text-[10px] bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-semibold"
-              :class="!sidebarExpanded ? 'absolute top-1 right-1 text-[8px] px-1' : ''"
-              x-text="attackSurfaceData && attackSurfaceData.summary ? attackSurfaceData.summary.total_endpoints : 0"></span>
-          </button>
-
-          <!-- OAST Engine -->
-          <button @click="currentAppTab = 'oast'; fetchOastEvents()"
-            :class="currentAppTab === 'oast' ? 'bg-orange-500/15 text-orange-300 border border-orange-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'OAST Callbacks Engine' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center relative"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="radio" class="w-4 h-4 shrink-0 text-orange-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">OAST Engine</span>
-            </div>
-            <span x-show="oastEvents && oastEvents.length > 0"
-              class="px-1.5 py-0.5 rounded text-[10px] bg-orange-950/80 text-orange-300 border border-orange-800/60 font-semibold"
-              :class="!sidebarExpanded ? 'absolute top-1 right-1 text-[8px] px-1' : ''"
-              x-text="oastEvents ? oastEvents.length : 0"></span>
-          </button>
-        </nav>
-      </div>
-
-      <!-- CLUSTER 3: AI & GOVERNANCE -->
-      <div>
-        <div x-show="sidebarExpanded"
-          class="px-3 mb-1.5 text-[10px] font-mono font-bold tracking-wider uppercase text-slate-500">
-          AI &amp; Governance
+          Intelligence &amp; AI
         </div>
         <div x-show="!sidebarExpanded" class="h-px bg-[#1E293B] mx-2 mb-2"></div>
 
@@ -320,7 +309,24 @@
               x-text="(stats.total_commands || 0) + (stats.total_payloads || 0)"></span>
           </button>
 
-          <!-- Attack Hypothesis Ledger / Agent Working Memory (P3) -->
+          <!-- Attack Surface Graph -->
+          <button @click="currentAppTab = 'attack_surface'; fetchAttackSurface()"
+            :class="currentAppTab === 'attack_surface' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
+            :title="!sidebarExpanded ? 'Attack Surface Graph' : ''"
+            class="w-full rounded-lg transition-all duration-150 flex items-center relative"
+            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
+            <div class="flex items-center space-x-2.5 truncate">
+              <i data-lucide="network" class="w-4 h-4 shrink-0 text-cyan-400"></i>
+              <span x-show="sidebarExpanded" class="truncate">Attack Surface</span>
+            </div>
+            <span
+              x-show="attackSurfaceData && attackSurfaceData.summary && attackSurfaceData.summary.total_endpoints > 0"
+              class="px-1.5 py-0.5 rounded text-[10px] bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-semibold"
+              :class="!sidebarExpanded ? 'absolute top-1 right-1 text-[8px] px-1' : ''"
+              x-text="attackSurfaceData && attackSurfaceData.summary ? attackSurfaceData.summary.total_endpoints : 0"></span>
+          </button>
+
+          <!-- Attack Hypothesis Ledger / Agent Working Memory -->
           <button @click="currentAppTab = 'hypotheses'; fetchHypotheses()"
             :class="currentAppTab === 'hypotheses' ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
             :title="!sidebarExpanded ? 'Attack Hypothesis Ledger (Working Memory)' : ''"
@@ -335,19 +341,18 @@
               :class="!sidebarExpanded ? 'absolute top-1 right-1 text-[8px] px-1' : ''"
               x-text="hypothesisAgenda ? hypothesisAgenda.total_hypotheses : 0"></span>
           </button>
+        </nav>
+      </div>
 
-          <!-- Scope Guardrails -->
-          <button @click="currentAppTab = 'scope'"
-            :class="currentAppTab === 'scope' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'Scope Guardrails' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="shield-check" class="w-4 h-4 shrink-0 text-emerald-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">Scope Guardrails</span>
-            </div>
-          </button>
+      <!-- CLUSTER 3: AUDIT & VALIDATION -->
+      <div>
+        <div x-show="sidebarExpanded"
+          class="px-3 mb-1.5 text-[10px] font-mono font-bold tracking-wider uppercase text-slate-500">
+          Audit &amp; Validation
+        </div>
+        <div x-show="!sidebarExpanded" class="h-px bg-[#1E293B] mx-2 mb-2"></div>
 
+        <nav class="space-y-1 font-mono text-xs">
           <!-- CI/CD Security Audit -->
           <button @click="currentAppTab = 'ci_audit'; runCiAudit()"
             :class="currentAppTab === 'ci_audit' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
@@ -362,6 +367,45 @@
               :class="ciAuditData && ciAuditData.score >= 80 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800'"
               x-text="ciAuditData ? ciAuditData.grade : ''"></span>
           </button>
+
+          <!-- OAST Engine -->
+          <button @click="currentAppTab = 'oast'; fetchOastEvents()"
+            :class="currentAppTab === 'oast' ? 'bg-orange-500/15 text-orange-300 border border-orange-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
+            :title="!sidebarExpanded ? 'OAST Callbacks Engine' : ''"
+            class="w-full rounded-lg transition-all duration-150 flex items-center relative"
+            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
+            <div class="flex items-center space-x-2.5 truncate">
+              <i data-lucide="radio" class="w-4 h-4 shrink-0 text-orange-400"></i>
+              <span x-show="sidebarExpanded" class="truncate">OAST Engine</span>
+            </div>
+            <span x-show="oastEvents && oastEvents.length > 0"
+              class="px-1.5 py-0.5 rounded text-[10px] bg-orange-950/80 text-orange-300 border border-orange-800/60 font-semibold"
+              :class="!sidebarExpanded ? 'absolute top-1 right-1 text-[8px] px-1' : ''"
+              x-text="oastEvents ? oastEvents.length : 0"></span>
+          </button>
+        </nav>
+      </div>
+
+      <!-- CLUSTER 4: GATEWAY & GUARDRAILS -->
+      <div>
+        <div x-show="sidebarExpanded"
+          class="px-3 mb-1.5 text-[10px] font-mono font-bold tracking-wider uppercase text-slate-500">
+          Gateway &amp; Guardrails
+        </div>
+        <div x-show="!sidebarExpanded" class="h-px bg-[#1E293B] mx-2 mb-2"></div>
+
+        <nav class="space-y-1 font-mono text-xs">
+          <!-- Scope Guardrails -->
+          <button @click="currentAppTab = 'scope'"
+            :class="currentAppTab === 'scope' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
+            :title="!sidebarExpanded ? 'Scope Guardrails' : ''"
+            class="w-full rounded-lg transition-all duration-150 flex items-center"
+            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
+            <div class="flex items-center space-x-2.5 truncate">
+              <i data-lucide="shield-check" class="w-4 h-4 shrink-0 text-emerald-400"></i>
+              <span x-show="sidebarExpanded" class="truncate">Scope Guardrails</span>
+            </div>
+          </button>
         </nav>
       </div>
 
@@ -369,32 +413,6 @@
 
     <!-- Sidebar Footer: Project Selector, Proxy Status, Session Cookies -->
     <div class="border-t border-[#1E293B] p-2.5 bg-[#0B0F17]/80 space-y-2 shrink-0 font-mono text-xs">
-
-      <!-- Project Selector (Expanded) -->
-      <div x-show="sidebarExpanded" class="bg-[#111827] border border-[#1E293B] rounded-lg p-2 space-y-1">
-        <div class="flex items-center justify-between text-[10px] text-slate-400 uppercase">
-          <span class="flex items-center space-x-1">
-            <i data-lucide="folder-git-2" class="w-3 h-3 text-indigo-400"></i>
-            <span>Project Scope</span>
-          </span>
-          <button @click="openNewProjectModal = true" class="text-indigo-400 hover:text-indigo-300 font-bold px-1"
-            title="Create New Project">+</button>
-        </div>
-        <select x-model="selectedProject" @change="onProjectChange()"
-          class="w-full bg-[#0B0F17] text-xs text-sky-300 font-mono font-semibold focus:outline-none cursor-pointer border border-[#1E293B] rounded px-2 py-1 truncate">
-          <option value="ALL">🌐 ALL PROJECTS</option>
-          <template x-for="p in projects" :key="p.id">
-            <option :value="p.name" x-text="p.name + ' (' + p.requests_count + ')'"></option>
-          </template>
-        </select>
-      </div>
-
-      <!-- Project Selector Trigger (Collapsed) -->
-      <button x-show="!sidebarExpanded" @click="toggleSidebar()"
-        class="w-10 h-10 mx-auto rounded-lg bg-[#111827] border border-[#1E293B] hover:border-indigo-500/50 flex items-center justify-center text-indigo-400 transition"
-        :title="'Current Project: ' + selectedProject + ' (Click to expand)'">
-        <i data-lucide="folder-git-2" class="w-4 h-4"></i>
-      </button>
 
       <!-- Proxy Port Status Pill (Expanded) -->
       <div x-show="sidebarExpanded"
@@ -480,6 +498,40 @@
           <span class="text-[11px] font-mono text-slate-400 hidden md:inline truncate"
             x-text="'· ' + getActiveTabSubtitle()"></span>
         </div>
+      </div>
+
+      <!-- GLOBAL TRAPPED REQUEST ALERT BAR (Sticky in Top Bar) -->
+      <div x-show="interceptEnabled && interceptPending && interceptPending.length > 0"
+        x-transition:enter="transition ease-out duration-200"
+        x-transition:enter-start="opacity-0 scale-95"
+        x-transition:enter-end="opacity-100 scale-100"
+        class="flex items-center space-x-1.5 bg-rose-950/95 border border-rose-500/80 text-rose-200 px-2.5 py-1 rounded-lg shadow-[0_0_15px_rgba(244,63,94,0.4)] font-mono text-xs shrink-0 mx-2"
+        x-cloak>
+        <div class="flex items-center space-x-1.5 font-bold mr-1">
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+          </span>
+          <span class="text-rose-100" x-text="interceptPending.length + ' Trapped'"></span>
+        </div>
+        <button @click="resolveIntercept(interceptPending[0].id, 'forward')"
+          class="px-2 py-0.5 bg-rose-600 hover:bg-rose-500 text-white rounded font-bold text-[11px] transition shadow flex items-center space-x-1"
+          title="Forward trapped request (Hotkey: F8 or Ctrl+Space)">
+          <i data-lucide="play" class="w-3 h-3"></i>
+          <span>Forward</span>
+          <span class="text-[9px] opacity-75 font-normal">F8</span>
+        </button>
+        <button @click="resolveIntercept(interceptPending[0].id, 'drop')"
+          class="px-2 py-0.5 bg-slate-800 hover:bg-rose-900 border border-rose-700/60 text-rose-300 rounded text-[11px] font-semibold transition flex items-center space-x-1"
+          title="Drop trapped request (Hotkey: Ctrl+D)">
+          <i data-lucide="trash-2" class="w-3 h-3"></i>
+          <span>Drop</span>
+        </button>
+        <button @click="currentAppTab = 'intercept'"
+          class="px-2 py-0.5 bg-rose-900/50 hover:bg-rose-800 text-rose-200 border border-rose-700/80 rounded text-[11px] transition"
+          title="Inspect trapped request in Intercept Tab">
+          <span>Inspect →</span>
+        </button>
       </div>
 
       <!-- Right Controls: Intercept Toggle, Proxy Port Badge, Live Status, Exports, Clear -->
@@ -603,6 +655,15 @@
               title="Reset all active search and column filters">
               <i data-lucide="x" class="w-3 h-3"></i>
               <span>Reset</span>
+            </button>
+
+            <!-- Table Density Toggle (Compact SOC vs Comfort Studio) -->
+            <button @click="toggleTableDensity()"
+              :class="tableDensity === 'compact' ? 'bg-sky-950 text-sky-300 border-sky-700 font-bold' : 'bg-[#0B0F17] text-slate-400 border-[#1E293B] hover:text-slate-200'"
+              class="px-2 py-1.5 rounded-md border text-xs font-mono transition flex items-center space-x-1"
+              :title="tableDensity === 'compact' ? 'Current: Compact SOC Density (Click for Comfort Studio)' : 'Current: Comfort Studio Density (Click for Compact SOC)'">
+              <i :data-lucide="tableDensity === 'compact' ? 'align-justify' : 'menu'" class="w-3.5 h-3.5"></i>
+              <span class="text-[10px] uppercase font-bold" x-text="tableDensity === 'compact' ? 'Compact' : 'Comfort'"></span>
             </button>
 
             <!-- Toggle Layout Orientation (Side-by-Side vs Stacked Top/Bottom) -->
@@ -896,12 +957,14 @@
                   class="flex items-center cursor-pointer transition select-text">
 
                   <!-- ID -->
-                  <div class="px-2.5 py-2 text-slate-500 text-[11px] truncate"
+                  <div :class="tableDensity === 'compact' ? 'px-2 py-1 text-[10px]' : 'px-2.5 py-2 text-[11px]'"
+                    class="text-slate-500 truncate"
                     :style="'width:' + colWidths.id + 'px; min-width:' + colWidths.id + 'px'" x-text="'#' + log.id">
                   </div>
 
                   <!-- Flag -->
-                  <div class="px-2.5 py-2 flex items-center truncate"
+                  <div :class="tableDensity === 'compact' ? 'px-2 py-1' : 'px-2.5 py-2'"
+                    class="flex items-center truncate"
                     :style="'width:' + colWidths.flag + 'px; min-width:' + colWidths.flag + 'px'">
                     <span x-show="log.flag_status === 'CONFIRMED'"
                       class="px-1.5 py-0.5 text-[9px] font-bold rounded bg-rose-950 border border-rose-800 text-rose-300 flex items-center space-x-1">
@@ -917,7 +980,8 @@
                   </div>
 
                   <!-- Project -->
-                  <div class="px-2.5 py-2 truncate"
+                  <div :class="tableDensity === 'compact' ? 'px-2 py-1' : 'px-2.5 py-2'"
+                    class="truncate"
                     :style="'width:' + colWidths.project + 'px; min-width:' + colWidths.project + 'px'">
                     <span
                       class="px-1.5 py-0.5 rounded text-[10px] bg-indigo-950/70 border border-indigo-800/60 text-indigo-300 font-mono truncate"
@@ -925,7 +989,8 @@
                   </div>
 
                   <!-- Agent -->
-                  <div class="px-2.5 py-2 truncate"
+                  <div :class="tableDensity === 'compact' ? 'px-2 py-1' : 'px-2.5 py-2'"
+                    class="truncate"
                     :style="'width:' + colWidths.agent + 'px; min-width:' + colWidths.agent + 'px'">
                     <span
                       class="px-1 py-0.5 rounded text-[9px] bg-purple-950/70 border border-purple-800/60 text-purple-300 font-mono truncate"
@@ -934,7 +999,8 @@
                   </div>
 
                   <!-- Method -->
-                  <div class="px-2.5 py-2 font-semibold truncate flex items-center space-x-1"
+                  <div :class="tableDensity === 'compact' ? 'px-2 py-1' : 'px-2.5 py-2'"
+                    class="font-semibold truncate flex items-center space-x-1"
                     :style="'width:' + colWidths.method + 'px; min-width:' + colWidths.method + 'px'">
                     <span :class="{
                     'text-[#38BDF8]': log.method === 'GET',
@@ -951,32 +1017,38 @@
                   </div>
 
                   <!-- Status -->
-                  <div class="px-2.5 py-2 font-bold truncate text-center"
-                    :style="'width:' + colWidths.status + 'px; min-width:' + colWidths.status + 'px'" :class="{
-                       'text-emerald-400': log.status_code >= 200 && log.status_code < 300,
-                       'text-sky-400': log.status_code >= 300 && log.status_code < 400,
-                       'text-amber-400': log.status_code >= 400 && log.status_code < 500,
-                       'text-rose-400': log.status_code >= 500 || !log.status_code
-                     }" x-text="log.status_code || 'ERR'">
+                  <div :class="[
+                        tableDensity === 'compact' ? 'px-2 py-1 text-[11px]' : 'px-2.5 py-2 text-xs',
+                        log.status_code >= 200 && log.status_code < 300 ? 'text-emerald-400' :
+                        log.status_code >= 300 && log.status_code < 400 ? 'text-sky-400' :
+                        log.status_code >= 400 && log.status_code < 500 ? 'text-amber-400' : 'text-rose-400'
+                      ]"
+                    class="font-bold truncate text-center"
+                    :style="'width:' + colWidths.status + 'px; min-width:' + colWidths.status + 'px'"
+                    x-text="log.status_code || 'ERR'">
                   </div>
 
                   <!-- Host -->
-                  <div class="px-2.5 py-2 truncate text-slate-300"
+                  <div :class="tableDensity === 'compact' ? 'px-2 py-1 text-[11px]' : 'px-2.5 py-2 text-xs'"
+                    class="truncate text-slate-300"
                     :style="'width:' + colWidths.host + 'px; min-width:' + colWidths.host + 'px'" x-text="log.host"
                     :title="log.host"></div>
 
                   <!-- Path -->
-                  <div class="px-2.5 py-2 truncate text-slate-100 font-medium"
+                  <div :class="tableDensity === 'compact' ? 'px-2 py-1 text-[11px]' : 'px-2.5 py-2 text-xs'"
+                    class="truncate text-slate-100 font-medium"
                     :style="'width:' + colWidths.path + 'px; min-width:' + colWidths.path + 'px'" x-text="log.path"
                     :title="log.path"></div>
 
                   <!-- Latency -->
-                  <div class="px-2.5 py-2 text-slate-400 text-[11px] truncate text-right"
+                  <div :class="tableDensity === 'compact' ? 'px-2 py-1 text-[10px]' : 'px-2.5 py-2 text-[11px]'"
+                    class="text-slate-400 truncate text-right"
                     :style="'width:' + colWidths.duration + 'px; min-width:' + colWidths.duration + 'px'"
                     x-text="log.duration_ms + 'ms'"></div>
 
                   <!-- Time -->
-                  <div class="px-2.5 py-2 text-slate-500 text-[10px] truncate text-right"
+                  <div :class="tableDensity === 'compact' ? 'px-2 py-1 text-[9px]' : 'px-2.5 py-2 text-[10px]'"
+                    class="text-slate-500 truncate text-right"
                     :style="'width:' + colWidths.time + 'px; min-width:' + colWidths.time + 'px'"
                     x-text="formatTime(log.timestamp)"></div>
                 </div>
@@ -1167,11 +1239,103 @@
                   <div class="text-xs text-slate-200 select-text" x-text="selectedLogDetail.reasoning"></div>
                 </div>
 
-                <!-- URL Bar -->
+                <!-- URL Bar & Smart In-Line Decoders -->
                 <div class="p-2.5 bg-[#0B0F17] rounded-md border border-[#1E293B] break-all">
-                  <span class="text-sky-400 font-bold mr-2" x-text="selectedLogDetail.method"></span>
-                  <span class="text-slate-100" x-text="selectedLogDetail.url"></span>
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <span class="text-sky-400 font-bold mr-2" x-text="selectedLogDetail.method"></span>
+                      <span class="text-slate-100 font-mono" x-text="selectedLogDetail.url"></span>
+                    </div>
+                    <div class="flex items-center space-x-1.5 shrink-0 ml-2">
+                      <button @click="copyText(selectedLogDetail.url)" class="p-1 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 transition" title="Copy Full URL">
+                        <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                      </button>
+                      <button @click="window.open(selectedLogDetail.url, '_blank')" class="p-1 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 transition" title="Open in New Tab">
+                        <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- In-line Decoded Query Parameters (if present) -->
+                  <template x-if="selectedLogDetail.url && selectedLogDetail.url.includes('?') && parseQueryParams(selectedLogDetail.url).length > 0">
+                    <div class="mt-2.5 pt-2 border-t border-[#1E293B]">
+                      <div class="flex items-center justify-between">
+                        <button @click="queryParamsExpanded = !queryParamsExpanded" class="flex items-center space-x-1.5 text-[11px] text-sky-400 hover:text-sky-300 font-semibold transition">
+                          <i :data-lucide="queryParamsExpanded ? 'chevron-down' : 'chevron-right'" class="w-3.5 h-3.5"></i>
+                          <span>Decoded Query Parameters</span>
+                          <span class="px-1.5 py-0.2 rounded text-[9px] bg-sky-950 text-sky-300 border border-sky-800" x-text="parseQueryParams(selectedLogDetail.url).length"></span>
+                        </button>
+                        <button x-show="queryParamsExpanded" @click="copyText(JSON.stringify(parseQueryParams(selectedLogDetail.url), null, 2))" class="text-[10px] text-slate-400 hover:text-slate-200">
+                          Copy JSON
+                        </button>
+                      </div>
+                      <div x-show="queryParamsExpanded" class="mt-2 bg-[#111827] border border-[#1E293B] rounded overflow-hidden">
+                        <table class="w-full text-left text-[11px] font-mono">
+                          <thead class="bg-[#0B0F17] text-slate-400 uppercase text-[9px] border-b border-[#1E293B]">
+                            <tr>
+                              <th class="px-2.5 py-1 w-1/3">Key</th>
+                              <th class="px-2.5 py-1">Decoded Value</th>
+                            </tr>
+                          </thead>
+                          <tbody class="divide-y divide-[#1E293B]/60">
+                            <template x-for="p in parseQueryParams(selectedLogDetail.url)" :key="p.key">
+                              <tr class="hover:bg-slate-800/30">
+                                <td class="px-2.5 py-1 font-semibold text-sky-300 select-text" x-text="p.key"></td>
+                                <td class="px-2.5 py-1 text-slate-200 break-all select-text" x-text="p.value"></td>
+                              </tr>
+                            </template>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </template>
                 </div>
+
+                <!-- In-Line Smart JWT Decoder Card (Request) -->
+                <template x-if="extractJwtFromDetail(selectedLogDetail, 'request')">
+                  <div class="p-2.5 bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-[#0B0F17] border border-purple-500/40 rounded-lg shadow-sm font-mono text-xs space-y-2">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center space-x-2">
+                        <span class="p-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center justify-center">
+                          <i data-lucide="key" class="w-3.5 h-3.5 text-purple-400"></i>
+                        </span>
+                        <div class="flex items-center space-x-1.5 flex-wrap">
+                          <span class="font-bold text-purple-300">JWT Token Detected</span>
+                          <span class="text-[10px] text-slate-400" x-text="'(' + extractJwtFromDetail(selectedLogDetail, 'request').location + ')'"></span>
+                          <span class="px-1.5 py-0.2 rounded text-[10px] font-bold"
+                            :class="extractJwtFromDetail(selectedLogDetail, 'request').isExpired ? 'bg-rose-950 text-rose-300 border border-rose-800' : 'bg-emerald-950 text-emerald-300 border border-emerald-800'"
+                            x-text="extractJwtFromDetail(selectedLogDetail, 'request').expiryStatus"></span>
+                        </div>
+                      </div>
+                      <div class="flex items-center space-x-1.5">
+                        <button @click="jwtDecodedExpanded = !jwtDecodedExpanded"
+                          class="px-2 py-0.5 rounded bg-purple-900/60 hover:bg-purple-800 text-purple-200 border border-purple-700/60 text-[11px] font-semibold transition flex items-center space-x-1">
+                          <span x-text="jwtDecodedExpanded ? 'Hide Claims' : 'Inspect Claims'"></span>
+                          <i :data-lucide="jwtDecodedExpanded ? 'chevron-up' : 'chevron-down'" class="w-3 h-3"></i>
+                        </button>
+                      </div>
+                    </div>
+                    <!-- Expanded Claims View -->
+                    <div x-show="jwtDecodedExpanded" class="pt-2 border-t border-purple-900/40 space-y-2">
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+                        <div class="bg-[#0B0F17] p-2 rounded border border-[#1E293B]">
+                          <div class="text-[10px] uppercase text-purple-400 font-bold mb-1 flex items-center justify-between">
+                            <span>Header (Alg: <span x-text="extractJwtFromDetail(selectedLogDetail, 'request').alg"></span>)</span>
+                            <button @click="copyText(extractJwtFromDetail(selectedLogDetail, 'request').headerJson)" class="text-slate-400 hover:text-slate-200 text-[9px]">Copy</button>
+                          </div>
+                          <pre class="text-slate-300 overflow-x-auto whitespace-pre-wrap" x-text="extractJwtFromDetail(selectedLogDetail, 'request').headerJson"></pre>
+                        </div>
+                        <div class="bg-[#0B0F17] p-2 rounded border border-[#1E293B]">
+                          <div class="text-[10px] uppercase text-emerald-400 font-bold mb-1 flex items-center justify-between">
+                            <span>Payload Claims (Sub: <span x-text="extractJwtFromDetail(selectedLogDetail, 'request').sub || 'N/A'"></span>)</span>
+                            <button @click="copyText(extractJwtFromDetail(selectedLogDetail, 'request').payloadJson)" class="text-slate-400 hover:text-slate-200 text-[9px]">Copy</button>
+                          </div>
+                          <pre class="text-slate-300 overflow-x-auto whitespace-pre-wrap max-h-48" x-text="extractJwtFromDetail(selectedLogDetail, 'request').payloadJson"></pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
 
                 <!-- Request Headers -->
                 <div>
@@ -1261,6 +1425,52 @@
 
               <!-- TAB 2: RESPONSE (FULL HEADERS & FULL BEAUTIFIED BODY) -->
               <div x-show="inspectorTab === 'response'" class="space-y-4">
+                <!-- In-Line Smart JWT Decoder Card (Response) -->
+                <template x-if="extractJwtFromDetail(selectedLogDetail, 'response')">
+                  <div class="p-2.5 bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-[#0B0F17] border border-purple-500/40 rounded-lg shadow-sm font-mono text-xs space-y-2">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center space-x-2">
+                        <span class="p-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center justify-center">
+                          <i data-lucide="key" class="w-3.5 h-3.5 text-purple-400"></i>
+                        </span>
+                        <div class="flex items-center space-x-1.5 flex-wrap">
+                          <span class="font-bold text-purple-300">JWT Token Detected in Response</span>
+                          <span class="text-[10px] text-slate-400" x-text="'(' + extractJwtFromDetail(selectedLogDetail, 'response').location + ')'"></span>
+                          <span class="px-1.5 py-0.2 rounded text-[10px] font-bold"
+                            :class="extractJwtFromDetail(selectedLogDetail, 'response').isExpired ? 'bg-rose-950 text-rose-300 border border-rose-800' : 'bg-emerald-950 text-emerald-300 border border-emerald-800'"
+                            x-text="extractJwtFromDetail(selectedLogDetail, 'response').expiryStatus"></span>
+                        </div>
+                      </div>
+                      <div class="flex items-center space-x-1.5">
+                        <button @click="jwtDecodedExpanded = !jwtDecodedExpanded"
+                          class="px-2 py-0.5 rounded bg-purple-900/60 hover:bg-purple-800 text-purple-200 border border-purple-700/60 text-[11px] font-semibold transition flex items-center space-x-1">
+                          <span x-text="jwtDecodedExpanded ? 'Hide Claims' : 'Inspect Claims'"></span>
+                          <i :data-lucide="jwtDecodedExpanded ? 'chevron-up' : 'chevron-down'" class="w-3 h-3"></i>
+                        </button>
+                      </div>
+                    </div>
+                    <!-- Expanded Claims View -->
+                    <div x-show="jwtDecodedExpanded" class="pt-2 border-t border-purple-900/40 space-y-2">
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+                        <div class="bg-[#0B0F17] p-2 rounded border border-[#1E293B]">
+                          <div class="text-[10px] uppercase text-purple-400 font-bold mb-1 flex items-center justify-between">
+                            <span>Header (Alg: <span x-text="extractJwtFromDetail(selectedLogDetail, 'response').alg"></span>)</span>
+                            <button @click="copyText(extractJwtFromDetail(selectedLogDetail, 'response').headerJson)" class="text-slate-400 hover:text-slate-200 text-[9px]">Copy</button>
+                          </div>
+                          <pre class="text-slate-300 overflow-x-auto whitespace-pre-wrap" x-text="extractJwtFromDetail(selectedLogDetail, 'response').headerJson"></pre>
+                        </div>
+                        <div class="bg-[#0B0F17] p-2 rounded border border-[#1E293B]">
+                          <div class="text-[10px] uppercase text-emerald-400 font-bold mb-1 flex items-center justify-between">
+                            <span>Payload Claims (Sub: <span x-text="extractJwtFromDetail(selectedLogDetail, 'response').sub || 'N/A'"></span>)</span>
+                            <button @click="copyText(extractJwtFromDetail(selectedLogDetail, 'response').payloadJson)" class="text-slate-400 hover:text-slate-200 text-[9px]">Copy</button>
+                          </div>
+                          <pre class="text-slate-300 overflow-x-auto whitespace-pre-wrap max-h-48" x-text="extractJwtFromDetail(selectedLogDetail, 'response').payloadJson"></pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
                 <!-- Response Summary Status Bar -->
                 <div class="flex items-center justify-between p-2.5 bg-[#0B0F17] rounded-md border border-[#1E293B]">
                   <div class="flex items-center space-x-2">
@@ -3934,7 +4144,9 @@
           </template>
         </div>
       </div>
-      <!-- ===================================================================== -->
+    </div>
+
+    <!-- ===================================================================== -->
       <!-- TAB: INTERCEPTION & MATCH/REPLACE RULES                               -->
       <!-- ===================================================================== -->
       <div x-show="currentAppTab === 'rules'"
@@ -4224,7 +4436,7 @@
 
           <span class="text-slate-600">|</span>
 
-          <span class="text-slate-500 font-bold">PROXSYNTH v2.5.0</span>
+          <span class="text-slate-500 font-bold">PROXSYNTH v0.1.0-beta</span>
         </div>
       </footer>
 
@@ -4358,7 +4570,7 @@
               <div>
                 <div class="text-[10px] text-slate-500 uppercase font-semibold">Installed Version</div>
                 <div class="text-sm font-bold text-slate-200 mt-0.5"
-                  x-text="'v' + (updateInfo?.current_version || '2.5.0')"></div>
+                  x-text="'v' + (updateInfo?.current_version || '0.1.0-beta')"></div>
                 <div class="text-[10px] text-slate-500 font-mono mt-0.5"
                   x-text="updateInfo?.current_commit_sha ? ('#' + updateInfo.current_commit_sha.slice(0,7)) : 'local'">
                 </div>
@@ -4371,7 +4583,7 @@
               <div>
                 <div class="text-[10px] text-cyan-400 uppercase font-semibold">Latest Available</div>
                 <div class="text-sm font-bold text-cyan-300 mt-0.5"
-                  x-text="'v' + (updateInfo?.remote_version || updateInfo?.current_version || '2.5.0')"></div>
+                  x-text="'v' + (updateInfo?.remote_version || updateInfo?.current_version || '0.1.0-beta')"></div>
                 <div class="text-[10px] text-cyan-400/80 font-mono mt-0.5"
                   x-text="updateInfo?.latest_remote_sha ? ('#' + updateInfo.latest_remote_sha.slice(0,7)) : 'upstream'">
                 </div>
@@ -5060,15 +5272,19 @@
             </div>
             <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
               <span class="text-slate-300">Forward Trapped Req</span>
-              <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-emerald-300 font-bold border border-[#1E293B]">Ctrl + Space</kbd>
+              <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-emerald-300 font-bold border border-[#1E293B]">F8 / Space</kbd>
             </div>
             <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
               <span class="text-slate-300">Drop Trapped Req</span>
               <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-rose-300 font-bold border border-[#1E293B]">Ctrl + D</kbd>
             </div>
             <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
+              <span class="text-slate-300">Send to Repeater</span>
+              <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-amber-300 font-bold border border-[#1E293B]">Ctrl + R</kbd>
+            </div>
+            <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
               <span class="text-slate-300">Focus Search Bar</span>
-              <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-amber-300 font-bold border border-[#1E293B]">Ctrl + F</kbd>
+              <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-sky-300 font-bold border border-[#1E293B]">Ctrl + F</kbd>
             </div>
             <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
               <span class="text-slate-300">Help / Shortcuts</span>
@@ -5102,6 +5318,18 @@
       <button @click="sendToFuzzerFromLog(contextMenuLog)" class="w-full text-left px-3 py-1.5 hover:bg-[#1E293B] flex items-center space-x-2 text-slate-200 hover:text-purple-300 transition">
         <i data-lucide="zap" class="w-3.5 h-3.5 text-purple-400"></i>
         <span>Send to Fuzzer</span>
+      </button>
+
+      <div class="h-px bg-[#1E293B] my-1"></div>
+
+      <button @click="if (contextMenuLog) { window.open(contextMenuLog.url, '_blank'); closeContextMenu(); }" class="w-full text-left px-3 py-1.5 hover:bg-[#1E293B] flex items-center space-x-2 text-slate-200 hover:text-sky-300 transition">
+        <i data-lucide="external-link" class="w-3.5 h-3.5 text-sky-400"></i>
+        <span>Open in Browser</span>
+      </button>
+
+      <button @click="if (contextMenuLog) { copyText(contextMenuLog.url); closeContextMenu(); }" class="w-full text-left px-3 py-1.5 hover:bg-[#1E293B] flex items-center space-x-2 text-slate-200 hover:text-sky-300 transition">
+        <i data-lucide="copy" class="w-3.5 h-3.5 text-sky-400"></i>
+        <span>Copy URL</span>
       </button>
 
       <div class="h-px bg-[#1E293B] my-1"></div>
@@ -5277,29 +5505,33 @@
           },
           getActiveTabTitle() {
             const map = {
-              proxy: 'Proxy Traffic',
+              proxy: 'Proxy Traffic History',
               intercept: 'Intercept Trap',
-              repeater: 'HTTP Repeater',
+              repeater: 'HTTP Repeater Workbench',
               fuzzer: 'Parameter Fuzzer',
+              rules: 'Match & Replace Rules',
               scope: 'Scope Guardrails',
               ai_activity: 'AI Activity & Vault',
               attack_surface: 'Attack Surface Graph',
               oast: 'OAST Callbacks Engine',
-              hypotheses: 'Hypothesis Ledger'
+              hypotheses: 'Hypothesis Ledger',
+              ci_audit: 'Security Audit & CI/CD'
             };
             return map[this.currentAppTab] || 'Dashboard';
           },
           getActiveTabCategory() {
             const cats = {
-              proxy: 'GATEWAY & TESTING',
-              intercept: 'GATEWAY & TESTING',
-              repeater: 'GATEWAY & TESTING',
-              fuzzer: 'GATEWAY & TESTING',
-              attack_surface: 'RECON & TARGETS',
-              oast: 'RECON & TARGETS',
-              ai_activity: 'AI & GOVERNANCE',
-              hypotheses: 'AI & GOVERNANCE',
-              scope: 'AI & GOVERNANCE'
+              proxy: 'CORE TRAFFIC',
+              intercept: 'CORE TRAFFIC',
+              repeater: 'CORE TRAFFIC',
+              fuzzer: 'CORE TRAFFIC',
+              rules: 'CORE TRAFFIC',
+              attack_surface: 'INTELLIGENCE & AI',
+              ai_activity: 'INTELLIGENCE & AI',
+              hypotheses: 'INTELLIGENCE & AI',
+              ci_audit: 'AUDIT & VALIDATION',
+              oast: 'AUDIT & VALIDATION',
+              scope: 'GATEWAY & GUARDRAILS'
             };
             return cats[this.currentAppTab] || 'GATEWAY';
           },
@@ -5308,11 +5540,13 @@
             if (this.currentAppTab === 'intercept') return this.interceptPending.length ? `${this.interceptPending.length} Trapped Requests Waiting Operator Decision` : 'Listening on Port ' + (this.proxyPort || '8088');
             if (this.currentAppTab === 'repeater') return 'Manual HTTP Request Crafting & Differential Baseline';
             if (this.currentAppTab === 'fuzzer') return 'Automated Multi-Threaded §Marker§ Intruder';
+            if (this.currentAppTab === 'rules') return `${(this.interceptionRules ? this.interceptionRules.length : 0)} Active Match & Rewrite Rules`;
             if (this.currentAppTab === 'scope') return 'Workspace Out-of-Bounds & Network Access Rules';
             if (this.currentAppTab === 'ai_activity') return `${(this.stats.total_commands || 0)} Terminal Commands · ${(this.stats.total_payloads || 0)} Payloads`;
             if (this.currentAppTab === 'attack_surface') return `${(this.attackSurfaceData && this.attackSurfaceData.summary ? this.attackSurfaceData.summary.total_endpoints : 0)} Discovered Target Endpoints`;
             if (this.currentAppTab === 'oast') return `${(this.oastEvents ? this.oastEvents.length : 0)} Out-of-Band Callbacks Logged`;
             if (this.currentAppTab === 'hypotheses') return `${(this.hypothesesList ? this.hypothesesList.length : 0)} Tracked Attack Hypotheses & Agenda`;
+            if (this.currentAppTab === 'ci_audit') return `Automated Security Baseline & Compliance Evaluation`;
             return '';
           },
           logs: [],
@@ -5333,6 +5567,9 @@
           contextMenuX: 0,
           contextMenuY: 0,
           contextMenuLog: null,
+          tableDensity: 'compact', // 'compact' | 'comfort'
+          jwtDecodedExpanded: false,
+          queryParamsExpanded: false,
           toasts: [],
 
           // ==========================================
@@ -5675,6 +5912,8 @@
               }
               const savedSidebar = localStorage.getItem('proxsynth_sidebar_expanded') ?? localStorage.getItem('proxynth_sidebar_expanded');
               if (savedSidebar !== null) this.sidebarExpanded = savedSidebar === 'true';
+              const savedDensity = localStorage.getItem('proxsynth_density');
+              if (savedDensity) this.tableDensity = savedDensity;
             } catch (e) { }
 
             // Global Shortcuts Ecosystem (P1)
@@ -5716,20 +5955,29 @@
                 }
               }
 
-              // Ctrl+Space: Forward Trapped Request
-              if ((e.ctrlKey || e.metaKey) && (e.code === 'Space' || e.key === ' ')) {
-                if (this.currentAppTab === 'intercept' && this.interceptPending && this.interceptPending.length > 0) {
+              // F8 / Ctrl+Space: Forward Trapped Request (Global across any tab)
+              if (e.key === 'F8' || ((e.ctrlKey || e.metaKey) && (e.code === 'Space' || e.key === ' '))) {
+                if (this.interceptPending && this.interceptPending.length > 0) {
                   e.preventDefault();
-                  this.resolveIntercept(this.interceptPending[0].id, 'FORWARD');
+                  this.resolveIntercept(this.interceptPending[0].id, 'forward');
                   return;
                 }
               }
 
-              // Ctrl+D / Cmd+D: Drop Trapped Request
+              // Ctrl+D / Cmd+D: Drop Trapped Request (Global when pending)
               if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
-                if (this.currentAppTab === 'intercept' && this.interceptPending && this.interceptPending.length > 0) {
+                if (this.interceptPending && this.interceptPending.length > 0) {
                   e.preventDefault();
-                  this.resolveIntercept(this.interceptPending[0].id, 'DROP');
+                  this.resolveIntercept(this.interceptPending[0].id, 'drop');
+                  return;
+                }
+              }
+
+              // Ctrl+R / Cmd+R: Send to Repeater (When row selected or viewing log in proxy tab)
+              if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') {
+                if (this.currentAppTab === 'proxy' && (this.selectedLogDetail || this.selectedLogId)) {
+                  e.preventDefault();
+                  this.sendToRepeater(this.selectedLogDetail || this.selectedLogId);
                   return;
                 }
               }
@@ -7615,18 +7863,188 @@
             this.contextMenuLog = null;
           },
 
+          async sendToRepeater(logOrId) {
+            let log = null;
+            if (typeof logOrId === 'object' && logOrId !== null) {
+              log = logOrId;
+            } else if (logOrId) {
+              log = this.logs.find(l => l.id == logOrId);
+              if (!log || !log.request_headers) {
+                try {
+                  const res = await fetch(`/api/logs/${logOrId}`);
+                  if (res.ok) log = await res.json();
+                } catch (e) { }
+              }
+            }
+            if (!log) log = this.selectedLogDetail;
+            if (!log) return;
+
+            let label = log.path || 'Req';
+            if (label.length > 18) label = label.slice(0, 16) + '...';
+            const tabName = `${log.method} ${label}`;
+            this.addRepeaterTab({
+              project: log.project || null,
+              method: log.method || 'GET',
+              url: log.url || '',
+              headersRaw: typeof log.request_headers === 'string' ? log.request_headers : JSON.stringify(log.request_headers || {}, null, 2),
+              body: log.request_body || ''
+            }, tabName);
+            this.currentAppTab = 'repeater';
+            this.showToast({
+              title: 'Sent to Repeater',
+              message: `Created new tab '${tabName}' with request payload.`
+            });
+            this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+          },
+
+          async sendToFuzzer(logOrId) {
+            let log = null;
+            if (typeof logOrId === 'object' && logOrId !== null) {
+              log = logOrId;
+            } else if (logOrId) {
+              log = this.logs.find(l => l.id == logOrId);
+              if (!log || !log.request_headers) {
+                try {
+                  const res = await fetch(`/api/logs/${logOrId}`);
+                  if (res.ok) log = await res.json();
+                } catch (e) { }
+              }
+            }
+            if (!log) log = this.selectedLogDetail;
+            if (!log) return;
+
+            let targetUrl = log.url || '';
+            if (targetUrl.includes('=')) {
+              targetUrl = targetUrl.replace(/=([^&]+)/, '=§$1§');
+            } else {
+              targetUrl += (targetUrl.includes('?') ? '&' : '?') + 'id=§1§';
+            }
+            this.fuzzerForm.method = log.method || 'GET';
+            this.fuzzerForm.url = targetUrl;
+            this.fuzzerForm.headersRaw = typeof log.request_headers === 'string' ? log.request_headers : JSON.stringify(log.request_headers || {}, null, 2);
+            this.fuzzerForm.body = log.request_body || '';
+            this.loadFuzzerCategory();
+            this.currentAppTab = 'fuzzer';
+            this.showToast({
+              title: 'Sent to Fuzzer',
+              message: `Loaded target ${targetUrl} into Parameter Fuzzer.`
+            });
+            this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+          },
+
           sendToRepeaterFromLog(log) {
             if (!log) return;
             this.closeContextMenu();
-            this.sendToRepeater(log.id);
-            this.showToast({ title: 'Sent to Repeater', message: `Request #${log.id} duplicated into new Repeater tab.`, type: 'success' });
+            this.sendToRepeater(log);
           },
 
           sendToFuzzerFromLog(log) {
             if (!log) return;
             this.closeContextMenu();
-            this.sendToFuzzer(log.id);
-            this.showToast({ title: 'Sent to Fuzzer', message: `Request #${log.id} loaded into Parameter Fuzzer.`, type: 'info' });
+            this.sendToFuzzer(log);
+          },
+
+          toggleTableDensity() {
+            this.tableDensity = this.tableDensity === 'compact' ? 'comfort' : 'compact';
+            try {
+              localStorage.setItem('proxsynth_density', this.tableDensity);
+            } catch (e) { }
+          },
+
+          parseJwt(token) {
+            if (!token || typeof token !== 'string') return null;
+            const match = token.match(/eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*/);
+            if (!match) return null;
+            const jwtStr = match[0];
+            try {
+              const parts = jwtStr.split('.');
+              if (parts.length < 2) return null;
+              const decodeBase64Url = (str) => {
+                let output = str.replace(/-/g, '+').replace(/_/g, '/');
+                switch (output.length % 4) {
+                  case 0: break;
+                  case 2: output += '=='; break;
+                  case 3: output += '='; break;
+                  default: return null;
+                }
+                return decodeURIComponent(escape(window.atob(output)));
+              };
+              const headerStr = decodeBase64Url(parts[0]);
+              const payloadStr = decodeBase64Url(parts[1]);
+              const header = JSON.parse(headerStr);
+              const payload = JSON.parse(payloadStr);
+              let expiryStatus = 'No exp claim';
+              let isExpired = false;
+              let expFormatted = '';
+              if (payload.exp) {
+                const now = Math.floor(Date.now() / 1000);
+                const diff = payload.exp - now;
+                expFormatted = new Date(payload.exp * 1000).toLocaleString();
+                if (diff > 0) {
+                  const mins = Math.round(diff / 60);
+                  expiryStatus = mins > 60 ? `Valid (~${Math.round(mins / 60)}h left)` : `Valid (~${mins}m left)`;
+                } else {
+                  const mins = Math.round(Math.abs(diff) / 60);
+                  expiryStatus = mins > 60 ? `Expired (~${Math.round(mins / 60)}h ago)` : `Expired (~${mins}m ago)`;
+                  isExpired = true;
+                }
+              }
+              return {
+                raw: jwtStr,
+                header,
+                payload,
+                headerJson: JSON.stringify(header, null, 2),
+                payloadJson: JSON.stringify(payload, null, 2),
+                alg: header.alg || 'UNKNOWN',
+                typ: header.typ || 'JWT',
+                sub: payload.sub || payload.user_id || payload.username || null,
+                expiryStatus,
+                expFormatted,
+                isExpired
+              };
+            } catch (e) {
+              return null;
+            }
+          },
+
+          extractJwtFromDetail(detail, type = 'request') {
+            if (!detail) return null;
+            const headers = type === 'request' ? (detail.request_headers || {}) : (detail.response_headers || {});
+            for (const [k, v] of Object.entries(headers)) {
+              if (typeof v === 'string') {
+                const parsed = this.parseJwt(v);
+                if (parsed) return { ...parsed, location: `Header: ${k}` };
+              }
+            }
+            const body = type === 'request' ? (detail.request_body || '') : (detail.response_body || '');
+            if (typeof body === 'string' && body.length < 50000) {
+              const parsed = this.parseJwt(body);
+              if (parsed) return { ...parsed, location: 'Body Payload' };
+            }
+            return null;
+          },
+
+          parseQueryParams(url) {
+            if (!url || !url.includes('?')) return [];
+            try {
+              const queryPart = url.split('?')[1].split('#')[0];
+              const params = [];
+              const pairs = queryPart.split('&');
+              for (const pair of pairs) {
+                if (!pair) continue;
+                const idx = pair.indexOf('=');
+                if (idx === -1) {
+                  params.push({ key: decodeURIComponent(pair), value: '' });
+                } else {
+                  const k = decodeURIComponent(pair.slice(0, idx));
+                  const v = decodeURIComponent(pair.slice(idx + 1));
+                  params.push({ key: k, value: v });
+                }
+              }
+              return params;
+            } catch (e) {
+              return [];
+            }
           },
 
           setRowHighlight(log, color) {
