@@ -255,6 +255,11 @@ class CreateProjectRequest(BaseModel):
     description: Optional[str] = ""
 
 
+class SetActiveProjectRequest(BaseModel):
+    project: str
+    agent_id: Optional[str] = "primary_agent"
+
+
 class UpdateScopeRequest(BaseModel):
     scope_enabled: bool
     allowed_hosts: List[str]
@@ -652,6 +657,23 @@ async def create_project(data: CreateProjectRequest, db: Session = Depends(get_d
 
     await ws_manager.broadcast({"type": "PROJECT_CREATED", "project": new_p.to_dict()})
     return new_p.to_dict()
+
+
+@app.post("/api/projects/active")
+async def set_active_project(data: SetActiveProjectRequest):
+    """Sets active project context for proxy-intercepted traffic."""
+    from backend.forward_proxy import set_active_ui_context, get_current_active_context
+    set_active_ui_context(data.project, data.agent_id or "primary_agent")
+    p, a = get_current_active_context()
+    return {"status": "ok", "active_project": p, "active_agent": a}
+
+
+@app.get("/api/projects/active")
+async def get_active_project():
+    """Gets current active project context for proxy-intercepted traffic."""
+    from backend.forward_proxy import get_current_active_context
+    p, a = get_current_active_context()
+    return {"active_project": p, "active_agent": a}
 
 
 @app.delete("/api/projects/{name}")
@@ -1642,6 +1664,9 @@ async def test_payload_api(data: TestPayloadRequest, db: Session = Depends(get_d
 
     t0 = time.time()
     def _is_proxy_open() -> bool:
+        from backend.forward_proxy import is_proxy_running
+        if not is_proxy_running():
+            return False
         import socket
         try:
             with socket.create_connection(("127.0.0.1", proxy_port), timeout=0.15):
@@ -1677,6 +1702,8 @@ async def test_payload_api(data: TestPayloadRequest, db: Session = Depends(get_d
         if _is_proxy_open():
             try:
                 resp = await _send_request(use_proxy=True)
+                if resp.status_code == 502 and "Gateway Connection Error" in resp.text:
+                    resp = await _send_request(use_proxy=False)
             except (httpx.HTTPError, Exception):
                 # Fallback to direct request if forward proxy fails during transmission
                 resp = await _send_request(use_proxy=False)

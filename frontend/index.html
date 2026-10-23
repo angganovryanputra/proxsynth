@@ -3640,7 +3640,7 @@
     <div @click.away="openNewProjectModal = false"
       class="w-full max-w-md bg-[#111827] border border-[#1E293B] rounded-xl p-6 space-y-4">
       <h3 class="text-sm font-bold text-slate-100">Create New Project</h3>
-      <input type="text" x-model="newProjectForm.name" placeholder="Project slug (e.g. client-alpha)"
+      <input type="text" x-model="newProjectForm.name" @keydown.enter="createProject()" placeholder="Project slug (e.g. client-alpha)"
         class="w-full bg-[#0B0F17] border border-[#1E293B] rounded px-3 py-2 text-xs font-mono text-slate-200">
       <textarea x-model="newProjectForm.description" placeholder="Description" rows="2"
         class="w-full bg-[#0B0F17] border border-[#1E293B] rounded px-3 py-2 text-xs font-mono text-slate-200"></textarea>
@@ -5833,19 +5833,19 @@
             if (msg.type === 'NEW_LOG' && msg.log) {
               const newLog = msg.log;
 
-              // Instantly update stats in memory without costly HTTP network roundtrips
-              if (this.stats) {
-                this.stats.total_requests = (this.stats.total_requests || 0) + 1;
-                if (newLog.flag_status === 'CONFIRMED') {
-                  this.stats.confirmed_findings = (this.stats.confirmed_findings || 0) + 1;
-                } else if (newLog.flag_status === 'POTENTIAL') {
-                  this.stats.potential_findings = (this.stats.potential_findings || 0) + 1;
-                } else if (newLog.flag_status === 'CLEAN') {
-                  this.stats.clean_logs = (this.stats.clean_logs || 0) + 1;
-                }
-              }
-
               if (this.selectedProject === 'ALL' || this.selectedProject === newLog.project) {
+                // Instantly update stats in memory without costly HTTP network roundtrips
+                if (this.stats) {
+                  this.stats.total_requests = (this.stats.total_requests || 0) + 1;
+                  if (newLog.flag_status === 'CONFIRMED') {
+                    this.stats.confirmed_findings = (this.stats.confirmed_findings || 0) + 1;
+                  } else if (newLog.flag_status === 'POTENTIAL') {
+                    this.stats.potential_findings = (this.stats.potential_findings || 0) + 1;
+                  } else if (newLog.flag_status === 'CLEAN') {
+                    this.stats.clean_logs = (this.stats.clean_logs || 0) + 1;
+                  }
+                }
+
                 this.logs.unshift(newLog);
                 if (this.logs.length > 2000) this.logs.pop();
 
@@ -6104,6 +6104,41 @@
                 this.projects = data.projects || [];
               }
             } catch (e) { }
+          },
+
+          async createProject() {
+            const name = (this.newProjectForm.name || '').trim().toLowerCase();
+            if (!name) {
+              this.showToast({ title: 'Validation Error', message: 'Project slug / name is required.' });
+              return;
+            }
+            try {
+              const res = await fetch('/api/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: name,
+                  description: this.newProjectForm.description || ''
+                })
+              });
+              if (res.ok) {
+                const created = await res.json();
+                this.openNewProjectModal = false;
+                this.newProjectForm = { name: '', description: '' };
+                await this.fetchProjects();
+                this.selectedProject = created.name || name;
+                this.onProjectChange();
+                this.showToast({
+                  title: 'Project Activated',
+                  message: `Project "${this.selectedProject}" created and set as active scope.`
+                });
+              } else {
+                const err = await res.json().catch(() => ({}));
+                this.showToast({ title: 'Creation Failed', message: err.detail || 'Could not create project.' });
+              }
+            } catch (e) {
+              this.showToast({ title: 'Network Error', message: e.message || 'Error creating project.' });
+            }
           },
 
           async fetchAgents() {
@@ -6438,6 +6473,14 @@
             this.fetchPayloads();
             this.fetchAttackSurface();
             this.fetchOastEvents();
+
+            // Synchronize selected project with proxy engine for incoming browser traffic
+            const targetProj = this.selectedProject !== 'ALL' ? this.selectedProject : 'default';
+            fetch('/api/projects/active', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ project: targetProj, agent_id: 'primary_agent' })
+            }).catch(() => {});
           },
 
           // INTERCEPT & PROXY ACTIONS

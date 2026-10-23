@@ -184,11 +184,33 @@ def get_ssl_context_for_host(hostname: str) -> ssl.SSLContext:
     return ctx
 
 _current_active_projects = []
+_active_ui_context: Optional[Tuple[str, str]] = None
 
 def _get_active_context_file() -> str:
     ca_dir = get_ca_dir()
     os.makedirs(ca_dir, exist_ok=True)
     return os.path.join(ca_dir, "active_context.json")
+
+def set_active_ui_context(project: str, agent_id: str = "primary_agent") -> Tuple[str, str]:
+    """Sets persistent active UI project and agent context for incoming proxy traffic."""
+    global _active_ui_context
+    clean_p = (project or "default").strip().lower()
+    clean_a = (agent_id or "primary_agent").strip()
+    _active_ui_context = (clean_p, clean_a)
+    try:
+        ctx_path = _get_active_context_file()
+        tmp_path = ctx_path + f".tmp_{os.getpid()}"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "project": clean_p,
+                "agent_id": clean_a,
+                "timestamp": time.time(),
+                "persistent": True
+            }, f)
+        os.replace(tmp_path, ctx_path)
+    except Exception:
+        pass
+    return _active_ui_context
 
 class ProxyContext:
     """Context manager for associating the current active command/agent with proxy requests across processes."""
@@ -218,22 +240,36 @@ class ProxyContext:
         try:
             ctx_path = _get_active_context_file()
             if os.path.exists(ctx_path) and not _current_active_projects:
-                try:
-                    os.remove(ctx_path)
-                except Exception:
-                    pass
+                if _active_ui_context:
+                    # Restore persistent UI context
+                    with open(ctx_path, "w", encoding="utf-8") as f:
+                        json.dump({
+                            "project": _active_ui_context[0],
+                            "agent_id": _active_ui_context[1],
+                            "timestamp": time.time(),
+                            "persistent": True
+                        }, f)
+                else:
+                    try:
+                        os.remove(ctx_path)
+                    except Exception:
+                        pass
         except Exception:
             pass
 
 def get_current_active_context() -> Tuple[str, str]:
     if _current_active_projects:
         return _current_active_projects[-1]
+    if _active_ui_context:
+        return _active_ui_context
     try:
         ctx_path = _get_active_context_file()
         if os.path.exists(ctx_path):
             with open(ctx_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                if time.time() - float(data.get("timestamp", 0)) < 180:
+                is_persistent = bool(data.get("persistent", False))
+                is_recent = (time.time() - float(data.get("timestamp", 0)) < 180)
+                if is_persistent or is_recent:
                     p = data.get("project")
                     a = data.get("agent_id")
                     if p:
