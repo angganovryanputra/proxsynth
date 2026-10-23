@@ -71,7 +71,7 @@ async def inspect_graphql_endpoint(
     }
 
     try:
-        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=12.0) as client:
+        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=12.0, proxy=None, trust_env=False) as client:
             resp = await client.post(clean_url, json=introspection_query, headers=hdrs)
             if resp.status_code == 200:
                 try:
@@ -243,7 +243,7 @@ async def audit_websocket_security(
                 handshake_headers[hk] = str(hv)
 
     try:
-        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=8.0) as client:
+        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=8.0, proxy=None, trust_env=False) as client:
             resp = await client.get(http_probe_url, headers=handshake_headers)
             # A 101 Switching Protocols with untrusted origin indicates CSWSH vulnerability!
             if resp.status_code == 101:

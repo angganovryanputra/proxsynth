@@ -40,7 +40,7 @@ async def _ping_session(session_record: ActiveSession) -> bool:
     from backend.user_agents import get_random_user_agent
 
     try:
-        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=4.0) as client:
+        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=4.0, proxy=None, trust_env=False) as client:
             cookie_hdr = "; ".join([f"{k}={v}" for k, v in cookies.items()])
             headers = {"User-Agent": get_random_user_agent(), "Cookie": cookie_hdr}
             resp = await client.head(url, headers=headers)
@@ -52,7 +52,7 @@ async def _ping_session(session_record: ActiveSession) -> bool:
         # Fallback to http:// if https failed
         try:
             url_http = f"http://{domain}/"
-            async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=4.0) as client:
+            async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=4.0, proxy=None, trust_env=False) as client:
                 cookie_hdr = "; ".join([f"{k}={v}" for k, v in cookies.items()])
                 headers = {"User-Agent": get_random_user_agent(), "Cookie": cookie_hdr}
                 resp = await client.head(url_http, headers=headers)

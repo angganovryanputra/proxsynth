@@ -788,6 +788,9 @@ async def _get_repeater_client(proxy_cfg: str = "", verify_ssl: bool = False):
         }
         if proxy_cfg and proxy_cfg.strip():
             kwargs["proxy"] = proxy_cfg.strip()
+        else:
+            kwargs["proxy"] = None
+            kwargs["trust_env"] = False
         _repeater_clients[key] = httpx.AsyncClient(**kwargs)
     return _repeater_clients[key]
 
@@ -1638,27 +1641,59 @@ async def test_payload_api(data: TestPayloadRequest, db: Session = Depends(get_d
         req_body = data.raw_payload
 
     t0 = time.time()
-    try:
-        proxies = {
-            "http://": f"http://127.0.0.1:{proxy_port}",
-            "https://": f"http://127.0.0.1:{proxy_port}"
-        }
-        async with httpx.AsyncClient(proxies=proxies, verify=False, timeout=15.0) as client:
+    def _is_proxy_open() -> bool:
+        import socket
+        try:
+            with socket.create_connection(("127.0.0.1", proxy_port), timeout=0.15):
+                return True
+        except Exception:
+            return False
+
+    async def _send_request(use_proxy: bool):
+        client_kwargs = {"verify": False, "timeout": 15.0, "trust_env": False}
+        if use_proxy:
+            proxy_url = f"http://127.0.0.1:{proxy_port}"
+            try:
+                cl = httpx.AsyncClient(proxy=proxy_url, **client_kwargs)
+            except (TypeError, ValueError):
+                cl = httpx.AsyncClient(proxies={"http://": proxy_url, "https://": proxy_url}, **client_kwargs)
+        else:
+            cl = httpx.AsyncClient(proxy=None, **client_kwargs)
+
+        async with cl:
             if method == "GET":
-                resp = await client.get(final_url, headers=req_headers)
+                return await cl.get(final_url, headers=req_headers)
             elif method == "POST":
                 if isinstance(req_body, dict):
-                    resp = await client.post(final_url, data=req_body, headers=req_headers)
+                    return await cl.post(final_url, data=req_body, headers=req_headers)
                 else:
-                    resp = await client.post(final_url, content=(req_body or "").encode(), headers=req_headers)
+                    return await cl.post(final_url, content=(req_body or "").encode(), headers=req_headers)
             elif method == "PUT":
-                resp = await client.put(final_url, content=(req_body or "").encode() if req_body else None, headers=req_headers)
+                return await cl.put(final_url, content=(req_body or "").encode() if req_body else None, headers=req_headers)
             else:
-                resp = await client.request(method, final_url, headers=req_headers)
+                return await cl.request(method, final_url, headers=req_headers)
+
+    try:
+        if _is_proxy_open():
+            try:
+                resp = await _send_request(use_proxy=True)
+            except (httpx.HTTPError, Exception):
+                # Fallback to direct request if forward proxy fails during transmission
+                resp = await _send_request(use_proxy=False)
+        else:
+            # Proxy not running, execute direct request
+            resp = await _send_request(use_proxy=False)
 
         duration_ms = int((time.time() - t0) * 1000)
         resp_text = resp.text
-        is_reflected = bool(data.raw_payload and data.raw_payload in resp_text)
+        is_reflected = bool(
+            data.raw_payload and (
+                data.raw_payload in resp_text
+                or data.raw_payload.replace(" ", "+") in resp_text
+                or urllib.parse.quote(data.raw_payload) in resp_text
+                or urllib.parse.quote_plus(data.raw_payload) in resp_text
+            )
+        )
 
         signatures = []
         lower_body = resp_text.lower()

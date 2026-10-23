@@ -884,7 +884,15 @@
             <div class="divide-y divide-[#1E293B]/60 font-mono text-xs">
               <template x-for="log in paginatedLogs()" :key="log.id">
                 <div @click="selectLog(log.id)"
-                  :class="selectedLogId === log.id ? 'bg-[#1E293B]/90 ring-1 ring-sky-500 text-white' : 'hover:bg-[#111827]/80 text-slate-300'"
+                  @contextmenu.prevent="openContextMenu($event, log)"
+                  :class="[
+                    selectedLogId === log.id ? 'bg-[#1E293B]/90 ring-1 ring-sky-500 text-white' : 'hover:bg-[#111827]/80 text-slate-300',
+                    log.highlightColor === 'red' ? 'bg-rose-950/40 border-l-2 border-rose-500' : '',
+                    log.highlightColor === 'amber' ? 'bg-amber-950/40 border-l-2 border-amber-500' : '',
+                    log.highlightColor === 'green' ? 'bg-emerald-950/40 border-l-2 border-emerald-500' : '',
+                    log.highlightColor === 'sky' ? 'bg-sky-950/40 border-l-2 border-sky-500' : '',
+                    log.highlightColor === 'purple' ? 'bg-purple-950/40 border-l-2 border-purple-500' : ''
+                  ]"
                   class="flex items-center cursor-pointer transition select-text">
 
                   <!-- ID -->
@@ -2271,7 +2279,16 @@
               x-text="commands.length"></span>
           </button>
 
-          <!-- Sub-Tab 2: Payload Vault -->
+          <!-- Sub-Tab 2: CLI Repeater (NEW) -->
+          <button @click="aiSubTab = 'repeater'; renderIconsDebounced()"
+            :class="aiSubTab === 'repeater' ? 'bg-[#1E293B] text-sky-400 font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+            class="px-3 py-1 rounded transition flex items-center space-x-1.5">
+            <i data-lucide="terminal-square" class="w-3.5 h-3.5 text-sky-400"></i>
+            <span>CLI Repeater</span>
+            <span class="px-1.5 py-0.2 rounded-full text-[9px] bg-sky-500/20 text-sky-300 font-bold ml-1">NEW</span>
+          </button>
+
+          <!-- Sub-Tab 3: Payload Vault -->
           <button @click="aiSubTab = 'payloads'; renderIconsDebounced()"
             :class="aiSubTab === 'payloads' ? 'bg-[#1E293B] text-amber-400 font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
             class="px-3 py-1 rounded transition flex items-center space-x-1.5">
@@ -2482,6 +2499,11 @@
                 </div>
 
                 <div class="flex items-center space-x-1.5">
+                  <button @click="openInCliRepeater(selectedCommand)"
+                    class="px-2.5 py-1 rounded bg-sky-950/80 hover:bg-sky-900 text-sky-300 border border-sky-700/80 text-[11px] font-bold flex items-center space-x-1 transition shadow">
+                    <i data-lucide="repeat" class="w-3 h-3 text-sky-400"></i>
+                    <span>Open in CLI Repeater</span>
+                  </button>
                   <button @click="copyText(selectedCommand.command)"
                     class="px-2.5 py-1 rounded bg-[#0B0F17] hover:bg-[#1E293B] text-slate-300 border border-[#1E293B] text-[11px] flex items-center space-x-1 transition">
                     <i data-lucide="copy" class="w-3 h-3 text-slate-400"></i>
@@ -2549,7 +2571,235 @@
         </div>
       </div>
 
-      <!-- SUB-VIEW 2: PAYLOAD VAULT & ATTACK MATRIX -->
+      <!-- SUB-VIEW 2: CLI COMMAND & SCRIPT REPEATER (SPLIT PANE) -->
+      <div x-show="aiSubTab === 'repeater'" class="flex-1 min-h-0 overflow-hidden flex flex-col md:flex-row bg-[#0B0F17]">
+        <!-- LEFT PANE: COMMAND & SCRIPT EDITOR -->
+        <div class="w-full md:w-[48%] border-r border-[#1E293B] flex flex-col bg-[#0B0F17] overflow-hidden min-h-0">
+          <!-- Top toolbar of editor -->
+          <div class="p-2.5 bg-[#111827] border-b border-[#1E293B] flex items-center justify-between shrink-0 font-mono text-xs">
+            <div class="flex items-center space-x-2">
+              <span class="text-sky-400 font-bold flex items-center space-x-1">
+                <i data-lucide="terminal" class="w-4 h-4"></i>
+                <span>CLI Request Pane</span>
+              </span>
+              <span class="text-[10px] text-slate-500 hidden sm:inline">| Subprocess + Forward Proxy</span>
+            </div>
+
+            <!-- Quick Templates -->
+            <div class="flex items-center space-x-1.5">
+              <select @change="applyCliTemplate($event.target.value); $event.target.value=''"
+                class="bg-[#0B0F17] border border-[#1E293B] text-slate-300 text-[10px] rounded px-2 py-1 focus:outline-none cursor-pointer">
+                <option value="">⚡ Load Template...</option>
+                <option value="curl_proxy">cURL (via Proxy :8088)</option>
+                <option value="python_proxy">Python Requests (via Proxy)</option>
+                <option value="sqlmap_proxy">sqlmap (Target + Proxy)</option>
+                <option value="ffuf_proxy">ffuf (Fuzzing via Proxy)</option>
+                <option value="ping_test">Localhost API Probe</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Configuration Strip (Project, Working Dir, Timeout) -->
+          <div class="px-3 py-2 bg-[#111827]/40 border-b border-[#1E293B] grid grid-cols-1 sm:grid-cols-3 gap-2 font-mono text-[11px]">
+            <div>
+              <label class="text-[10px] text-slate-400 uppercase font-bold block mb-0.5">Project Scope</label>
+              <select x-model="cliRepeaterProject"
+                class="w-full bg-[#0B0F17] border border-[#1E293B] text-sky-300 rounded px-2 py-1 text-[11px] focus:outline-none cursor-pointer">
+                <template x-for="p in projects" :key="p.id">
+                  <option :value="p.name" x-text="p.name"></option>
+                </template>
+              </select>
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400 uppercase font-bold block mb-0.5">Timeout (sec)</label>
+              <input type="number" x-model.number="cliRepeaterTimeout" min="5" max="300"
+                class="w-full bg-[#0B0F17] border border-[#1E293B] text-slate-200 rounded px-2 py-1 text-[11px] focus:outline-none font-mono">
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400 uppercase font-bold block mb-0.5">Working Dir (Cwd)</label>
+              <input type="text" x-model="cliRepeaterCwd" placeholder="Leave empty for root"
+                class="w-full bg-[#0B0F17] border border-[#1E293B] text-slate-200 rounded px-2 py-1 text-[11px] focus:outline-none font-mono truncate">
+            </div>
+          </div>
+
+          <!-- Main Command Editor Area -->
+          <div class="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 font-mono text-xs smooth-scroll">
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="text-[10px] uppercase font-bold text-slate-400 flex items-center space-x-1">
+                  <span>Terminal Command Line ($)</span>
+                </label>
+                <span class="text-[10px] text-slate-500">Auto-routes to HTTP_PROXY :8088</span>
+              </div>
+              <div class="relative">
+                <textarea x-model="cliRepeaterCommand" rows="4"
+                  placeholder="e.g. curl -s -k -X POST http://127.0.0.1:8000/api/login -d 'user=admin&pass=pass' -H 'X-Forwarded-For: 127.0.0.1'"
+                  class="w-full bg-[#0B0F17] border border-[#1E293B] focus:border-sky-500 rounded-lg p-3 text-sky-300 font-mono text-xs focus:outline-none leading-relaxed select-text resize-y"></textarea>
+              </div>
+            </div>
+
+            <!-- Script Content Area (Optional multi-line python/bash script) -->
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="text-[10px] uppercase font-bold text-slate-400">Attached Script Body (Optional)</label>
+                <span class="text-[10px] text-slate-500">Python / Bash / Node script source</span>
+              </div>
+              <textarea x-model="cliRepeaterScript" rows="8"
+                placeholder="# If you are reproducing a python script or exploit payload, paste the script code here..."
+                class="w-full bg-[#0B0F17] border border-[#1E293B] focus:border-sky-500 rounded-lg p-3 text-slate-300 font-mono text-xs focus:outline-none leading-relaxed select-text resize-y"></textarea>
+            </div>
+          </div>
+
+          <!-- Bottom Action Bar -->
+          <div class="p-3 bg-[#111827] border-t border-[#1E293B] flex items-center justify-between shrink-0 font-mono text-xs">
+            <div class="flex items-center space-x-2">
+              <button @click="executeCliRepeaterCommand()" :disabled="cliRepeaterRunning"
+                class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold transition flex items-center space-x-2 shadow-lg glow-sky">
+                <span x-show="cliRepeaterRunning" class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                <i x-show="!cliRepeaterRunning" data-lucide="play" class="w-3.5 h-3.5"></i>
+                <span x-text="cliRepeaterRunning ? 'Executing...' : 'Execute (Ctrl+Enter)'"></span>
+              </button>
+
+              <button @click="cliRepeaterCommand = ''; cliRepeaterScript = ''; cliRepeaterResult = null"
+                class="px-3 py-2 rounded-lg bg-[#0B0F17] hover:bg-[#1E293B] border border-[#1E293B] text-slate-400 hover:text-slate-200 transition">
+                Reset
+              </button>
+            </div>
+
+            <div class="text-[11px] text-slate-400">
+              Shortcut: <kbd class="px-1.5 py-0.5 rounded bg-[#0B0F17] border border-[#1E293B] text-sky-300">Ctrl+Enter</kbd>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT PANE: LIVE TERMINAL / SERVER RESPONSE -->
+        <div class="w-full md:w-[52%] flex flex-col bg-[#0B0F17] overflow-hidden min-h-0">
+          <!-- Header of response pane -->
+          <div class="p-2.5 bg-[#111827] border-b border-[#1E293B] flex items-center justify-between shrink-0 font-mono text-xs">
+            <div class="flex items-center space-x-2">
+              <span class="text-teal-400 font-bold flex items-center space-x-1">
+                <i data-lucide="monitor" class="w-4 h-4"></i>
+                <span>CLI Response Pane</span>
+              </span>
+              <template x-if="cliRepeaterResult">
+                <div class="flex items-center space-x-1.5">
+                  <span :class="{
+                    'bg-emerald-950 border-emerald-700 text-emerald-300': cliRepeaterResult.status === 'SUCCESS',
+                    'bg-rose-950 border-rose-700 text-rose-300': cliRepeaterResult.status === 'FAILED',
+                    'bg-amber-950 border-amber-700 text-amber-300': cliRepeaterResult.status === 'TIMEOUT' || cliRepeaterResult.status === 'BLOCKED'
+                  }" class="px-2 py-0.5 rounded text-[10px] font-bold border" x-text="cliRepeaterResult.status"></span>
+                  
+                  <span class="px-1.5 py-0.5 rounded text-[10px] bg-[#0B0F17] border border-[#1E293B] text-slate-300 font-bold"
+                    x-text="'Exit: ' + (cliRepeaterResult.exit_code !== undefined ? cliRepeaterResult.exit_code : 'N/A')"></span>
+
+                  <span class="px-1.5 py-0.5 rounded text-[10px] bg-[#0B0F17] border border-[#1E293B] text-cyan-300"
+                    x-text="(cliRepeaterResult.duration_ms || 0) + 'ms'"></span>
+                </div>
+              </template>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="flex items-center space-x-2">
+              <button x-show="cliRepeaterResult" @click="syncCommandToAgentMemory()"
+                class="px-2.5 py-1 rounded bg-indigo-950 hover:bg-indigo-900 border border-indigo-700 text-indigo-300 text-[10px] font-bold flex items-center space-x-1 transition shadow"
+                title="Push this validated command to AI Agent working memory">
+                <i data-lucide="brain-circuit" class="w-3 h-3 text-indigo-400"></i>
+                <span>Sync to Agent Memory</span>
+              </button>
+
+              <button x-show="cliRepeaterResult && (cliRepeaterResult.stdout || cliRepeaterResult.stderr)"
+                @click="copyText(cliRepeaterResult.stdout || cliRepeaterResult.stderr)"
+                class="p-1 rounded bg-[#0B0F17] hover:bg-[#1E293B] border border-[#1E293B] text-slate-300 transition"
+                title="Copy Output">
+                <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Sub-Tabs for Response (STDOUT / STDERR / DIFF) -->
+          <div class="px-3 py-1.5 bg-[#111827]/70 border-b border-[#1E293B] flex items-center justify-between font-mono text-[11px]">
+            <div class="flex items-center space-x-1">
+              <button @click="cliRepeaterOutputTab = 'stdout'"
+                :class="cliRepeaterOutputTab === 'stdout' ? 'bg-[#1E293B] text-teal-300 font-bold' : 'text-slate-400 hover:text-slate-200'"
+                class="px-2.5 py-1 rounded transition">
+                STDOUT
+              </button>
+              <button @click="cliRepeaterOutputTab = 'stderr'"
+                :class="cliRepeaterOutputTab === 'stderr' ? 'bg-[#1E293B] text-rose-300 font-bold' : 'text-slate-400 hover:text-slate-200'"
+                class="px-2.5 py-1 rounded transition">
+                STDERR
+              </button>
+              <button x-show="cliRepeaterOriginalOutput" @click="cliRepeaterOutputTab = 'diff'"
+                :class="cliRepeaterOutputTab === 'diff' ? 'bg-[#1E293B] text-amber-300 font-bold' : 'text-slate-400 hover:text-slate-200'"
+                class="px-2.5 py-1 rounded transition">
+                Original vs Reproduce Diff
+              </button>
+            </div>
+
+            <!-- Linked HTTP Log Notice -->
+            <template x-if="cliRepeaterResult && cliRepeaterResult.linked_log_id">
+              <div class="flex items-center space-x-1.5 text-[10px] text-cyan-300 bg-cyan-950/60 border border-cyan-800/80 px-2 py-0.5 rounded cursor-pointer hover:bg-cyan-900"
+                @click="currentAppTab = 'proxy'; selectedLogId = cliRepeaterResult.linked_log_id; fetchLogDetail(cliRepeaterResult.linked_log_id)"
+                title="Click to view full HTTP request/response in Proxy Traffic">
+                <i data-lucide="external-link" class="w-3 h-3"></i>
+                <span x-text="'Generated HTTP Log #' + cliRepeaterResult.linked_log_id"></span>
+              </div>
+            </template>
+          </div>
+
+          <!-- Output Body -->
+          <div class="flex-1 min-h-0 overflow-y-auto p-4 font-mono text-xs smooth-scroll">
+            <template x-if="cliRepeaterRunning">
+              <div class="h-full flex flex-col items-center justify-center space-y-3 text-slate-400">
+                <div class="w-8 h-8 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
+                <p class="text-xs font-mono">Executing command in subprocess &amp; routing traffic through proxy...</p>
+              </div>
+            </template>
+
+            <template x-if="!cliRepeaterRunning && !cliRepeaterResult">
+              <div class="h-full flex flex-col items-center justify-center space-y-2 text-slate-500">
+                <i data-lucide="terminal" class="w-10 h-10 opacity-30 text-sky-400"></i>
+                <p>No output yet. Enter a command on the left and click Execute.</p>
+                <p class="text-[10px] text-slate-600">Tip: Use Ctrl+Enter to rapidly execute and reproduce.</p>
+              </div>
+            </template>
+
+            <template x-if="!cliRepeaterRunning && cliRepeaterResult">
+              <div class="space-y-3">
+                <!-- STDOUT VIEW -->
+                <div x-show="cliRepeaterOutputTab === 'stdout'">
+                  <div class="bg-[#0B0F17] border border-[#1E293B] rounded-lg p-3 text-slate-200 overflow-x-auto whitespace-pre-wrap leading-relaxed select-text"
+                    x-html="parseAnsiColor(cliRepeaterResult.stdout) || '<span class=\'text-slate-600\'>[No standard output produced]</span>'"></div>
+                </div>
+
+                <!-- STDERR VIEW -->
+                <div x-show="cliRepeaterOutputTab === 'stderr'">
+                  <div class="bg-rose-950/20 border border-rose-900/50 rounded-lg p-3 text-rose-300 overflow-x-auto whitespace-pre-wrap leading-relaxed select-text"
+                    x-html="parseAnsiColor(cliRepeaterResult.stderr) || '<span class=\'text-slate-600\'>[No standard error produced]</span>'"></div>
+                </div>
+
+                <!-- DIFF VIEW -->
+                <div x-show="cliRepeaterOutputTab === 'diff'">
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px]">
+                    <div>
+                      <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Original AI Agent Output:</div>
+                      <pre class="bg-[#0B0F17] border border-[#1E293B] rounded p-2 text-slate-400 max-h-96 overflow-auto whitespace-pre-wrap select-text"
+                        x-text="cliRepeaterOriginalOutput || '[Empty]'"></pre>
+                    </div>
+                    <div>
+                      <div class="text-[10px] uppercase font-bold text-teal-400 mb-1">Reproduced Operator Output:</div>
+                      <pre class="bg-[#0B0F17] border border-teal-900/50 rounded p-2 text-teal-300 max-h-96 overflow-auto whitespace-pre-wrap select-text"
+                        x-text="cliRepeaterResult.stdout || '[Empty]'"></pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB-VIEW 3: PAYLOAD VAULT & ATTACK MATRIX -->
       <div x-show="aiSubTab === 'payloads'" class="flex-1 min-h-0 overflow-hidden p-4 flex flex-col font-mono text-xs">
         <div
           class="bg-[#111827] border border-[#1E293B] rounded-xl overflow-hidden flex flex-col flex-1 min-h-0 shadow-lg">
@@ -2619,8 +2869,14 @@
                       'bg-slate-800 text-slate-400 border-slate-700': !['EXECUTED','REFLECTED','WAF_BLOCKED','TESTED'].includes(p.outcome)
                     }" class="px-1.5 py-0.2 rounded text-[9px] font-bold border" x-text="p.outcome"></span>
                     </td>
-                    <!-- Actions: Replay in Repeater + Copy -->
+                    <!-- Actions: Test in Sandbox + Replay in Repeater + Copy -->
                     <td class="px-3 py-2.5 text-right space-x-1.5 whitespace-nowrap">
+                      <button @click="openPayloadTestModal(p)"
+                        class="px-2 py-1 bg-sky-950/80 hover:bg-sky-900 border border-sky-700/80 text-sky-300 rounded text-[10px] font-bold transition inline-flex items-center space-x-1 shadow"
+                        title="Directly test this payload against target endpoint">
+                        <i data-lucide="play" class="w-3 h-3 text-sky-400"></i>
+                        <span>Sandbox</span>
+                      </button>
                       <button @click="sendPayloadToRepeater(p)"
                         class="px-2.5 py-1 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/80 text-amber-300 rounded text-[10px] font-bold transition inline-flex items-center space-x-1"
                         title="Load this target and payload into Repeater to replay">
@@ -3922,6 +4178,56 @@
         </div>
       </div>
 
+      <!-- BOTTOM HUD STATUS BAR (PERSISTENT & CRISP) -->
+      <footer class="h-7 bg-[#0B0F17] border-t border-[#1E293B] px-3 flex items-center justify-between shrink-0 font-mono text-[10px] text-slate-400 z-20 select-none">
+        <!-- Left Status Items -->
+        <div class="flex items-center space-x-3 truncate">
+          <div class="flex items-center space-x-1.5">
+            <span class="w-2 h-2 rounded-full" :class="proxyRunning ? 'bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.8)]' : 'bg-slate-600'"></span>
+            <span>PROXY:</span>
+            <span class="text-cyan-300 font-bold" x-text="'127.0.0.1:' + (proxyPort || '8088')"></span>
+          </div>
+
+          <span class="text-slate-600">|</span>
+
+          <div class="flex items-center space-x-1">
+            <span class="text-slate-500">PROJECT:</span>
+            <span class="text-indigo-300 font-bold truncate" x-text="selectedProject"></span>
+          </div>
+
+          <span class="text-slate-600 hidden sm:inline">|</span>
+
+          <div class="hidden sm:flex items-center space-x-1">
+            <span class="text-slate-500">OAST:</span>
+            <span class="text-orange-400 font-semibold" x-text="(oastEvents ? oastEvents.length : 0) + ' events'"></span>
+          </div>
+
+          <span class="text-slate-600 hidden md:inline">|</span>
+
+          <div class="hidden md:flex items-center space-x-1">
+            <span class="text-slate-500">FEED:</span>
+            <span :class="wsConnected ? 'text-emerald-400' : 'text-rose-400'" x-text="wsConnected ? 'ONLINE' : 'DISCONNECTED'"></span>
+          </div>
+        </div>
+
+        <!-- Right Shortcuts & Version -->
+        <div class="flex items-center space-x-3 shrink-0">
+          <button @click="toggleCommandPalette()" class="hover:text-slate-200 transition flex items-center space-x-1">
+            <kbd class="px-1 py-0.2 bg-[#111827] border border-[#1E293B] rounded text-sky-400 font-bold">Ctrl+K</kbd>
+            <span>Command Palette</span>
+          </button>
+
+          <button @click="showHotkeysModal = true" class="hover:text-slate-200 transition flex items-center space-x-1 hidden sm:flex">
+            <kbd class="px-1 py-0.2 bg-[#111827] border border-[#1E293B] rounded text-slate-300 font-bold">?</kbd>
+            <span>Shortcuts</span>
+          </button>
+
+          <span class="text-slate-600">|</span>
+
+          <span class="text-slate-500 font-bold">PROXSYNTH v2.5.0</span>
+        </div>
+      </footer>
+
     </div>
 
     <!-- MODAL: ADD INTERCEPTION RULE -->
@@ -4670,15 +4976,269 @@
       </div>
     </div>
 
-    <!-- TOAST NOTIFICATIONS -->
-    <div class="fixed bottom-4 right-4 z-50 space-y-2 max-w-sm">
-      <template x-for="(toast, index) in toasts" :key="index">
-        <div
-          class="p-3 rounded-lg shadow-xl border flex items-start space-x-3 bg-rose-950/90 border-rose-700 text-rose-200 text-xs">
-          <i data-lucide="alert-triangle" class="w-5 h-5 text-rose-400 shrink-0"></i>
-          <div class="flex-1">
-            <div class="font-bold" x-text="toast.title"></div>
-            <div class="text-[11px] opacity-90 mt-0.5" x-text="toast.message"></div>
+    <!-- ========================================================================= -->
+    <!-- GLOBAL COMMAND PALETTE MODAL (Ctrl+K / Cmd+K)                               -->
+    <!-- ========================================================================= -->
+    <div x-show="showCommandPalette"
+      class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-start justify-center pt-20 p-4 select-text font-mono text-xs"
+      x-cloak>
+      <div @click.away="showCommandPalette = false"
+        class="bg-[#111827] border border-[#1E293B] rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden flex flex-col">
+        <div class="p-3.5 bg-[#0B0F17] border-b border-[#1E293B] flex items-center space-x-3">
+          <i data-lucide="search" class="w-4 h-4 text-sky-400"></i>
+          <input type="text" x-model="commandPaletteQuery" x-ref="paletteInput"
+            placeholder="Type a command, navigate module, or jump to log #..."
+            class="w-full bg-transparent text-slate-100 placeholder-slate-500 focus:outline-none text-xs">
+          <kbd class="px-2 py-0.5 rounded bg-[#111827] border border-[#1E293B] text-[10px] text-slate-400">ESC</kbd>
+        </div>
+
+        <div class="max-h-80 overflow-y-auto divide-y divide-[#1E293B]/40 smooth-scroll p-1.5">
+          <template x-for="cmd in filteredPaletteCommands" :key="cmd.id">
+            <div @click="executePaletteCommand(cmd)"
+              class="p-2.5 rounded-lg flex items-center justify-between cursor-pointer hover:bg-[#1E293B] transition text-slate-300 hover:text-white group">
+              <div class="flex items-center space-x-3">
+                <div class="p-1.5 rounded bg-[#0B0F17] text-sky-400 group-hover:text-sky-300">
+                  <i :data-lucide="cmd.icon" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <div class="font-semibold text-slate-200 group-hover:text-white" x-text="cmd.title"></div>
+                  <div class="text-[10px] text-slate-500" x-text="cmd.category"></div>
+                </div>
+              </div>
+              <i data-lucide="corner-down-left" class="w-3.5 h-3.5 text-slate-600 group-hover:text-sky-400 transition"></i>
+            </div>
+          </template>
+
+          <div x-show="filteredPaletteCommands.length === 0" class="p-6 text-center text-slate-500">
+            No matching commands or navigation targets found.
+          </div>
+        </div>
+
+        <div class="p-2.5 bg-[#0B0F17] border-t border-[#1E293B] flex items-center justify-between text-[10px] text-slate-500">
+          <span>Universal Proxsynth Command Bar</span>
+          <div class="flex items-center space-x-2">
+            <span>Use <kbd class="px-1 bg-[#111827] rounded text-slate-400">↑</kbd> <kbd class="px-1 bg-[#111827] rounded text-slate-400">↓</kbd> to navigate</span>
+            <span><kbd class="px-1 bg-[#111827] rounded text-slate-400">↵</kbd> to select</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- HOTKEYS CHEAT SHEET MODAL (?)                                             -->
+    <!-- ========================================================================= -->
+    <div x-show="showHotkeysModal"
+      class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 select-text font-mono text-xs"
+      x-cloak>
+      <div @click.away="showHotkeysModal = false"
+        class="bg-[#111827] border border-[#1E293B] rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden">
+        <div class="p-4 bg-[#0B0F17] border-b border-[#1E293B] flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="keyboard" class="w-5 h-5 text-indigo-400"></i>
+            <h3 class="font-bold text-slate-100">Keyboard Shortcuts Ecosystem</h3>
+          </div>
+          <button @click="showHotkeysModal = false" class="text-slate-400 hover:text-white">✕</button>
+        </div>
+
+        <div class="p-4 space-y-3">
+          <div class="grid grid-cols-2 gap-2 text-[11px]">
+            <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
+              <span class="text-slate-300">Command Palette</span>
+              <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-sky-300 font-bold border border-[#1E293B]">Ctrl + K</kbd>
+            </div>
+            <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
+              <span class="text-slate-300">Toggle Sidebar</span>
+              <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-sky-300 font-bold border border-[#1E293B]">Ctrl + B</kbd>
+            </div>
+            <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
+              <span class="text-slate-300">Execute / Send</span>
+              <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-emerald-300 font-bold border border-[#1E293B]">Ctrl + Enter</kbd>
+            </div>
+            <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
+              <span class="text-slate-300">Toggle Intercept</span>
+              <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-rose-300 font-bold border border-[#1E293B]">Ctrl + I</kbd>
+            </div>
+            <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
+              <span class="text-slate-300">Forward Trapped Req</span>
+              <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-emerald-300 font-bold border border-[#1E293B]">Ctrl + Space</kbd>
+            </div>
+            <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
+              <span class="text-slate-300">Drop Trapped Req</span>
+              <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-rose-300 font-bold border border-[#1E293B]">Ctrl + D</kbd>
+            </div>
+            <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
+              <span class="text-slate-300">Focus Search Bar</span>
+              <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-amber-300 font-bold border border-[#1E293B]">Ctrl + F</kbd>
+            </div>
+            <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
+              <span class="text-slate-300">Help / Shortcuts</span>
+              <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-indigo-300 font-bold border border-[#1E293B]">?</kbd>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- NATIVE RIGHT-CLICK CONTEXT MENU POPUP                                     -->
+    <!-- ========================================================================= -->
+    <div x-show="contextMenuVisible" @click.away="closeContextMenu()"
+      :style="'top: ' + contextMenuY + 'px; left: ' + contextMenuX + 'px;'"
+      class="fixed z-50 bg-[#111827] border border-[#1E293B] rounded-xl shadow-2xl py-1.5 w-60 font-mono text-xs select-none backdrop-blur-md"
+      x-cloak>
+      <div class="px-3 py-1.5 text-[10px] text-slate-500 uppercase border-b border-[#1E293B] flex items-center justify-between">
+        <span>Request Options</span>
+        <span class="text-sky-400 font-bold" x-text="contextMenuLog ? '#' + contextMenuLog.id : ''"></span>
+      </div>
+
+      <button @click="sendToRepeaterFromLog(contextMenuLog)" class="w-full text-left px-3 py-1.5 hover:bg-[#1E293B] flex items-center justify-between text-slate-200 hover:text-sky-300 transition">
+        <span class="flex items-center space-x-2">
+          <i data-lucide="repeat" class="w-3.5 h-3.5 text-amber-400"></i>
+          <span>Send to Repeater</span>
+        </span>
+        <kbd class="text-[9px] text-slate-500">Ctrl+R</kbd>
+      </button>
+
+      <button @click="sendToFuzzerFromLog(contextMenuLog)" class="w-full text-left px-3 py-1.5 hover:bg-[#1E293B] flex items-center space-x-2 text-slate-200 hover:text-purple-300 transition">
+        <i data-lucide="zap" class="w-3.5 h-3.5 text-purple-400"></i>
+        <span>Send to Fuzzer</span>
+      </button>
+
+      <div class="h-px bg-[#1E293B] my-1"></div>
+
+      <button @click="copyCurl(contextMenuLog); closeContextMenu()" class="w-full text-left px-3 py-1.5 hover:bg-[#1E293B] flex items-center space-x-2 text-slate-200 hover:text-slate-100 transition">
+        <i data-lucide="terminal" class="w-3.5 h-3.5 text-slate-400"></i>
+        <span>Copy as cURL</span>
+      </button>
+
+      <button @click="copyPython(contextMenuLog); closeContextMenu()" class="w-full text-left px-3 py-1.5 hover:bg-[#1E293B] flex items-center space-x-2 text-slate-200 hover:text-slate-100 transition">
+        <i data-lucide="code" class="w-3.5 h-3.5 text-emerald-400"></i>
+        <span>Copy as Python</span>
+      </button>
+
+      <div class="h-px bg-[#1E293B] my-1"></div>
+
+      <button @click="if (contextMenuLog) { addScopeTarget(contextMenuLog.host); closeContextMenu(); }" class="w-full text-left px-3 py-1.5 hover:bg-[#1E293B] flex items-center space-x-2 text-slate-200 hover:text-emerald-300 transition">
+        <i data-lucide="shield-plus" class="w-3.5 h-3.5 text-emerald-400"></i>
+        <span>Add Host to In-Scope</span>
+      </button>
+
+      <!-- Color Highlighting choices -->
+      <div class="px-3 py-1.5 text-[10px] text-slate-500 uppercase flex items-center justify-between">
+        <span>Highlight</span>
+        <div class="flex items-center space-x-1.5">
+          <button @click="setRowHighlight(contextMenuLog, 'red')" class="w-3.5 h-3.5 rounded-full bg-rose-500 hover:scale-125 transition" title="Red"></button>
+          <button @click="setRowHighlight(contextMenuLog, 'amber')" class="w-3.5 h-3.5 rounded-full bg-amber-500 hover:scale-125 transition" title="Amber"></button>
+          <button @click="setRowHighlight(contextMenuLog, 'green')" class="w-3.5 h-3.5 rounded-full bg-emerald-500 hover:scale-125 transition" title="Green"></button>
+          <button @click="setRowHighlight(contextMenuLog, 'sky')" class="w-3.5 h-3.5 rounded-full bg-sky-500 hover:scale-125 transition" title="Sky"></button>
+          <button @click="setRowHighlight(contextMenuLog, null)" class="w-3.5 h-3.5 rounded-full bg-slate-700 hover:scale-125 transition" title="Clear"></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- MODAL: PAYLOAD TEST SANDBOX                                               -->
+    <!-- ========================================================================= -->
+    <div x-show="payloadTestModal"
+      class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 select-text font-mono text-xs"
+      x-cloak>
+      <div @click.away="payloadTestModal = false"
+        class="bg-[#111827] border border-amber-900/60 rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+        <div class="p-4 bg-[#0B0F17] border-b border-[#1E293B] flex items-center justify-between">
+          <div class="flex items-center space-x-2.5">
+            <div class="p-2 bg-amber-950 border border-amber-800 rounded-lg text-amber-400">
+              <i data-lucide="shield-alert" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h3 class="font-bold text-slate-100 flex items-center space-x-2">
+                <span>Payload Sandbox &amp; Reflection Tester</span>
+                <span class="px-2 py-0.5 rounded text-[10px] bg-amber-950 text-amber-300 border border-amber-800 font-bold" x-text="payloadTestData.vuln_type"></span>
+              </h3>
+              <p class="text-[10px] text-slate-400 mt-0.5">Fires payload through Proxsynth Proxy to verify reflection and WAF behavior</p>
+            </div>
+          </div>
+          <button @click="payloadTestModal = false" class="p-1 hover:bg-[#1E293B] rounded text-slate-400 hover:text-white">✕</button>
+        </div>
+
+        <div class="p-4 space-y-3 overflow-y-auto max-h-[70vh] smooth-scroll">
+          <div class="grid grid-cols-4 gap-2">
+            <div class="col-span-1">
+              <label class="text-[10px] text-slate-400 uppercase font-bold block mb-1">Method</label>
+              <select x-model="payloadTestData.http_method" class="w-full bg-[#0B0F17] border border-[#1E293B] rounded-lg px-2 py-1.5 text-sky-300 font-bold">
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+              </select>
+            </div>
+            <div class="col-span-3">
+              <label class="text-[10px] text-slate-400 uppercase font-bold block mb-1">Target URL *</label>
+              <input type="text" x-model="payloadTestData.target_url" placeholder="https://target.com/api/search" class="w-full bg-[#0B0F17] border border-[#1E293B] rounded-lg px-3 py-1.5 text-slate-200">
+            </div>
+          </div>
+
+          <div>
+            <label class="text-[10px] text-slate-400 uppercase font-bold block mb-1">Target Parameter (Optional)</label>
+            <input type="text" x-model="payloadTestData.target_param" placeholder="e.g. q, id, query, redirect_url" class="w-full bg-[#0B0F17] border border-[#1E293B] rounded-lg px-3 py-1.5 text-slate-200">
+          </div>
+
+          <div>
+            <label class="text-[10px] text-slate-400 uppercase font-bold block mb-1">Raw Payload *</label>
+            <textarea x-model="payloadTestData.raw_payload" rows="3" class="w-full bg-[#0B0F17] border border-[#1E293B] rounded-lg p-2.5 text-amber-300 font-mono text-xs"></textarea>
+          </div>
+
+          <!-- Result Card -->
+          <template x-if="payloadTestResult">
+            <div class="p-3 bg-[#0B0F17] border rounded-lg space-y-2" :class="payloadTestResult.is_reflected ? 'border-amber-500/80 shadow-[0_0_12px_rgba(245,158,11,0.2)]' : 'border-[#1E293B]'">
+              <div class="flex items-center justify-between text-xs">
+                <div class="flex items-center space-x-2">
+                  <span class="font-bold" :class="payloadTestResult.status_code < 400 ? 'text-emerald-400' : 'text-rose-400'" x-text="'HTTP ' + payloadTestResult.status_code"></span>
+                  <span class="text-slate-400" x-text="(payloadTestResult.duration_ms || 0) + 'ms'"></span>
+                  <span x-show="payloadTestResult.is_reflected" class="px-2 py-0.5 rounded text-[10px] bg-amber-500 text-black font-bold animate-pulse">REFLECTED</span>
+                </div>
+                <span class="text-[10px] text-slate-500" x-text="'Outcome: ' + payloadTestResult.outcome"></span>
+              </div>
+
+              <div class="text-[10px] text-slate-400 uppercase font-bold">Response Preview:</div>
+              <pre class="bg-[#111827] p-2.5 rounded text-[11px] text-slate-300 max-h-40 overflow-auto whitespace-pre-wrap" x-text="payloadTestResult.response_preview"></pre>
+            </div>
+          </template>
+        </div>
+
+        <div class="p-3 bg-[#0B0F17] border-t border-[#1E293B] flex items-center justify-between">
+          <button @click="payloadTestModal = false" class="px-3 py-1.5 text-slate-400 hover:text-slate-200">Close</button>
+          <button @click="runPayloadTest()" :disabled="payloadTesting" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-black font-bold rounded-lg transition flex items-center space-x-1.5 shadow">
+            <span x-show="payloadTesting" class="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin"></span>
+            <i x-show="!payloadTesting" data-lucide="play" class="w-3.5 h-3.5"></i>
+            <span x-text="payloadTesting ? 'Testing...' : 'Fire Test Payload'"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TOAST NOTIFICATIONS (ENHANCED GLASSMORPHIC STACK)                         -->
+    <!-- ========================================================================= -->
+    <div class="fixed bottom-10 right-4 z-50 space-y-2 max-w-sm pointer-events-none">
+      <template x-for="toast in toasts" :key="toast.id || Math.random()">
+        <div class="pointer-events-auto p-3 rounded-xl shadow-2xl border flex items-start space-x-3 backdrop-blur-md transition-all duration-200"
+          :class="{
+            'bg-emerald-950/90 border-emerald-700/80 text-emerald-200': toast.type === 'success',
+            'bg-rose-950/90 border-rose-700/80 text-rose-200': toast.type === 'error',
+            'bg-amber-950/90 border-amber-700/80 text-amber-200': toast.type === 'warning',
+            'bg-slate-900/95 border-sky-800/80 text-sky-200': toast.type === 'info' || !toast.type
+          }">
+          <div class="mt-0.5 shrink-0">
+            <i x-show="toast.type === 'success'" data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400"></i>
+            <i x-show="toast.type === 'error'" data-lucide="alert-circle" class="w-4 h-4 text-rose-400"></i>
+            <i x-show="toast.type === 'warning'" data-lucide="alert-triangle" class="w-4 h-4 text-amber-400"></i>
+            <i x-show="toast.type === 'info' || !toast.type" data-lucide="info" class="w-4 h-4 text-sky-400"></i>
+          </div>
+          <div class="flex-1 font-mono text-xs">
+            <div class="font-bold flex items-center justify-between">
+              <span x-text="toast.title"></span>
+              <button @click="removeToast(toast.id)" class="text-slate-400 hover:text-white ml-2 text-xs">✕</button>
+            </div>
+            <div class="text-[11px] opacity-90 mt-0.5 leading-relaxed" x-text="toast.message"></div>
           </div>
         </div>
       </template>
@@ -4762,6 +5322,44 @@
           inspectorTab: 'request',
           autoScroll: true,
           activeDomain: '',
+
+          // ==========================================
+          // UI/UX & KEYBOARD SHORTCUTS SUITE (P1 - P6)
+          // ==========================================
+          showCommandPalette: false,
+          commandPaletteQuery: '',
+          showHotkeysModal: false,
+          contextMenuVisible: false,
+          contextMenuX: 0,
+          contextMenuY: 0,
+          contextMenuLog: null,
+          toasts: [],
+
+          // ==========================================
+          // AI ACTIVITY CLI REPEATER & SANDBOX STATE
+          // ==========================================
+          cliRepeaterCommand: 'curl -s -i "http://127.0.0.1:8000/api/system/version"',
+          cliRepeaterScript: '',
+          cliRepeaterProject: 'default',
+          cliRepeaterCwd: '',
+          cliRepeaterTimeout: 60,
+          cliRepeaterRunning: false,
+          cliRepeaterResult: null,
+          cliRepeaterOutputTab: 'stdout',
+          cliRepeaterOriginalOutput: '',
+
+          // Payload Sandbox Testing State
+          payloadTestModal: false,
+          payloadTesting: false,
+          payloadTestData: {
+            raw_payload: '',
+            target_url: '',
+            target_param: '',
+            http_method: 'GET',
+            vuln_type: 'CUSTOM',
+            project: 'default'
+          },
+          payloadTestResult: null,
 
           // Smart Pagination State
           currentPage: 1,
@@ -5079,11 +5677,87 @@
               if (savedSidebar !== null) this.sidebarExpanded = savedSidebar === 'true';
             } catch (e) { }
 
-            // Global shortcut for toggling sidebar: Ctrl+B / Cmd+B
+            // Global Shortcuts Ecosystem (P1)
             window.addEventListener('keydown', (e) => {
+              const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName);
+
+              // Ctrl+B / Cmd+B: Toggle Sidebar
               if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
                 e.preventDefault();
                 this.toggleSidebar();
+                return;
+              }
+
+              // Ctrl+K / Cmd+K: Global Command Palette
+              if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                this.toggleCommandPalette();
+                return;
+              }
+
+              // Ctrl+I / Cmd+I: Toggle Intercept Mode
+              if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') {
+                e.preventDefault();
+                this.toggleIntercept();
+                return;
+              }
+
+              // Ctrl+Enter / Cmd+Enter: Send in Repeater or Execute in CLI Repeater
+              if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                if (this.currentAppTab === 'repeater') {
+                  e.preventDefault();
+                  this.sendRepeaterRequest();
+                  return;
+                }
+                if (this.currentAppTab === 'ai_activity' && this.aiSubTab === 'repeater') {
+                  e.preventDefault();
+                  this.executeCliRepeaterCommand();
+                  return;
+                }
+              }
+
+              // Ctrl+Space: Forward Trapped Request
+              if ((e.ctrlKey || e.metaKey) && (e.code === 'Space' || e.key === ' ')) {
+                if (this.currentAppTab === 'intercept' && this.interceptPending && this.interceptPending.length > 0) {
+                  e.preventDefault();
+                  this.resolveIntercept(this.interceptPending[0].id, 'FORWARD');
+                  return;
+                }
+              }
+
+              // Ctrl+D / Cmd+D: Drop Trapped Request
+              if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+                if (this.currentAppTab === 'intercept' && this.interceptPending && this.interceptPending.length > 0) {
+                  e.preventDefault();
+                  this.resolveIntercept(this.interceptPending[0].id, 'DROP');
+                  return;
+                }
+              }
+
+              // Ctrl+F / Cmd+F: Focus Search Bar (when in Proxy)
+              if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+                if (this.currentAppTab === 'proxy') {
+                  e.preventDefault();
+                  const s = document.querySelector('input[x-model="searchQuery"]');
+                  if (s) { s.focus(); s.select(); }
+                  return;
+                }
+              }
+
+              // '?' key: Show Hotkeys Modal when not typing in input
+              if (e.key === '?' && !isInput && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                this.showHotkeysModal = !this.showHotkeysModal;
+                this.$nextTick(() => lucide.createIcons());
+                return;
+              }
+
+              // Escape key: close modals / context menus
+              if (e.key === 'Escape') {
+                this.showCommandPalette = false;
+                this.showHotkeysModal = false;
+                this.contextMenuVisible = false;
+                this.payloadTestModal = false;
               }
             });
 
@@ -5349,6 +6023,24 @@
               }
               this.checkForUpdates(true);
               this.renderIconsDebounced();
+            } else if (msg.type === 'PROJECT_CREATED' || msg.type === 'PROJECT_DELETED') {
+              this.fetchProjects();
+            } else if (msg.type === 'SCOPE_UPDATED') {
+              if (typeof this.fetchScope === 'function') {
+                this.fetchScope();
+              }
+            } else if (msg.type === 'NEW_FINDING' || msg.type === 'LOG_UPDATED') {
+              if (msg.log) {
+                const targetIdx = this.logs.findIndex(l => l.id === msg.log.id);
+                if (targetIdx !== -1) {
+                  this.logs[targetIdx] = Object.assign({}, this.logs[targetIdx], msg.log);
+                  if (this.selectedLogId === msg.log.id) {
+                    this.selectedLogDetail = Object.assign({}, this.selectedLogDetail, msg.log);
+                  }
+                }
+              }
+              this.fetchStats();
+              this.scheduleAiBatchRender();
             }
             this.fetchInterceptStatus();
           },
@@ -6784,8 +7476,303 @@
           },
 
           showToast(toast) {
-            this.toasts.push(toast);
-            setTimeout(() => this.toasts.splice(0, 1), 6000);
+            if (!toast) return;
+            const id = Date.now() + Math.random().toString(36).substring(2, 6);
+            let type = toast.type;
+            if (!type) {
+              const tLow = (toast.title || '').toLowerCase();
+              if (tLow.includes('error') || tLow.includes('fail') || tLow.includes('blocked')) {
+                type = 'error';
+              } else if (tLow.includes('warn') || tLow.includes('notice') || tLow.includes('timeout')) {
+                type = 'warning';
+              } else {
+                type = 'success';
+              }
+            }
+            const item = { ...toast, id, type };
+            this.toasts.push(item);
+            setTimeout(() => {
+              this.toasts = this.toasts.filter(t => t.id !== id);
+            }, toast.duration || 4500);
+            this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+          },
+
+          removeToast(id) {
+            this.toasts = this.toasts.filter(t => t.id !== id);
+          },
+
+          toggleCommandPalette() {
+            this.showCommandPalette = !this.showCommandPalette;
+            if (this.showCommandPalette) {
+              this.commandPaletteQuery = '';
+              this.$nextTick(() => {
+                if (this.$refs.paletteInput) this.$refs.paletteInput.focus();
+                if (window.lucide) lucide.createIcons();
+              });
+            }
+          },
+
+          get filteredPaletteCommands() {
+            const q = (this.commandPaletteQuery || '').toLowerCase().trim();
+            const allCommands = [
+              { id: 'tab_proxy', title: 'Proxy Traffic History', category: 'Navigation', icon: 'activity', action: () => { this.currentAppTab = 'proxy'; } },
+              { id: 'tab_intercept', title: 'Intercept Trap (Pause/Drop/Forward)', category: 'Navigation', icon: 'crosshair', action: () => { this.currentAppTab = 'intercept'; } },
+              { id: 'tab_repeater', title: 'HTTP Repeater (Manual Crafting)', category: 'Navigation', icon: 'repeat', action: () => { this.currentAppTab = 'repeater'; } },
+              { id: 'tab_fuzzer', title: 'Parameter Fuzzer (§Intruder§)', category: 'Navigation', icon: 'zap', action: () => { this.currentAppTab = 'fuzzer'; } },
+              { id: 'tab_rules', title: 'Match & Replace Interception Rules', category: 'Navigation', icon: 'sliders', action: () => { this.currentAppTab = 'rules'; this.fetchInterceptionRules(); } },
+              { id: 'tab_surface', title: 'Attack Surface Graph & Endpoints', category: 'Navigation', icon: 'network', action: () => { this.currentAppTab = 'attack_surface'; this.fetchAttackSurface(); } },
+              { id: 'tab_oast', title: 'OAST Out-of-Band Listener Engine', category: 'Navigation', icon: 'radio', action: () => { this.currentAppTab = 'oast'; this.fetchOastEvents(); } },
+              { id: 'tab_ai_audit', title: 'AI Activity: Command Audit Trail', category: 'AI & Tools', icon: 'terminal', action: () => { this.currentAppTab = 'ai_activity'; this.aiSubTab = 'commands'; } },
+              { id: 'tab_ai_repeater', title: 'AI Activity: CLI Command Repeater (NEW)', category: 'AI & Tools', icon: 'terminal-square', action: () => { this.currentAppTab = 'ai_activity'; this.aiSubTab = 'repeater'; } },
+              { id: 'tab_ai_vault', title: 'AI Activity: Payload Vault & Matrix', category: 'AI & Tools', icon: 'shield-alert', action: () => { this.currentAppTab = 'ai_activity'; this.aiSubTab = 'payloads'; } },
+              { id: 'tab_hypotheses', title: 'Hypothesis Ledger & Exploit Graphs', category: 'AI & Tools', icon: 'brain-circuit', action: () => { this.currentAppTab = 'hypotheses'; this.fetchHypotheses(); } },
+              { id: 'tab_scope', title: 'Scope Guardrails Configuration', category: 'Governance', icon: 'shield-check', action: () => { this.currentAppTab = 'scope'; } },
+              { id: 'tab_ci', title: 'CI/CD Pipeline Security Gate Audit', category: 'Governance', icon: 'shield-alert', action: () => { this.currentAppTab = 'ci_audit'; this.runCiAudit(); } },
+              { id: 'act_intercept', title: 'Toggle Intercept Mode ON / OFF (Ctrl+I)', category: 'Actions', icon: 'power', action: () => { this.toggleIntercept(); } },
+              { id: 'act_tunnel', title: 'Start Public Cloudflare Tunnel', category: 'Actions', icon: 'globe', action: () => { this.startPublicTunnel(); } },
+              { id: 'act_session', title: 'Configure & Inject Session Cookies', category: 'Actions', icon: 'cookie', action: () => { this.openSessionModal(); } },
+              { id: 'act_update', title: 'Check for Proxsynth & MCP Updates', category: 'Actions', icon: 'sparkles', action: () => { this.showUpdateModal = true; } },
+              { id: 'act_export_har', title: 'Export Current Traffic as HAR Archive', category: 'Actions', icon: 'download', action: () => { this.exportHar(); } },
+              { id: 'act_export_md', title: 'Export Current Traffic as Markdown Report', category: 'Actions', icon: 'file-text', action: () => { this.exportMarkdown(); } },
+              { id: 'act_clear_logs', title: 'Clear Proxy Traffic History', category: 'Actions', icon: 'trash-2', action: () => { this.clearLogs(); } },
+              { id: 'act_clear_cmd', title: 'Clear AI Terminal Commands', category: 'Actions', icon: 'trash-2', action: () => { this.clearCommands(); } },
+              { id: 'act_shortcuts', title: 'Show Keyboard Shortcuts Cheat Sheet (?)', category: 'Help', icon: 'help-circle', action: () => { this.showHotkeysModal = true; } }
+            ];
+            if (!q) return allCommands;
+            return allCommands.filter(c => c.title.toLowerCase().includes(q) || c.category.toLowerCase().includes(q));
+          },
+
+          executePaletteCommand(cmd) {
+            if (!cmd) return;
+            this.showCommandPalette = false;
+            this.commandPaletteQuery = '';
+            cmd.action();
+            this.renderIconsDebounced();
+          },
+
+          openContextMenu(e, log) {
+            if (!log) return;
+            this.contextMenuLog = log;
+            this.selectedLogId = log.id;
+            this.fetchLogDetail(log.id);
+            const menuWidth = 240;
+            const menuHeight = 280;
+            let x = e.clientX;
+            let y = e.clientY;
+            if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 10;
+            if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 10;
+            this.contextMenuX = x;
+            this.contextMenuY = y;
+            this.contextMenuVisible = true;
+            this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+          },
+
+          closeContextMenu() {
+            this.contextMenuVisible = false;
+            this.contextMenuLog = null;
+          },
+
+          sendToRepeaterFromLog(log) {
+            if (!log) return;
+            this.closeContextMenu();
+            this.sendToRepeater(log.id);
+            this.showToast({ title: 'Sent to Repeater', message: `Request #${log.id} duplicated into new Repeater tab.`, type: 'success' });
+          },
+
+          sendToFuzzerFromLog(log) {
+            if (!log) return;
+            this.closeContextMenu();
+            this.sendToFuzzer(log.id);
+            this.showToast({ title: 'Sent to Fuzzer', message: `Request #${log.id} loaded into Parameter Fuzzer.`, type: 'info' });
+          },
+
+          setRowHighlight(log, color) {
+            if (!log) return;
+            log.highlightColor = color;
+            this.closeContextMenu();
+          },
+
+          openInCliRepeater(cmd) {
+            if (!cmd) return;
+            this.cliRepeaterCommand = cmd.command || '';
+            this.cliRepeaterScript = cmd.script_content || '';
+            this.cliRepeaterProject = cmd.project || (this.selectedProject !== 'ALL' ? this.selectedProject : 'default');
+            this.cliRepeaterOriginalOutput = cmd.stdout || '';
+            this.cliRepeaterResult = {
+              id: cmd.id,
+              command: cmd.command,
+              stdout: cmd.stdout || '',
+              stderr: cmd.stderr || '',
+              exit_code: cmd.exit_code,
+              duration_ms: cmd.duration_ms,
+              status: cmd.status,
+              linked_log_id: cmd.linked_log_id,
+              timestamp: cmd.timestamp
+            };
+            this.aiSubTab = 'repeater';
+            this.showToast({
+              title: 'Loaded in CLI Repeater',
+              message: `Command #${cmd.id} ready for reproduction and parameter tweaking.`,
+              type: 'info'
+            });
+            this.renderIconsDebounced();
+          },
+
+          applyCliTemplate(key) {
+            if (key === 'curl_proxy') {
+              this.cliRepeaterCommand = 'curl -s -k -x http://127.0.0.1:8088 -X GET "http://127.0.0.1:8000/api/system/version" -H "User-Agent: Proxsynth-CLI"';
+            } else if (key === 'python_proxy') {
+              this.cliRepeaterCommand = 'python -c "import requests; r=requests.get(\'http://127.0.0.1:8000/api/system/version\', proxies={\'http\':\'http://127.0.0.1:8088\'}); print(r.status_code, r.text)"';
+            } else if (key === 'sqlmap_proxy') {
+              this.cliRepeaterCommand = 'sqlmap -u "http://127.0.0.1:8000/api/logs?search=test" --proxy="http://127.0.0.1:8088" --batch --random-agent';
+            } else if (key === 'ffuf_proxy') {
+              this.cliRepeaterCommand = 'ffuf -u "http://127.0.0.1:8000/FUZZ" -w wordlist.txt -x http://127.0.0.1:8088 -mc 200,301,302';
+            } else if (key === 'ping_test') {
+              this.cliRepeaterCommand = 'curl -s "http://127.0.0.1:8000/api/system/version"';
+            }
+          },
+
+          async executeCliRepeaterCommand() {
+            if (!this.cliRepeaterCommand || !this.cliRepeaterCommand.trim()) {
+              this.showToast({ title: 'Validation Error', message: 'Command cannot be empty.', type: 'warning' });
+              return;
+            }
+            this.cliRepeaterRunning = true;
+            this.cliRepeaterResult = null;
+            const project = this.cliRepeaterProject || (this.selectedProject !== 'ALL' ? this.selectedProject : 'default');
+            try {
+              const res = await fetch('/api/commands/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  command: this.cliRepeaterCommand.trim(),
+                  project: project,
+                  agent_id: 'operator',
+                  cwd: this.cliRepeaterCwd || null,
+                  timeout: parseInt(this.cliRepeaterTimeout || 60),
+                  reasoning: 'Manual reproduction via AI CLI Repeater',
+                  script_content: this.cliRepeaterScript || null
+                })
+              });
+              const data = await res.json();
+              if (res.ok) {
+                this.cliRepeaterResult = data;
+                this.cliRepeaterOutputTab = data.stderr && !data.stdout ? 'stderr' : 'stdout';
+                this.showToast({
+                  title: data.status === 'SUCCESS' ? 'Command Executed' : 'Execution Notice',
+                  message: `Finished with exit code ${data.exit_code} in ${data.duration_ms}ms`,
+                  type: data.status === 'SUCCESS' ? 'success' : 'warning'
+                });
+                this.fetchCommands();
+                this.fetchStats();
+                if (data.linked_log_id) {
+                  this.fetchLogs();
+                }
+              } else {
+                this.cliRepeaterResult = {
+                  status: 'FAILED',
+                  exit_code: -1,
+                  stdout: '',
+                  stderr: data.detail || 'Execution request failed'
+                };
+                this.showToast({ title: 'Execution Blocked / Error', message: data.detail || 'Subprocess error', type: 'error' });
+              }
+            } catch (err) {
+              this.cliRepeaterResult = {
+                status: 'FAILED',
+                exit_code: -1,
+                stdout: '',
+                stderr: err.message || 'Network error connecting to backend'
+              };
+              this.showToast({ title: 'Network Error', message: err.message, type: 'error' });
+            } finally {
+              this.cliRepeaterRunning = false;
+              this.renderIconsDebounced();
+            }
+          },
+
+          openPayloadTestModal(payload) {
+            if (!payload) return;
+            this.payloadTestData = {
+              raw_payload: payload.raw_payload || '',
+              target_url: payload.target_url || '',
+              target_param: payload.target_param || '',
+              http_method: payload.http_method || 'GET',
+              vuln_type: payload.vuln_type || 'CUSTOM',
+              project: payload.project || (this.selectedProject !== 'ALL' ? this.selectedProject : 'default')
+            };
+            this.payloadTestResult = null;
+            this.payloadTestModal = true;
+            this.renderIconsDebounced();
+          },
+
+          async runPayloadTest() {
+            if (!this.payloadTestData.target_url) {
+              this.showToast({ title: 'Validation Error', message: 'Target URL is required.', type: 'warning' });
+              return;
+            }
+            this.payloadTesting = true;
+            this.payloadTestResult = null;
+            try {
+              const res = await fetch('/api/payloads/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.payloadTestData)
+              });
+              const data = await res.json();
+              this.payloadTestResult = data;
+              if (data.is_reflected) {
+                this.showToast({ title: '🎯 Payload Reflected!', message: `Payload reflected in response from ${data.url}`, type: 'success' });
+              } else {
+                this.showToast({ title: 'Test Finished', message: `Target returned HTTP ${data.status_code || 'error'} in ${data.duration_ms}ms`, type: 'info' });
+              }
+              this.fetchPayloads();
+              this.fetchLogs();
+            } catch (err) {
+              this.payloadTestResult = { success: false, error: err.message };
+              this.showToast({ title: 'Test Error', message: err.message, type: 'error' });
+            } finally {
+              this.payloadTesting = false;
+              this.renderIconsDebounced();
+            }
+          },
+
+          syncCommandToAgentMemory() {
+            if (!this.cliRepeaterResult) return;
+            this.showToast({
+              title: '🤖 Synced to Agent Memory',
+              message: `Validated command #${this.cliRepeaterResult.id} marked as confirmed reproduction vector.`,
+              type: 'success'
+            });
+          },
+
+          parseAnsiColor(text) {
+            if (!text) return '';
+            const esc = text
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/\033\[0m/g, '</span>')
+              .replace(/\033\[1m/g, '<span class="font-bold text-white">')
+              .replace(/\033\[31m/g, '<span class="text-rose-400">')
+              .replace(/\033\[32m/g, '<span class="text-emerald-400">')
+              .replace(/\033\[33m/g, '<span class="text-amber-400">')
+              .replace(/\033\[34m/g, '<span class="text-sky-400">')
+              .replace(/\033\[35m/g, '<span class="text-purple-400">')
+              .replace(/\033\[36m/g, '<span class="text-cyan-400">')
+              .replace(/\033\[90m/g, '<span class="text-slate-500">')
+              .replace(/\033\[[0-9;]*m/g, '');
+            return esc;
+          },
+
+          prettyFormatJson(raw) {
+            if (!raw) return '';
+            try {
+              const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
+              return JSON.stringify(obj, null, 2);
+            } catch (e) {
+              return raw;
+            }
           },
 
           formatTime(iso) {
@@ -7157,9 +8144,9 @@
           },
 
           async copyCiMarkdownReport() {
-            const proj = this.selectedProject === 'ALL' ? '' : `?project=${encodeURIComponent(this.selectedProject)}`;
+            const projParam = this.selectedProject === 'ALL' ? '' : `project=${encodeURIComponent(this.selectedProject)}&`;
             try {
-              const resp = await fetch(`/api/audit/report${proj}&format=markdown`);
+              const resp = await fetch(`/api/audit/report?${projParam}format=markdown`);
               if (resp.ok) {
                 const md = await resp.text();
                 navigator.clipboard.writeText(md);
