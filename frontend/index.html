@@ -3763,6 +3763,301 @@
         </template>
       </div>
     </div>
+
+<!-- ===================================================================== -->
+      <!-- TAB: INTERCEPTION & MATCH/REPLACE RULES                               -->
+      <!-- ===================================================================== -->
+      <div x-show="currentAppTab === 'rules'"
+        class="flex-1 flex flex-col min-h-0 bg-[#0B0F17] overflow-hidden select-text font-mono text-xs" x-cloak>
+        <!-- Header -->
+        <div class="h-14 border-b border-[#1E293B] px-6 flex items-center justify-between shrink-0 bg-[#111827]">
+          <div class="flex items-center space-x-3">
+            <div class="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-400">
+              <i data-lucide="sliders" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h1 class="text-sm font-bold text-slate-100 flex items-center space-x-2">
+                <span>Autonomous Match &amp; Replace Rules</span>
+                <span
+                  class="px-2 py-0.5 rounded text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 font-semibold"
+                  x-text="interceptionRules.length + ' rules'"></span>
+              </h1>
+              <p class="text-[11px] text-slate-400">
+                Automate request header tampering, payload body rewrites, and synthetic response mocking.
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center space-x-2">
+            <button @click="fetchInterceptionRules()"
+              class="px-3 py-1.5 rounded-lg bg-[#1E293B] hover:bg-[#334155] text-slate-300 flex items-center space-x-1.5 transition">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              <span>Refresh</span>
+            </button>
+            <button @click="openNewRuleModal()"
+              class="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white font-semibold flex items-center space-x-1.5 shadow-md transition">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>+ Add Rule</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Content Area -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-4 smooth-scroll">
+          <!-- Rules Table -->
+          <div class="bg-[#111827] border border-[#1E293B] rounded-xl overflow-hidden shadow-sm">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-[#0B0F17] text-slate-400 border-b border-[#1E293B] text-[10px] uppercase font-semibold">
+                <tr>
+                  <th class="py-2.5 px-3 w-16 text-center">Prio</th>
+                  <th class="py-2.5 px-3">Rule Name</th>
+                  <th class="py-2.5 px-3">Type</th>
+                  <th class="py-2.5 px-3">Match Target</th>
+                  <th class="py-2.5 px-3">Action</th>
+                  <th class="py-2.5 px-3 text-center w-24">State</th>
+                  <th class="py-2.5 px-3 text-right w-20">Action</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[#1E293B]/60">
+                <template x-for="r in interceptionRules" :key="r.id">
+                  <tr class="hover:bg-slate-800/40 transition">
+                    <td class="py-2.5 px-3 text-center">
+                      <span class="px-1.5 py-0.5 rounded text-[10px] bg-[#1E293B] text-slate-300 font-bold"
+                        x-text="'#' + r.priority"></span>
+                    </td>
+                    <td class="py-2.5 px-3">
+                      <div class="font-bold text-slate-200" x-text="r.name"></div>
+                      <div class="text-[10px] text-slate-500" x-text="'Project: ' + r.project"></div>
+                    </td>
+                    <td class="py-2.5 px-3">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-semibold"
+                        :class="r.rule_type === 'MOCK' ? 'bg-amber-950 text-amber-300 border border-amber-800' : 'bg-indigo-950 text-indigo-300 border border-indigo-800'"
+                        x-text="r.rule_type"></span>
+                    </td>
+                    <td class="py-2.5 px-3 space-y-0.5">
+                      <div class="flex items-center space-x-1.5">
+                        <span class="text-slate-400 font-semibold" x-text="r.match_method"></span>
+                        <span class="text-sky-300 truncate max-w-xs" x-text="r.match_url"></span>
+                      </div>
+                      <div x-show="r.match_header" class="text-[10px] text-slate-500 truncate"
+                        x-text="'Header: ' + r.match_header"></div>
+                    </td>
+                    <td class="py-2.5 px-3">
+                      <div class="font-semibold text-emerald-300" x-text="r.action_type"></div>
+                      <div class="text-[10px] text-slate-400 truncate max-w-xs"
+                        x-text="r.action_target + (r.action_value ? ': ' + r.action_value : '')"></div>
+                    </td>
+                    <td class="py-2.5 px-3 text-center">
+                      <button @click="toggleInterceptionRule(r.id)"
+                        class="px-2.5 py-1 rounded text-[10px] font-bold transition"
+                        :class="r.enabled ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30' : 'bg-slate-800 text-slate-500 border border-slate-700 hover:text-slate-300'"
+                        x-text="r.enabled ? 'ENABLED' : 'DISABLED'"></button>
+                    </td>
+                    <td class="py-2.5 px-3 text-right">
+                      <button @click="deleteInterceptionRule(r.id)"
+                        class="p-1 rounded text-rose-400 hover:text-rose-200 hover:bg-rose-950/40 transition"
+                        title="Delete Rule">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                      </button>
+                    </td>
+                  </tr>
+                </template>
+                <tr x-show="interceptionRules.length === 0">
+                  <td colspan="7" class="py-8 text-center text-slate-500">
+                    No active match &amp; replace rules configured. Click "+ Add Rule" to create one.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================================================================== -->
+      <!-- TAB: CI/CD SECURITY AUDIT & SCORECARD                                 -->
+      <!-- ===================================================================== -->
+      <div x-show="currentAppTab === 'ci_audit'"
+        class="flex-1 flex flex-col min-h-0 bg-[#0B0F17] overflow-hidden select-text font-mono text-xs" x-cloak>
+        <!-- Header -->
+        <div class="h-14 border-b border-[#1E293B] px-6 flex items-center justify-between shrink-0 bg-[#111827]">
+          <div class="flex items-center space-x-3">
+            <div class="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400">
+              <i data-lucide="shield-alert" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h1 class="text-sm font-bold text-slate-100 flex items-center space-x-2">
+                <span>OWASP API Security &amp; CI/CD Auditor</span>
+                <span x-show="ciAuditData" class="px-2 py-0.5 rounded text-[10px] font-bold"
+                  :class="ciAuditData && ciAuditData.score >= 80 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'"
+                  x-text="ciAuditData ? 'Grade: ' + ciAuditData.grade : ''"></span>
+              </h1>
+              <p class="text-[11px] text-slate-400">
+                Evaluates proxy-captured traffic against OWASP API Security Top 10 policies with automated remediation.
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center space-x-2">
+            <button @click="copyCiMarkdownReport()"
+              class="px-3 py-1.5 rounded-lg bg-[#1E293B] hover:bg-[#334155] text-slate-300 flex items-center space-x-1.5 transition">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+              <span>Copy Markdown Report</span>
+            </button>
+            <button @click="runCiAudit()" :disabled="isRunningCiAudit"
+              class="px-4 py-1.5 rounded-lg bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white font-semibold flex items-center space-x-1.5 shadow-md transition disabled:opacity-50">
+              <i data-lucide="play" class="w-3.5 h-3.5" :class="isRunningCiAudit ? 'animate-spin' : ''"></i>
+              <span x-text="isRunningCiAudit ? 'Auditing Traffic...' : 'Run Security Audit'"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Content Area -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-6 smooth-scroll">
+          <!-- Scorecard Overview -->
+          <template x-if="ciAuditData">
+            <div class="space-y-6">
+              <div class="grid grid-cols-4 gap-4">
+                <!-- Score Card -->
+                <div class="p-5 bg-[#111827] border rounded-2xl flex items-center justify-between shadow-sm"
+                  :class="ciAuditData.score >= 80 ? 'border-emerald-500/40' : (ciAuditData.score >= 60 ? 'border-amber-500/40' : 'border-rose-500/40')">
+                  <div>
+                    <div class="text-[11px] text-slate-400 uppercase font-semibold">Security Score</div>
+                    <div class="text-3xl font-extrabold mt-1"
+                      :class="ciAuditData.score >= 80 ? 'text-emerald-400' : (ciAuditData.score >= 60 ? 'text-amber-400' : 'text-rose-400')"
+                      x-text="ciAuditData.score + ' / 100'"></div>
+                    <div class="text-[10px] text-slate-500 mt-1"
+                      x-text="ciAuditData.total_audited_requests + ' requests evaluated'"></div>
+                  </div>
+                  <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-black shadow-lg"
+                    :class="ciAuditData.score >= 80 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : (ciAuditData.score >= 60 ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50' : 'bg-rose-500/20 text-rose-400 border border-rose-500/50')"
+                    x-text="ciAuditData.grade"></div>
+                </div>
+
+                <!-- Critical Violations -->
+                <div class="p-4 bg-[#111827] border border-rose-500/30 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <div class="text-[10px] text-rose-400 uppercase font-semibold">Critical Findings</div>
+                    <div class="text-2xl font-bold text-rose-300 mt-1"
+                      x-text="ciAuditData.severity_counts.CRITICAL || 0"></div>
+                    <div class="text-[10px] text-slate-500 mt-0.5">Secrets &amp; Key Leaks</div>
+                  </div>
+                  <i data-lucide="flame" class="w-6 h-6 text-rose-400"></i>
+                </div>
+
+                <!-- High Violations -->
+                <div class="p-4 bg-[#111827] border border-orange-500/30 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <div class="text-[10px] text-orange-400 uppercase font-semibold">High Violations</div>
+                    <div class="text-2xl font-bold text-orange-300 mt-1" x-text="ciAuditData.severity_counts.HIGH || 0">
+                    </div>
+                    <div class="text-[10px] text-slate-500 mt-0.5">CORS, Errors &amp; Query Tokens</div>
+                  </div>
+                  <i data-lucide="alert-triangle" class="w-6 h-6 text-orange-400"></i>
+                </div>
+
+                <!-- Medium / Low Violations -->
+                <div class="p-4 bg-[#111827] border border-amber-500/30 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <div class="text-[10px] text-amber-400 uppercase font-semibold">Medium &amp; Low</div>
+                    <div class="text-2xl font-bold text-amber-300 mt-1"
+                      x-text="(ciAuditData.severity_counts.MEDIUM || 0) + (ciAuditData.severity_counts.LOW || 0)"></div>
+                    <div class="text-[10px] text-slate-500 mt-0.5">Missing Headers &amp; Cookies</div>
+                  </div>
+                  <i data-lucide="info" class="w-6 h-6 text-amber-400"></i>
+                </div>
+              </div>
+
+              <!-- Violations Breakdown Table -->
+              <div class="bg-[#111827] border border-[#1E293B] rounded-xl overflow-hidden shadow-sm">
+                <div
+                  class="p-3.5 bg-[#0B0F17] border-b border-[#1E293B] font-bold text-slate-200 flex items-center justify-between">
+                  <span>Observed Policy Violations</span>
+                  <span class="text-[10px] text-slate-500"
+                    x-text="ciAuditData.violations.length + ' issues found'"></span>
+                </div>
+                <div class="divide-y divide-[#1E293B]/60">
+                  <template x-for="v in ciAuditData.violations" :key="v.rule + v.target">
+                    <div class="p-4 hover:bg-slate-800/20 transition space-y-1.5">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                          <span class="px-2 py-0.5 rounded text-[10px] font-bold"
+                            :class="v.severity === 'CRITICAL' ? 'bg-rose-950 text-rose-300 border border-rose-800' : (v.severity === 'HIGH' ? 'bg-orange-950 text-orange-300 border border-orange-800' : 'bg-amber-950 text-amber-300 border border-amber-800')"
+                            x-text="v.severity"></span>
+                          <span class="font-bold text-slate-200" x-text="v.rule"></span>
+                        </div>
+                        <span class="text-[10px] text-slate-500" x-text="v.category"></span>
+                      </div>
+                      <div class="text-[11px] text-slate-400" x-text="v.description"></div>
+                      <div class="text-[11px] text-sky-400 font-mono truncate" x-text="'Target: ' + v.target"></div>
+                      <div
+                        class="text-[10px] text-emerald-400 bg-emerald-950/30 border border-emerald-900/50 p-2 rounded-lg flex items-center space-x-1.5">
+                        <i data-lucide="check-circle" class="w-3.5 h-3.5 shrink-0"></i>
+                        <span x-text="'Fix: ' + v.remediation"></span>
+                      </div>
+                    </div>
+                  </template>
+                  <div x-show="ciAuditData.violations.length === 0" class="p-8 text-center text-emerald-400">
+                    ✓ Excellent security hygiene! No OWASP API policy violations detected.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+          <div x-show="!ciAuditData" class="py-16 text-center text-slate-500 space-y-3">
+            <i data-lucide="shield-check" class="w-12 h-12 mx-auto text-slate-600"></i>
+            <div>Click "Run Security Audit" above to analyze proxy-captured traffic against OWASP API standards.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BOTTOM HUD STATUS BAR (PERSISTENT & CRISP) -->
+      <footer class="h-7 bg-[#0B0F17] border-t border-[#1E293B] px-3 flex items-center justify-between shrink-0 font-mono text-[10px] text-slate-400 z-20 select-none">
+        <!-- Left Status Items -->
+        <div class="flex items-center space-x-3 truncate">
+          <div class="flex items-center space-x-1.5">
+            <span class="w-2 h-2 rounded-full" :class="proxyRunning ? 'bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.8)]' : 'bg-slate-600'"></span>
+            <span>PROXY:</span>
+            <span class="text-cyan-300 font-bold" x-text="'127.0.0.1:' + (proxyPort || '8088')"></span>
+          </div>
+
+          <span class="text-slate-600">|</span>
+
+          <div class="flex items-center space-x-1">
+            <span class="text-slate-500">PROJECT:</span>
+            <span class="text-indigo-300 font-bold truncate" x-text="selectedProject"></span>
+          </div>
+
+          <span class="text-slate-600 hidden sm:inline">|</span>
+
+          <div class="hidden sm:flex items-center space-x-1">
+            <span class="text-slate-500">OAST:</span>
+            <span class="text-orange-400 font-semibold" x-text="(oastEvents ? oastEvents.length : 0) + ' events'"></span>
+          </div>
+
+          <span class="text-slate-600 hidden md:inline">|</span>
+
+          <div class="hidden md:flex items-center space-x-1">
+            <span class="text-slate-500">FEED:</span>
+            <span :class="wsConnected ? 'text-emerald-400' : 'text-rose-400'" x-text="wsConnected ? 'ONLINE' : 'DISCONNECTED'"></span>
+          </div>
+        </div>
+
+        <!-- Right Shortcuts & Version -->
+        <div class="flex items-center space-x-3 shrink-0">
+          <button @click="toggleCommandPalette()" class="hover:text-slate-200 transition flex items-center space-x-1">
+            <kbd class="px-1 py-0.2 bg-[#111827] border border-[#1E293B] rounded text-sky-400 font-bold">Ctrl+K</kbd>
+            <span>Command Palette</span>
+          </button>
+
+          <button @click="showHotkeysModal = true" class="hover:text-slate-200 transition flex items-center space-x-1 hidden sm:flex">
+            <kbd class="px-1 py-0.2 bg-[#111827] border border-[#1E293B] rounded text-slate-300 font-bold">?</kbd>
+            <span>Shortcuts</span>
+          </button>
+
+          <span class="text-slate-600">|</span>
+
+          <span class="text-slate-500 font-bold">PROXSYNTH v0.1.0-beta</span>
+        </div>
+      </footer>
+
   </div> <!-- End Main App Container -->
 
   <!-- ADD ASSET MODAL -->
@@ -4145,304 +4440,9 @@
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- ===================================================================== -->
-      <!-- TAB: INTERCEPTION & MATCH/REPLACE RULES                               -->
-      <!-- ===================================================================== -->
-      <div x-show="currentAppTab === 'rules'"
-        class="flex-1 flex flex-col min-h-0 bg-[#0B0F17] overflow-hidden select-text font-mono text-xs" x-cloak>
-        <!-- Header -->
-        <div class="h-14 border-b border-[#1E293B] px-6 flex items-center justify-between shrink-0 bg-[#111827]">
-          <div class="flex items-center space-x-3">
-            <div class="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-400">
-              <i data-lucide="sliders" class="w-5 h-5"></i>
-            </div>
-            <div>
-              <h1 class="text-sm font-bold text-slate-100 flex items-center space-x-2">
-                <span>Autonomous Match &amp; Replace Rules</span>
-                <span
-                  class="px-2 py-0.5 rounded text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 font-semibold"
-                  x-text="interceptionRules.length + ' rules'"></span>
-              </h1>
-              <p class="text-[11px] text-slate-400">
-                Automate request header tampering, payload body rewrites, and synthetic response mocking.
-              </p>
-            </div>
-          </div>
-          <div class="flex items-center space-x-2">
-            <button @click="fetchInterceptionRules()"
-              class="px-3 py-1.5 rounded-lg bg-[#1E293B] hover:bg-[#334155] text-slate-300 flex items-center space-x-1.5 transition">
-              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-              <span>Refresh</span>
-            </button>
-            <button @click="openNewRuleModal()"
-              class="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white font-semibold flex items-center space-x-1.5 shadow-md transition">
-              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
-              <span>+ Add Rule</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Content Area -->
-        <div class="flex-1 overflow-y-auto p-6 space-y-4 smooth-scroll">
-          <!-- Rules Table -->
-          <div class="bg-[#111827] border border-[#1E293B] rounded-xl overflow-hidden shadow-sm">
-            <table class="w-full text-left text-xs">
-              <thead class="bg-[#0B0F17] text-slate-400 border-b border-[#1E293B] text-[10px] uppercase font-semibold">
-                <tr>
-                  <th class="py-2.5 px-3 w-16 text-center">Prio</th>
-                  <th class="py-2.5 px-3">Rule Name</th>
-                  <th class="py-2.5 px-3">Type</th>
-                  <th class="py-2.5 px-3">Match Target</th>
-                  <th class="py-2.5 px-3">Action</th>
-                  <th class="py-2.5 px-3 text-center w-24">State</th>
-                  <th class="py-2.5 px-3 text-right w-20">Action</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-[#1E293B]/60">
-                <template x-for="r in interceptionRules" :key="r.id">
-                  <tr class="hover:bg-slate-800/40 transition">
-                    <td class="py-2.5 px-3 text-center">
-                      <span class="px-1.5 py-0.5 rounded text-[10px] bg-[#1E293B] text-slate-300 font-bold"
-                        x-text="'#' + r.priority"></span>
-                    </td>
-                    <td class="py-2.5 px-3">
-                      <div class="font-bold text-slate-200" x-text="r.name"></div>
-                      <div class="text-[10px] text-slate-500" x-text="'Project: ' + r.project"></div>
-                    </td>
-                    <td class="py-2.5 px-3">
-                      <span class="px-2 py-0.5 rounded text-[10px] font-semibold"
-                        :class="r.rule_type === 'MOCK' ? 'bg-amber-950 text-amber-300 border border-amber-800' : 'bg-indigo-950 text-indigo-300 border border-indigo-800'"
-                        x-text="r.rule_type"></span>
-                    </td>
-                    <td class="py-2.5 px-3 space-y-0.5">
-                      <div class="flex items-center space-x-1.5">
-                        <span class="text-slate-400 font-semibold" x-text="r.match_method"></span>
-                        <span class="text-sky-300 truncate max-w-xs" x-text="r.match_url"></span>
-                      </div>
-                      <div x-show="r.match_header" class="text-[10px] text-slate-500 truncate"
-                        x-text="'Header: ' + r.match_header"></div>
-                    </td>
-                    <td class="py-2.5 px-3">
-                      <div class="font-semibold text-emerald-300" x-text="r.action_type"></div>
-                      <div class="text-[10px] text-slate-400 truncate max-w-xs"
-                        x-text="r.action_target + (r.action_value ? ': ' + r.action_value : '')"></div>
-                    </td>
-                    <td class="py-2.5 px-3 text-center">
-                      <button @click="toggleInterceptionRule(r.id)"
-                        class="px-2.5 py-1 rounded text-[10px] font-bold transition"
-                        :class="r.enabled ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30' : 'bg-slate-800 text-slate-500 border border-slate-700 hover:text-slate-300'"
-                        x-text="r.enabled ? 'ENABLED' : 'DISABLED'"></button>
-                    </td>
-                    <td class="py-2.5 px-3 text-right">
-                      <button @click="deleteInterceptionRule(r.id)"
-                        class="p-1 rounded text-rose-400 hover:text-rose-200 hover:bg-rose-950/40 transition"
-                        title="Delete Rule">
-                        <i data-lucide="trash-2" class="w-4 h-4"></i>
-                      </button>
-                    </td>
-                  </tr>
-                </template>
-                <tr x-show="interceptionRules.length === 0">
-                  <td colspan="7" class="py-8 text-center text-slate-500">
-                    No active match &amp; replace rules configured. Click "+ Add Rule" to create one.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- ===================================================================== -->
-      <!-- TAB: CI/CD SECURITY AUDIT & SCORECARD                                 -->
-      <!-- ===================================================================== -->
-      <div x-show="currentAppTab === 'ci_audit'"
-        class="flex-1 flex flex-col min-h-0 bg-[#0B0F17] overflow-hidden select-text font-mono text-xs" x-cloak>
-        <!-- Header -->
-        <div class="h-14 border-b border-[#1E293B] px-6 flex items-center justify-between shrink-0 bg-[#111827]">
-          <div class="flex items-center space-x-3">
-            <div class="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400">
-              <i data-lucide="shield-alert" class="w-5 h-5"></i>
-            </div>
-            <div>
-              <h1 class="text-sm font-bold text-slate-100 flex items-center space-x-2">
-                <span>OWASP API Security &amp; CI/CD Auditor</span>
-                <span x-show="ciAuditData" class="px-2 py-0.5 rounded text-[10px] font-bold"
-                  :class="ciAuditData && ciAuditData.score >= 80 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'"
-                  x-text="ciAuditData ? 'Grade: ' + ciAuditData.grade : ''"></span>
-              </h1>
-              <p class="text-[11px] text-slate-400">
-                Evaluates proxy-captured traffic against OWASP API Security Top 10 policies with automated remediation.
-              </p>
-            </div>
-          </div>
-          <div class="flex items-center space-x-2">
-            <button @click="copyCiMarkdownReport()"
-              class="px-3 py-1.5 rounded-lg bg-[#1E293B] hover:bg-[#334155] text-slate-300 flex items-center space-x-1.5 transition">
-              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
-              <span>Copy Markdown Report</span>
-            </button>
-            <button @click="runCiAudit()" :disabled="isRunningCiAudit"
-              class="px-4 py-1.5 rounded-lg bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white font-semibold flex items-center space-x-1.5 shadow-md transition disabled:opacity-50">
-              <i data-lucide="play" class="w-3.5 h-3.5" :class="isRunningCiAudit ? 'animate-spin' : ''"></i>
-              <span x-text="isRunningCiAudit ? 'Auditing Traffic...' : 'Run Security Audit'"></span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Content Area -->
-        <div class="flex-1 overflow-y-auto p-6 space-y-6 smooth-scroll">
-          <!-- Scorecard Overview -->
-          <template x-if="ciAuditData">
-            <div class="space-y-6">
-              <div class="grid grid-cols-4 gap-4">
-                <!-- Score Card -->
-                <div class="p-5 bg-[#111827] border rounded-2xl flex items-center justify-between shadow-sm"
-                  :class="ciAuditData.score >= 80 ? 'border-emerald-500/40' : (ciAuditData.score >= 60 ? 'border-amber-500/40' : 'border-rose-500/40')">
-                  <div>
-                    <div class="text-[11px] text-slate-400 uppercase font-semibold">Security Score</div>
-                    <div class="text-3xl font-extrabold mt-1"
-                      :class="ciAuditData.score >= 80 ? 'text-emerald-400' : (ciAuditData.score >= 60 ? 'text-amber-400' : 'text-rose-400')"
-                      x-text="ciAuditData.score + ' / 100'"></div>
-                    <div class="text-[10px] text-slate-500 mt-1"
-                      x-text="ciAuditData.total_audited_requests + ' requests evaluated'"></div>
-                  </div>
-                  <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-black shadow-lg"
-                    :class="ciAuditData.score >= 80 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : (ciAuditData.score >= 60 ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50' : 'bg-rose-500/20 text-rose-400 border border-rose-500/50')"
-                    x-text="ciAuditData.grade"></div>
-                </div>
-
-                <!-- Critical Violations -->
-                <div class="p-4 bg-[#111827] border border-rose-500/30 rounded-2xl flex items-center justify-between">
-                  <div>
-                    <div class="text-[10px] text-rose-400 uppercase font-semibold">Critical Findings</div>
-                    <div class="text-2xl font-bold text-rose-300 mt-1"
-                      x-text="ciAuditData.severity_counts.CRITICAL || 0"></div>
-                    <div class="text-[10px] text-slate-500 mt-0.5">Secrets &amp; Key Leaks</div>
-                  </div>
-                  <i data-lucide="flame" class="w-6 h-6 text-rose-400"></i>
-                </div>
-
-                <!-- High Violations -->
-                <div class="p-4 bg-[#111827] border border-orange-500/30 rounded-2xl flex items-center justify-between">
-                  <div>
-                    <div class="text-[10px] text-orange-400 uppercase font-semibold">High Violations</div>
-                    <div class="text-2xl font-bold text-orange-300 mt-1" x-text="ciAuditData.severity_counts.HIGH || 0">
-                    </div>
-                    <div class="text-[10px] text-slate-500 mt-0.5">CORS, Errors &amp; Query Tokens</div>
-                  </div>
-                  <i data-lucide="alert-triangle" class="w-6 h-6 text-orange-400"></i>
-                </div>
-
-                <!-- Medium / Low Violations -->
-                <div class="p-4 bg-[#111827] border border-amber-500/30 rounded-2xl flex items-center justify-between">
-                  <div>
-                    <div class="text-[10px] text-amber-400 uppercase font-semibold">Medium &amp; Low</div>
-                    <div class="text-2xl font-bold text-amber-300 mt-1"
-                      x-text="(ciAuditData.severity_counts.MEDIUM || 0) + (ciAuditData.severity_counts.LOW || 0)"></div>
-                    <div class="text-[10px] text-slate-500 mt-0.5">Missing Headers &amp; Cookies</div>
-                  </div>
-                  <i data-lucide="info" class="w-6 h-6 text-amber-400"></i>
-                </div>
-              </div>
-
-              <!-- Violations Breakdown Table -->
-              <div class="bg-[#111827] border border-[#1E293B] rounded-xl overflow-hidden shadow-sm">
-                <div
-                  class="p-3.5 bg-[#0B0F17] border-b border-[#1E293B] font-bold text-slate-200 flex items-center justify-between">
-                  <span>Observed Policy Violations</span>
-                  <span class="text-[10px] text-slate-500"
-                    x-text="ciAuditData.violations.length + ' issues found'"></span>
-                </div>
-                <div class="divide-y divide-[#1E293B]/60">
-                  <template x-for="v in ciAuditData.violations" :key="v.rule + v.target">
-                    <div class="p-4 hover:bg-slate-800/20 transition space-y-1.5">
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center space-x-2">
-                          <span class="px-2 py-0.5 rounded text-[10px] font-bold"
-                            :class="v.severity === 'CRITICAL' ? 'bg-rose-950 text-rose-300 border border-rose-800' : (v.severity === 'HIGH' ? 'bg-orange-950 text-orange-300 border border-orange-800' : 'bg-amber-950 text-amber-300 border border-amber-800')"
-                            x-text="v.severity"></span>
-                          <span class="font-bold text-slate-200" x-text="v.rule"></span>
-                        </div>
-                        <span class="text-[10px] text-slate-500" x-text="v.category"></span>
-                      </div>
-                      <div class="text-[11px] text-slate-400" x-text="v.description"></div>
-                      <div class="text-[11px] text-sky-400 font-mono truncate" x-text="'Target: ' + v.target"></div>
-                      <div
-                        class="text-[10px] text-emerald-400 bg-emerald-950/30 border border-emerald-900/50 p-2 rounded-lg flex items-center space-x-1.5">
-                        <i data-lucide="check-circle" class="w-3.5 h-3.5 shrink-0"></i>
-                        <span x-text="'Fix: ' + v.remediation"></span>
-                      </div>
-                    </div>
-                  </template>
-                  <div x-show="ciAuditData.violations.length === 0" class="p-8 text-center text-emerald-400">
-                    ✓ Excellent security hygiene! No OWASP API policy violations detected.
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
-          <div x-show="!ciAuditData" class="py-16 text-center text-slate-500 space-y-3">
-            <i data-lucide="shield-check" class="w-12 h-12 mx-auto text-slate-600"></i>
-            <div>Click "Run Security Audit" above to analyze proxy-captured traffic against OWASP API standards.</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- BOTTOM HUD STATUS BAR (PERSISTENT & CRISP) -->
-      <footer class="h-7 bg-[#0B0F17] border-t border-[#1E293B] px-3 flex items-center justify-between shrink-0 font-mono text-[10px] text-slate-400 z-20 select-none">
-        <!-- Left Status Items -->
-        <div class="flex items-center space-x-3 truncate">
-          <div class="flex items-center space-x-1.5">
-            <span class="w-2 h-2 rounded-full" :class="proxyRunning ? 'bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.8)]' : 'bg-slate-600'"></span>
-            <span>PROXY:</span>
-            <span class="text-cyan-300 font-bold" x-text="'127.0.0.1:' + (proxyPort || '8088')"></span>
-          </div>
-
-          <span class="text-slate-600">|</span>
-
-          <div class="flex items-center space-x-1">
-            <span class="text-slate-500">PROJECT:</span>
-            <span class="text-indigo-300 font-bold truncate" x-text="selectedProject"></span>
-          </div>
-
-          <span class="text-slate-600 hidden sm:inline">|</span>
-
-          <div class="hidden sm:flex items-center space-x-1">
-            <span class="text-slate-500">OAST:</span>
-            <span class="text-orange-400 font-semibold" x-text="(oastEvents ? oastEvents.length : 0) + ' events'"></span>
-          </div>
-
-          <span class="text-slate-600 hidden md:inline">|</span>
-
-          <div class="hidden md:flex items-center space-x-1">
-            <span class="text-slate-500">FEED:</span>
-            <span :class="wsConnected ? 'text-emerald-400' : 'text-rose-400'" x-text="wsConnected ? 'ONLINE' : 'DISCONNECTED'"></span>
-          </div>
-        </div>
-
-        <!-- Right Shortcuts & Version -->
-        <div class="flex items-center space-x-3 shrink-0">
-          <button @click="toggleCommandPalette()" class="hover:text-slate-200 transition flex items-center space-x-1">
-            <kbd class="px-1 py-0.2 bg-[#111827] border border-[#1E293B] rounded text-sky-400 font-bold">Ctrl+K</kbd>
-            <span>Command Palette</span>
-          </button>
-
-          <button @click="showHotkeysModal = true" class="hover:text-slate-200 transition flex items-center space-x-1 hidden sm:flex">
-            <kbd class="px-1 py-0.2 bg-[#111827] border border-[#1E293B] rounded text-slate-300 font-bold">?</kbd>
-            <span>Shortcuts</span>
-          </button>
-
-          <span class="text-slate-600">|</span>
-
-          <span class="text-slate-500 font-bold">PROXSYNTH v0.1.0-beta</span>
-        </div>
-      </footer>
-
-    </div>
-
-    <!-- MODAL: ADD INTERCEPTION RULE -->
+  <!-- MODAL: ADD INTERCEPTION RULE -->
     <div x-show="showNewRuleModal"
       class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 select-text font-mono text-xs"
       x-cloak>
