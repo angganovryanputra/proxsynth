@@ -82,9 +82,20 @@ async def startup_event():
     except Exception as ex:
         print(f"[!] Notice: Proxsynth LDAP OAST listener startup error: {ex}")
 
+    try:
+        from backend.update_manager import start_background_updater
+        start_background_updater(interval_seconds=300.0, ws_manager=ws_manager)
+    except Exception as ex:
+        print(f"[!] Notice: Proxsynth Auto-Updater startup error: {ex}")
+
 @app.on_event("shutdown")
 async def shutdown_event():
     stop_session_keeper()
+    try:
+        from backend.update_manager import stop_background_updater
+        stop_background_updater()
+    except Exception:
+        pass
     try:
         from backend.forward_proxy import stop_forward_proxy
         await stop_forward_proxy()
@@ -334,6 +345,27 @@ class RecordPayloadRequest(BaseModel):
 
 class ClearRequest(BaseModel):
     project: Optional[str] = None
+
+
+class ExecuteCommandRequest(BaseModel):
+    command: str
+    project: Optional[str] = "default"
+    agent_id: Optional[str] = "operator"
+    cwd: Optional[str] = None
+    timeout: int = 60
+    reasoning: Optional[str] = "Manual reproduction via AI CLI Repeater"
+    script_content: Optional[str] = None
+
+
+class TestPayloadRequest(BaseModel):
+    raw_payload: str
+    target_url: str
+    http_method: Optional[str] = "GET"
+    target_param: Optional[str] = ""
+    vuln_type: Optional[str] = "CUSTOM"
+    project: Optional[str] = "default"
+    headers: Optional[Dict[str, str]] = None
+    mutation_type: Optional[str] = "DIRECT"
 
 
 # ==============================================================================
@@ -1326,6 +1358,157 @@ async def record_command_api(data: RecordCommandRequest, db: Session = Depends(g
     return cmd_dict
 
 
+@app.post("/api/commands/execute")
+async def execute_command_api(data: ExecuteCommandRequest, db: Session = Depends(get_db)):
+    """
+    Executes a terminal/CLI command on-demand via the AI Activity CLI Repeater.
+    Runs in safe subprocess environment, binds to Proxsynth Forward Proxy (127.0.0.1:8088),
+    captures full stdout/stderr, execution duration, and correlates generated HTTP traffic.
+    """
+    import re
+    cmd_clean = data.command.strip()
+    if not cmd_clean:
+        raise HTTPException(status_code=400, detail="Command cannot be empty")
+
+    proj = (data.project or "default").strip().lower()
+
+    # Safety Guardrail Check
+    DANGEROUS_PATTERNS = [
+        r"rm\s+(-[rfRF]+\s+|--recursive\s+|--force\s+)*\/",
+        r"rm\s+(-[rfRF]+\s+|--recursive\s+|--force\s+)*\*",
+        r"mkfs",
+        r"dd\s+if=",
+        r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:",
+        r"format\s+[a-zA-Z]:",
+        r"DROP\s+DATABASE",
+        r"DROP\s+TABLE",
+        r"shutdown(\.exe)?\s+",
+        r"reboot(\.exe)?"
+    ]
+    for pat in DANGEROUS_PATTERNS:
+        if re.search(pat, cmd_clean, re.IGNORECASE):
+            raise HTTPException(status_code=403, detail=f"Command blocked by Proxsynth Safe-Mode guardrail: matches dangerous pattern '{pat}'")
+
+    current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    work_dir = current_dir
+    if data.cwd and os.path.isdir(data.cwd):
+        work_dir = os.path.abspath(data.cwd)
+
+    proxy_port = int(os.getenv("PROXSYNTH_PROXY_PORT", "8088"))
+    try:
+        from backend.forward_proxy import ensure_forward_proxy_running
+        await ensure_forward_proxy_running(port=proxy_port)
+    except Exception:
+        pass
+
+    sub_env = os.environ.copy()
+    sub_env["HTTP_PROXY"] = f"http://127.0.0.1:{proxy_port}"
+    sub_env["HTTPS_PROXY"] = f"http://127.0.0.1:{proxy_port}"
+    sub_env["ALL_PROXY"] = f"http://127.0.0.1:{proxy_port}"
+    sub_env["PROXSYNTH_PROJECT"] = proj
+    sub_env["PYTHONPATH"] = f"{current_dir}{os.pathsep}{sub_env.get('PYTHONPATH', '')}".rstrip(os.pathsep)
+
+    latest_log_before = db.query(func.max(HttpLog.id)).filter(HttpLog.project == proj).scalar() or 0
+
+    t_start = time.time()
+    stdout_text = ""
+    stderr_text = ""
+    exit_code = 0
+    status = "SUCCESS"
+
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            cmd_clean,
+            cwd=work_dir,
+            env=sub_env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        try:
+            out_bytes, err_bytes = await asyncio.wait_for(proc.communicate(), timeout=float(data.timeout or 60))
+            stdout_text = out_bytes.decode("utf-8", errors="replace")
+            stderr_text = err_bytes.decode("utf-8", errors="replace")
+            exit_code = proc.returncode
+            status = "SUCCESS" if exit_code == 0 else "FAILED"
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            status = "TIMEOUT"
+            stderr_text = f"[!] Command execution timed out after {data.timeout} seconds."
+            exit_code = -1
+    except Exception as ex:
+        status = "FAILED"
+        stderr_text = f"Execution error: {str(ex)}"
+        exit_code = -1
+
+    duration_ms = int((time.time() - t_start) * 1000)
+
+    linked_log_id = None
+    latest_log_after = db.query(func.max(HttpLog.id)).filter(HttpLog.project == proj).scalar() or 0
+    if latest_log_after > latest_log_before:
+        linked_log_id = latest_log_after
+
+    entry = AgentCommandLog(
+        project=proj,
+        agent_id=data.agent_id or "operator",
+        command=cmd_clean,
+        tool_name="cli_repeater",
+        reasoning=data.reasoning or "Manual reproduction via AI CLI Repeater",
+        exit_code=exit_code,
+        stdout=stdout_text[:5242880],
+        stderr=stderr_text[:5242880],
+        duration_ms=duration_ms,
+        status=status,
+        linked_log_id=linked_log_id,
+        script_content=(data.script_content or "")[:5242880]
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+
+    cmd_dict = entry.to_dict()
+    await ws_manager.broadcast({
+        "type": "NEW_COMMAND",
+        "project": proj,
+        "command": cmd_dict
+    })
+
+    try:
+        from backend.payload_vault import auto_vault_script_payloads
+        vault_items = auto_vault_script_payloads(
+            db=db,
+            project=proj,
+            agent_id=data.agent_id or "operator",
+            script_content=data.script_content or "",
+            command=cmd_clean,
+            cmd_log_id=entry.id
+        )
+        for v_item in vault_items:
+            await ws_manager.broadcast({
+                "type": "NEW_PAYLOAD",
+                "project": proj,
+                "payload": v_item.to_dict()
+            })
+    except Exception:
+        pass
+
+    return {
+        "success": status == "SUCCESS",
+        "id": entry.id,
+        "command": cmd_clean,
+        "project": proj,
+        "exit_code": exit_code,
+        "stdout": stdout_text,
+        "stderr": stderr_text,
+        "duration_ms": duration_ms,
+        "status": status,
+        "linked_log_id": linked_log_id,
+        "timestamp": entry.timestamp.isoformat() if entry.timestamp else ""
+    }
+
+
 @app.post("/api/commands/clear")
 async def clear_commands(
     project: Optional[str] = None,
@@ -1416,6 +1599,123 @@ async def record_payload_api(data: RecordPayloadRequest, db: Session = Depends(g
         "payload": p_dict
     })
     return p_dict
+
+
+@app.post("/api/payloads/test")
+async def test_payload_api(data: TestPayloadRequest, db: Session = Depends(get_db)):
+    """
+    Directly fires a payload from the Payload Vault against a target URL through Proxsynth Proxy.
+    Analyzes reflection, response time, status code, and flags potential vulnerabilities.
+    """
+    import httpx
+    import urllib.parse
+    target_url = data.target_url.strip()
+    if not target_url:
+        raise HTTPException(status_code=400, detail="Target URL cannot be empty")
+
+    if not target_url.startswith(("http://", "https://")):
+        target_url = "http://" + target_url
+
+    proj = (data.project or "default").strip().lower()
+    proxy_port = int(os.getenv("PROXSYNTH_PROXY_PORT", "8088"))
+
+    method = (data.http_method or "GET").upper()
+    req_headers = data.headers or {}
+    req_headers["User-Agent"] = req_headers.get("User-Agent", "Proxsynth-Payload-Tester/2.5.0")
+
+    final_url = target_url
+    req_body = None
+
+    if data.target_param:
+        parsed = urllib.parse.urlparse(target_url)
+        params = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        params[data.target_param] = [data.raw_payload]
+        new_query = urllib.parse.urlencode(params, doseq=True)
+        final_url = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
+        if method in ("POST", "PUT", "PATCH"):
+            req_body = {data.target_param: data.raw_payload}
+    elif method in ("POST", "PUT", "PATCH"):
+        req_body = data.raw_payload
+
+    t0 = time.time()
+    try:
+        proxies = {
+            "http://": f"http://127.0.0.1:{proxy_port}",
+            "https://": f"http://127.0.0.1:{proxy_port}"
+        }
+        async with httpx.AsyncClient(proxies=proxies, verify=False, timeout=15.0) as client:
+            if method == "GET":
+                resp = await client.get(final_url, headers=req_headers)
+            elif method == "POST":
+                if isinstance(req_body, dict):
+                    resp = await client.post(final_url, data=req_body, headers=req_headers)
+                else:
+                    resp = await client.post(final_url, content=(req_body or "").encode(), headers=req_headers)
+            elif method == "PUT":
+                resp = await client.put(final_url, content=(req_body or "").encode() if req_body else None, headers=req_headers)
+            else:
+                resp = await client.request(method, final_url, headers=req_headers)
+
+        duration_ms = int((time.time() - t0) * 1000)
+        resp_text = resp.text
+        is_reflected = bool(data.raw_payload and data.raw_payload in resp_text)
+
+        signatures = []
+        lower_body = resp_text.lower()
+        if any(err in lower_body for err in ["sql syntax", "mysql_fetch", "ora-01756", "sqlite3.operationalerror", "postgresql"]):
+            signatures.append("SQL_ERROR_LEAK")
+        if is_reflected:
+            signatures.append("PAYLOAD_REFLECTED")
+        if resp.status_code in (403, 406) and any(w in lower_body for w in ["cloudflare", "akamai", "waf", "blocked", "forbidden"]):
+            signatures.append("WAF_BLOCKED")
+
+        outcome = "REFLECTED" if is_reflected else ("WAF_BLOCKED" if "WAF_BLOCKED" in signatures else ("EXECUTED" if resp.status_code < 400 else "FILTERED"))
+
+        # Save to database if record wanted
+        test_entry = CapturedPayload(
+            project=proj,
+            agent_id="operator",
+            vuln_type=(data.vuln_type or "CUSTOM").upper(),
+            target_param=data.target_param or "",
+            raw_payload=data.raw_payload,
+            mutation_type=data.mutation_type or "REPRODUCE",
+            target_url=final_url,
+            http_method=method,
+            outcome=outcome,
+            http_status=resp.status_code,
+            response_signature=",".join(signatures) if signatures else "",
+            notes=f"Tested via AI Activity Payload Sandbox in {duration_ms}ms"
+        )
+        db.add(test_entry)
+        db.commit()
+
+        return {
+            "success": True,
+            "url": final_url,
+            "method": method,
+            "status_code": resp.status_code,
+            "duration_ms": duration_ms,
+            "is_reflected": is_reflected,
+            "outcome": outcome,
+            "signatures": signatures,
+            "response_preview": resp_text[:2000],
+            "headers": dict(resp.headers)
+        }
+    except Exception as ex:
+        duration_ms = int((time.time() - t0) * 1000)
+        return {
+            "success": False,
+            "url": final_url,
+            "method": method,
+            "error": str(ex),
+            "duration_ms": duration_ms,
+            "is_reflected": False,
+            "outcome": "ERROR",
+            "signatures": ["NETWORK_ERROR"],
+            "response_preview": f"Connection failed: {str(ex)}",
+            "headers": {}
+        }
+
 
 
 @app.post("/api/payloads/clear")
@@ -2355,6 +2655,37 @@ async def check_system_update_endpoint(force: bool = False):
 async def perform_system_update_endpoint():
     """Executes automated one-click system & MCP server update with live WebSocket telemetry."""
     from backend.update_manager import async_perform_system_update
+    return await async_perform_system_update(ws_manager=ws_manager)
+
+
+@app.post("/api/system/webhook-update")
+async def github_webhook_update_endpoint(request: Request):
+    """
+    Automated webhook receiver for GitHub push events.
+    Enables instant auto-update whenever a commit is pushed to the repository.
+    Optionally verifies GITHUB_WEBHOOK_SECRET via HMAC-SHA256 signature.
+    """
+    import hmac
+    import hashlib
+    from backend.update_manager import async_perform_system_update
+
+    secret = os.getenv("GITHUB_WEBHOOK_SECRET", "").strip()
+    body_bytes = await request.body()
+
+    if secret:
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        if not signature or not signature.startswith("sha256="):
+            raise HTTPException(status_code=401, detail="Missing or malformed X-Hub-Signature-256 header")
+        expected_sig = "sha256=" + hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected_sig):
+            raise HTTPException(status_code=403, detail="Invalid webhook signature")
+
+    event = request.headers.get("X-GitHub-Event", "push")
+    if event in ("ping",):
+        return {"status": "ok", "message": "Proxsynth GitHub Webhook Pong"}
+
+    return await async_perform_system_update(ws_manager=ws_manager)
+
 
 # ==============================================================================
 # Public Ingress Tunnel Endpoints

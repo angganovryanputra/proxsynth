@@ -311,3 +311,44 @@ async def async_perform_system_update(ws_manager=None) -> Dict[str, Any]:
         "version": PROXSYNTH_VERSION,
         "logs": logs
     }
+
+
+_updater_task: Optional[asyncio.Task] = None
+
+
+async def _auto_update_loop(interval_seconds: float = 300.0, ws_manager=None):
+    """
+    Background worker that runs if PROXSYNTH_AUTO_UPDATE is enabled.
+    Checks remote git repository and automatically pulls new commits without operator interaction.
+    """
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            chk = await async_check_for_updates(force=True)
+            if chk.get("update_available"):
+                await async_perform_system_update(ws_manager=ws_manager)
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            pass
+
+
+def start_background_updater(interval_seconds: float = 300.0, ws_manager=None):
+    """Initializes automated background polling if PROXSYNTH_AUTO_UPDATE=true."""
+    global _updater_task
+    auto_enabled = os.getenv("PROXSYNTH_AUTO_UPDATE", "").strip().lower() in ("1", "true", "yes")
+    if auto_enabled and (_updater_task is None or _updater_task.done()):
+        try:
+            loop = asyncio.get_event_loop()
+            _updater_task = loop.create_task(_auto_update_loop(interval_seconds, ws_manager))
+        except Exception:
+            pass
+
+
+def stop_background_updater():
+    """Cancels running background update worker."""
+    global _updater_task
+    if _updater_task and not _updater_task.done():
+        _updater_task.cancel()
+        _updater_task = None
+
