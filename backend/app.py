@@ -3332,11 +3332,13 @@ class CampaignRunRequest(BaseModel):
     project: str = "default"
     max_pages: int = 15
     deep_verify: bool = True
+    ports_profile: str = "top_100"
+    enable_spa: bool = True
 
 
 @app.post("/api/campaign/run")
 async def run_campaign_endpoint(req: CampaignRunRequest, db: Session = Depends(get_db)):
-    """Executes full autonomous multi-phase security campaign pipeline."""
+    """Executes full autonomous unified security campaign pipeline."""
     from backend.campaign_orchestrator import run_autonomous_security_campaign
     proj = req.project.strip().lower()
     return await run_autonomous_security_campaign(
@@ -3344,8 +3346,122 @@ async def run_campaign_endpoint(req: CampaignRunRequest, db: Session = Depends(g
         modes=req.modes,
         project=proj,
         max_pages=req.max_pages,
-        deep_verify=req.deep_verify
+        deep_verify=req.deep_verify,
+        ports_profile=req.ports_profile,
+        enable_spa=req.enable_spa
     )
+
+
+class NetworkScanRequest(BaseModel):
+    target: str
+    ports_profile: str = "top_100"
+    ports_custom: Optional[str] = None
+    concurrency: int = 80
+    project: str = "default"
+    audit_misconfigs: bool = True
+
+
+@app.post("/api/network/scan")
+async def network_scan_endpoint(req: NetworkScanRequest):
+    """Autonomously scans target for open ports, grabs banners, and audits exposed services."""
+    from backend.network_scanner import scan_target_ports
+    return await scan_target_ports(
+        target=req.target,
+        ports_profile=req.ports_profile,
+        ports_custom=req.ports_custom,
+        concurrency=req.concurrency,
+        project=req.project.strip().lower(),
+        audit_misconfigs=req.audit_misconfigs
+    )
+
+
+class ApiSpecImportRequest(BaseModel):
+    spec_source: str
+    target_base_url: Optional[str] = None
+    project: str = "default"
+
+
+@app.post("/api/api-spec/import")
+async def api_spec_import_endpoint(req: ApiSpecImportRequest):
+    """Imports OpenAPI / Swagger specification into Target Knowledge Graph."""
+    from backend.api_importer import import_api_schema
+    return await import_api_schema(
+        spec_source=req.spec_source,
+        target_base_url=req.target_base_url,
+        project=req.project.strip().lower()
+    )
+
+
+class ApiGatewayAuditRequest(BaseModel):
+    target_url: str
+    project: str = "default"
+
+
+@app.post("/api/api-gateway/audit")
+async def api_gateway_audit_endpoint(req: ApiGatewayAuditRequest):
+    """Audits protected endpoint against API gateway 401/403 authorization bypass techniques."""
+    from backend.api_importer import audit_api_gateway_bypass
+    return await audit_api_gateway_bypass(
+        target_url=req.target_url,
+        project=req.project.strip().lower()
+    )
+
+
+class CliMineRequest(BaseModel):
+    command: str
+    raw_output: str
+    target: str = ""
+    project: str = "default"
+
+
+@app.post("/api/cli/mine")
+def cli_mine_endpoint(req: CliMineRequest):
+    """Mines CLI stdout/stderr (Nmap, Nuclei, FFUF) and ingests findings and services into Target Graph."""
+    from backend.cli_miner import mine_and_ingest_cli_output
+    return mine_and_ingest_cli_output(
+        command=req.command,
+        raw_output=req.raw_output,
+        target=req.target,
+        project=req.project.strip().lower()
+    )
+
+
+@app.get("/api/guidance/suggest")
+def get_attack_guidance_endpoint(
+    project: str = "default",
+    log_id: Optional[int] = None,
+    target_url: Optional[str] = None
+):
+    """Returns cognitive attack recommendations and tool triggers for AI agents."""
+    from backend.attack_advisor import get_project_attack_guidance, suggest_attack_actions
+    if log_id:
+        db = SessionLocal()
+        try:
+            entry = db.query(HttpLog).filter(HttpLog.id == int(log_id)).first()
+            if entry:
+                hdrs = {}
+                try:
+                    hdrs = json.loads(entry.request_headers) if isinstance(entry.request_headers, str) else entry.request_headers
+                except Exception:
+                    pass
+                actions = suggest_attack_actions(
+                    url=entry.url,
+                    method=entry.method,
+                    headers=hdrs,
+                    body=entry.request_body,
+                    response_status=entry.status_code,
+                    response_body=entry.response_body,
+                    log_id=entry.id
+                )
+                return {"status": "success", "log_id": log_id, "recommended_actions": actions}
+        finally:
+            db.close()
+
+    if target_url:
+        actions = suggest_attack_actions(url=target_url)
+        return {"status": "success", "target_url": target_url, "recommended_actions": actions}
+
+    return get_project_attack_guidance(project=project)
 
 
 @app.get("/api/health")

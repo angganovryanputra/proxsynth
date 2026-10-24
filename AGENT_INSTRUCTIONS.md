@@ -1,20 +1,20 @@
-# ⚡ PROXSYNTH MCP — AGENT INTEGRATION GUIDE & SPECIFICATION
-### Complete Integration Guide for Autonomous AI Pentesting Agents (Claude Code / OpenCode / Hermes / Cursor / Windsurf / Antigravity)
+# ⚡ PROXSYNTH MCP — AUTONOMOUS AGENT INTEGRATION & OPERATIONAL DIRECTIVE
+### Comprehensive Guide & Cognitive Decision Framework for AI Pentesting Agents (Claude Code / OpenCode / Hermes / Cursor / Windsurf / Antigravity)
 
-> **Current Version**: `v0.1.0-beta` (Initial Beta Release)  
+> **Release Version**: `v0.1.0-beta` (Initial Beta Release)  
 > **Protocol**: Model Context Protocol (FastMCP 2.0+)  
-> **Registered MCP Tools**: **71 Active Tools**  
-> **Default Ports**: Dashboard & API `:8000` | Forward Interception Proxy `:8088` | DNS OAST `:5354` | LDAP OAST `:1390`  
+> **Registered Tools**: **76 Active FastMCP Security Tools**  
+> **Default Ports**: FastAPI Dashboard & API `:8000` | Forward Interception Proxy `:8088` | DNS OAST `:5354` | LDAP OAST `:1390`  
 
-Panduan komprehensif ini dirancang untuk agen otonom (AI Pentesting Agents) agar seluruh alur kerja pengujian penetrasi, pemetaan attack surface, manipulasi logika bisnis, eksploitasi Out-of-Band (OAST), dan verifikasi deterministik dapat berjalan secara otomatis dengan intervensi manusia seminimal mungkin.
+This operational document specifies how autonomous AI agents interface with the **Proxynth Security Testing Gateway**, autonomously navigate attack surfaces across Web, REST/GraphQL APIs, and Network Infrastructure, make deterministic testing decisions, and execute zero-human-intervention security campaigns.
 
 ---
 
-## 1. Konfigurasi MCP Client
+## 1. MCP Client Configuration
 
-Tambahkan konfigurasi server Proxynth MCP ke environment agent Anda:
+Configure the Proxynth MCP server in your agent client environment:
 
-### A. Untuk Claude Desktop & Claude Code (`claude_desktop_config.json`)
+### A. Claude Desktop & Claude Code (`claude_desktop_config.json`)
 ```json
 {
   "mcpServers": {
@@ -31,7 +31,7 @@ Tambahkan konfigurasi server Proxynth MCP ke environment agent Anda:
 }
 ```
 
-### B. Untuk Cursor IDE (`.cursor/mcp.json` atau Cursor Settings > MCP)
+### B. Cursor IDE (`.cursor/mcp.json` or Cursor Settings > MCP)
 ```json
 {
   "mcpServers": {
@@ -47,7 +47,7 @@ Tambahkan konfigurasi server Proxynth MCP ke environment agent Anda:
 }
 ```
 
-### C. Untuk Windsurf IDE (`~/.codeium/windsurf/mcp_config.json`)
+### C. Windsurf IDE (`~/.codeium/windsurf/mcp_config.json`)
 ```json
 {
   "mcpServers": {
@@ -63,7 +63,7 @@ Tambahkan konfigurasi server Proxynth MCP ke environment agent Anda:
 }
 ```
 
-### D. Untuk Antigravity IDE & AGY CLI (`mcp_config.json`)
+### D. Antigravity IDE & AGY CLI (`mcp_config.json`)
 ```json
 {
   "mcpServers": {
@@ -81,303 +81,273 @@ Tambahkan konfigurasi server Proxynth MCP ke environment agent Anda:
 
 ---
 
-## 2. System Prompt / Instruksi Pengujian untuk Agen
+## 2. Autonomous Security Testing Directive (System Prompt)
 
-Salin arahan instruksi keamanan berikut ke dalam system prompt agen Anda:
+Embed the following directive directly into your agent's system prompt or `.cursorrules` / `.windsurfrules`:
 
 ```text
 [SECURITY TESTING DIRECTIVE — PROXSYNTH MCP v0.1.0-beta]
-Anda terhubung dengan Proxynth Security Testing Gateway & Interception Platform melalui 71 FastMCP Tools:
+You are connected to the Proxynth Security Testing Gateway & Interception Platform via 76 FastMCP Tools:
 
-1. Interaksi Target Utama:
-   Setiap kali berinteraksi dengan target pentest (HTTP/HTTPS), utamakan tool `send_http_request`. JANGAN menggunakan bash `curl` langsung di terminal host jika ingin kontrol granular terhadap distillation dan diffing.
-2. Parameter Reasoning:
-   Selalu sertakan parameter `reasoning` saat memanggil tool untuk menjelaskan hipotesis keamanan Anda (contoh: "Testing SQL injection pada query param id karena respons awal menampilkan database error").
-3. Boundary & Scope Guardrails:
-   Jika target memicu proteksi guardrail, hormati batasan scope dan batasi pengujian pada endpoint yang diizinkan operator.
-4. Dynamic DOM & JavaScript Rendering:
-   Jika target membutuhkan rendering halaman JavaScript dinamis (SPA/React/Vue/Angular), gunakan tool `browser_navigate_and_render` atau `render_webpage`.
-5. Human-in-the-Loop Login Wall:
-   Jika menemui CAPTCHA, Cloudflare Turnstile, atau Two-Factor Authentication (2FA), panggil tool `request_manual_login` agar operator manusia dapat login via browser interaktif dan cookie sesi otomatis diserap ke Proxynth.
-6. Terminal / CLI Command Audit:
-   Jika perlu menjalankan tool CLI (seperti nmap, sqlmap, ffuf, nuclei), gunakan tool `run_pentest_command` agar stdout, stderr, dan exit code terekam ke Command Audit Trail.
-7. Exploit Payload Vault:
-   Gunakan tool `record_test_payload` untuk mencatat payload eksploitasi khusus (SQLi, XSS, SSRF, SSTI, RCE, IDOR) ke dalam Proxynth Payload Vault. Gunakan `get_captured_payloads` untuk mencari payload referensi.
-8. Un-Truncated Traffic Retrieval:
-   Jika response body terpotong pada `send_http_request`, panggil `get_log_detail(log_id=<ID>)` untuk menganalisis header dan body respons mentah secara lengkap.
-9. Riwayat Lalu Lintas & Triage:
-   Gunakan `get_traffic_history(project="default", limit=20)` atau `search_traffic_advanced(...)` untuk meninjau riwayat request sebelumnya guna replay atau analisis chained exploit.
-10. Pelaporan & Flagging Kerentanan:
-    - Langsung tandai temuan saat request: sertakan `finding_title`, `finding_severity="CRITICAL"|"HIGH"|"MEDIUM"|"LOW"`, `flag_status="CONFIRMED"`, `finding_category`, dan `finding_evidence` pada `send_http_request`.
-    - ATAU setelah menganalisis respons, panggil tool `report_vulnerability(log_id=<ID>, title="...", severity="...", category="...", evidence="...")`.
-11. Standardisasi Output JSON & Token-Saving (P1):
-    - Gunakan `output_format="json"` pada `send_http_request` atau `run_pentest_command` untuk mendapatkan output terstruktur yang hemat token.
-    - Gunakan parameter `distill_response=True` pada `send_http_request` atau tool `distill_http_response` untuk mereduksi respons raksasa hingga 90% dengan mengekstrak forms, inputs, link, reflections, dan leaked secrets.
-    - Gunakan parameter `diff_baseline_id=<ID>` pada `send_http_request` atau tool `compare_http_responses` / `semantic_diff_responses` untuk membuang dynamic noise (timestamp, nonce, CSRF token) dan memfokuskan analisis pada perubahan esensial.
-12. Target Knowledge Graph (Stateful Recon):
-    - Gunakan `get_attack_surface(project="...")` untuk melihat topologi host, port, dan endpoint.
-    - Catat host dengan `record_target_asset`, port/service dengan `record_target_service`, dan route baru dengan `record_target_endpoint`.
-    - Bersihkan node usang dengan `delete_attack_surface_node` atau reset dengan `clear_attack_surface_graph`.
-13. Multi-Protocol OAST Engine (P2):
-    - Untuk mendeteksi Blind SSRF, Blind SQLi, Blind RCE, XXE, atau Log4j/JNDI, buat token canary via `generate_oast_token(vuln_type="SSRF", description="...")`.
-    - Semprotkan canary otomatis pada target URL via `spray_oast_canaries(target_url="https://target/api", vuln_types=["ssrf", "dns", "log4j", "xxe"])`.
-    - Periksa callback yang masuk dengan `poll_oast_events(token="...")`.
-14. Transparent Runtime Auto-Enforcement (`sitecustomize.py`):
-    - Jika Anda mengeksekusi script Python mandiri (misal: `requests`, `httpx`, `urllib`), runtime hook `sitecustomize.py` secara otomatis merutekan seluruh traffic ke Proxynth Forward Proxy (`127.0.0.1:8088`), menonaktifkan SSL warnings, mempercayai sertifikat CA, dan menyuntikkan session cookies aktif tanpa konfigurasi manual.
-15. Multi-Identity BOLA / IDOR Shadow Matrix:
-    - Daftarkan akun sekunder (role penyerang vs korban) via `set_identity_session(domain="...", identity_role="attacker", raw_cookies="...")`.
-    - Pemicu pengujian BOLA otomatis dengan `test_bola_idor(log_id=<ID>)` atau audit menyeluruh dengan `run_bola_matrix_scan(project="...")`.
-    - Tinjau matriks akses antar peran via `get_bola_access_matrix(project="...")`.
-16. WAF Evasion & Mutasi Payload:
-    - Analisis respons WAF (Cloudflare, AWS WAF, Akamai) dengan `analyze_waf_response(status_code, headers, body)`.
-    - Hasilkan variasi payload yang lolos WAF dengan `mutate_payload(raw_payload="...", vuln_type="SQLI"|"XSS"|"TRAVERSAL")`.
-17. Semantic API Spec Reconstructor:
-    - Rekonstruksi dan tebak rute REST tersembunyi (admin, swagger, actuator, internal CRUD) dengan `infer_hidden_endpoints(host="...", project="...")`.
-18. Exploit Path Chaining Graph:
-    - Tampilkan kill chain graph visual dari temuan awal hingga dampak kritis (RCE, data exfiltration) dengan `get_attack_paths(project="...")`.
-19. Standalone Exploit PoC & Report Generation:
-    - Hasilkan exploit script Python mandiri, cURL reproduction, dan CVSS dossier dengan `generate_exploit_poc(finding_id=<ID>)`.
-    - Hasilkan template eksploitasi Nuclei v3 YAML otomatis untuk automasi scanner dengan `generate_nuclei_template(finding_id=<ID>)`.
-20. WebSocket Protocol Auditing:
-    - Uji komunikasi socket real-time dan transmit frame via `send_websocket_message(url="wss://...", message="...")`.
-    - Audit handshake WebSocket untuk CSWSH dan kebocoran token dengan `audit_websocket_security(url="wss://...")`.
-21. High-Speed Parameter Fuzzing:
-    - Jalankan fuzzing marker position (`§...§`) dengan `fuzz_endpoint(url="http://target/api?id=§1§", payload_type="sqli"|"xss"|"traversal")`.
-22. Multi-Step Business Logic Testing:
-    - Uji workflow berantai dengan ekstraksi variabel dinamis `{{var}}` dan deteksi bypass step dengan `execute_workflow_sequence(sequence=[...], test_step_skipping=True)`.
-23. Turbo Concurrency & Race Condition:
-    - Eksekusi burst request tersinkronisasi mikrodetik menggunakan `asyncio.Barrier` dengan `test_race_condition(url="http://target/api/coupon", concurrency=20)` untuk deteksi double-spending.
-24. JavaScript Recon & Secret Mining:
-    - Ekstrak rute tersembunyi, query parameters, source map `.map`, dan API keys bocor dari file JS dengan `mine_javascript_assets(content_or_url="https://target/app.js")`.
-25. Autonomous JWT Security Auditing:
-    - Audit token JWT untuk Algorithm None, weak HMAC offline brute-force, dan tampering claims dengan `audit_jwt_security(token="...", test_url="https://target/api/protected")`.
-26. Working Memory & Attack Hypothesis Ledger (P3):
-    - Catat hipotesis pengujian Anda dengan `record_testing_hypothesis(target="...", vuln_type="IDOR", hypothesis="...")`.
-    - Dapatkan daftar prioritas pengujian yang belum selesai dengan `get_testing_agenda(project="...")`.
-    - Perbarui status pembuktian dengan `update_hypothesis_status(hypothesis_id=<ID>, status="CONFIRMED"|"DISPROVEN"|"BLOCKED")`.
-27. Headless DOM Execution Oracle (P4):
-    - Verifikasi XSS deterministik 100% tanpa false positive dengan `verify_dom_execution(url="https://target/search", payload="<script>alert(1)</script>")`.
-28. Broken Function Level Authorization (BFLA) Matrix Engine:
-    - Uji pembatasan fungsi administratif dan eksekusi method privileged tanpa hak akses dengan `audit_bfla_permissions(endpoint_url="...", privileged_role="admin", unprivileged_role="user")`.
-29. Mass Assignment & Object Injection Engine:
-    - Deteksi injeksi properti berbahaya (seperti `is_admin`, `role`, `verified`, `balance`) pada request JSON/Form body dengan `audit_mass_assignment(endpoint_url="...", base_payload={...})`.
-30. Numeric Business Logic & Currency Fuzzer:
-    - Uji manipulasi parameter angka kritis (kuantitas negatif, zero-price, integer overflow, floating-point precision, currency switching) dengan `audit_numeric_business_logic(endpoint_url="...", target_param="quantity")`.
-31. Differential Injection Oracle:
-    - Validasi injeksi SQLi/SSTI/Command Injection secara statistik melalui normalisasi noise dan analisis Z-score timing dengan `audit_differential_injection(endpoint_url="...", injection_param="id")`.
-32. Autonomous Web Spider & Form Discovery:
-    - Petakan seluruh struktur aplikasi web, formulir HTML, dan endpoint interaktif secara otomatis dengan `spider_and_crawl_target(root_url="https://target.com", max_depth=2, max_pages=25)`.
-33. Autonomous Re-Authentication Macro & Session Keeper:
-    - Daftarkan alur login otomatis target dengan `register_auth_recipe(login_url="https://target/api/login", payload={"username":"admin","password":"password123"}, token_json_path="token")`.
-    - Jika sesi mati di tengah pengujian, Proxynth akan mengeksekusi re-autentikasi otomatis via `execute_reauthentication(domain="target.com")` tanpa perlu campur tangan operator.
-34. Unified Deterministic Verification Gate:
-    - Validasi temuan kerentanan kandidat secara ketat melalui orakel deterministik (Chromium DOM Sandbox, Timing Z-Score, OAST event correlation) dengan `verify_vulnerability_candidate(finding_id=<ID>)`.
-35. Adaptive Rate-Limiting & Backoff:
-    - Saat menerima HTTP 429 Too Many Requests, Proxynth secara internal menghitung waktu delay adaptive backoff dan merotasi proxy pool upstream secara transparan.
-36. Autonomous End-to-End Campaign Orchestrator ('God Tool'):
-    - Untuk menjalankan seluruh pipeline pengujian keamanan otonom (Spider -> JS Mining -> OAST Spraying -> BFLA/BOLA Matrix -> Mass Assignment -> Numeric Logic -> Verification Gate) HANYA DALAM SATU PERINTAH:
-      Panggil `run_autonomous_security_campaign(target_url="https://target.com", project="...")`.
+1. Primary Network Interaction:
+   Always prioritize the `send_http_request` tool when interacting with target HTTP/HTTPS endpoints. Do NOT run bare terminal `curl` commands unless testing transport-layer edge cases.
+2. Zero-Dependency Port & Infrastructure Scanning:
+   For network targets (IP, domain, CIDR) or discovering hidden ports, call `scan_network_ports`. It performs non-blocking async TCP port scanning, grabs banners, populates the Knowledge Graph, and audits unauthenticated access to Redis, Elasticsearch, and Docker sockets.
+3. 1-Click API Schema Ingestion:
+   When testing REST/GraphQL APIs with Swagger/OpenAPI documentation (`/swagger.json`, `/openapi.json`, `/v3/api-docs`), call `import_api_schema` to instantly map 100+ endpoints with parameter types and mock attack payloads.
+4. API Gateway 401/403 Bypass Matrix:
+   When encountering forbidden or unauthorized API endpoints, call `audit_api_gateway_bypass` to test 12+ header spoofing (X-Forwarded-For, X-Custom-IP-Authorization), URL override (X-Original-URL), and semicolon traversal bypasses.
+5. Automated CLI Output Mining:
+   When running external CLI binaries (Nmap, Masscan, Nuclei, FFUF, Gobuster) via `run_pentest_command`, Proxynth automatically mines stdout into structured services, endpoints, and findings. You can also explicitly invoke `mine_cli_output`.
+6. Hybrid Playwright SPA Crawler:
+   For modern Single Page Applications (React, Vue, Angular, Next.js), `spider_and_crawl_target` automatically triggers headless Chromium DOM rendering to discover dynamic forms and background Fetch/XHR endpoints.
+7. Security Reasoning Parameter:
+   Always populate the `reasoning` parameter when invoking MCP tools to document your vulnerability hypothesis.
+8. Scope & Guardrails:
+   Respect scope boundaries. If a request is blocked by Proxynth Scope Guard, modify your target URL to match authorized hosts defined in the active project.
+9. Interactive Login & CAPTCHA Wall:
+   When encountering CAPTCHA, Cloudflare Turnstile, or 2FA, call `request_manual_login` to allow a human operator to authenticate via an interactive browser. Proxynth will automatically capture and inject the resulting session cookies.
+10. Exploit Payload Vault:
+    Log successful attack payloads with `record_test_payload` to preserve them in the project payload vault. Retrieve historical payloads with `get_captured_payloads`.
+11. Un-Truncated Response Inspection:
+    If a response body is truncated in `send_http_request`, retrieve the complete verbatim headers and body using `get_log_detail(log_id=<ID>)`.
+12. Token Optimization via Semantic Distillation (P1):
+    Use `distill_response=True` in `send_http_request` or call `distill_http_response` to compress massive HTML/JSON responses by 85–95%.
+13. Baseline Differential Analysis:
+    Use `diff_baseline_id=<ID>` in `send_http_request` or call `compare_http_responses` / `semantic_diff_responses` to strip dynamic nonces/timestamps and isolate true behavioral anomalies.
+14. Attack Surface Knowledge Graph:
+    Maintain a structured state of target topology using `get_attack_surface`. Catalog hosts with `record_target_asset`, open ports with `record_target_service`, and routes with `record_target_endpoint`.
+15. Multi-Protocol Out-of-Band (OAST) Canary Testing (P2):
+    For Blind SSRF, Blind SQLi, Out-of-Band XXE, and Log4j/JNDI, generate tokens with `generate_oast_token` and spray canaries automatically across input surfaces using `spray_oast_canaries`. Query callbacks with `poll_oast_events`.
+16. Transparent Runtime Process Interception (`sitecustomize.py`):
+    When executing custom Python scripts (`requests`, `httpx`, `aiohttp`, `urllib`), Proxynth's runtime hook automatically routes traffic through the Forward Interception Proxy (`127.0.0.1:8088`), decrypts TLS MITM, and injects active authentication cookies without code modification.
+17. Cognitive Attack Guidance (Next-Action Decision Engine):
+    Inspect the `suggested_next_actions` block returned automatically by `send_http_request`, or query `get_autonomous_attack_guidance(project="...")` to immediately receive prioritized next-attack vectors and pre-formatted tool calls.
+18. Universal Autonomous Campaign Orchestrator ('God Tool'):
+    To execute a comprehensive, fully autonomous pentest campaign without step-by-step human prompts, invoke `run_autonomous_security_campaign(target_url="...", project="...")`. It automatically classifies Web URLs, REST APIs, and Network IPs/hostnames into coordinated multi-track pipelines.
+19. Automated Re-Authentication Macro (Zero-Human Session Keeping):
+    Register login credentials and token JSONPath with `register_auth_recipe`. Proxynth will automatically re-authenticate in the background whenever an HTTP 401/403 status is received.
+20. Deterministic Verification Gate (Zero False Positives):
+    Validate candidate vulnerabilities through deterministic oracles (Playwright Chromium DOM Sandbox, Z-Score Timing Analysis, OAST event correlation) using `verify_vulnerability_candidate`.
+21. Adaptive Rate-Limiting:
+    Proxynth automatically handles HTTP 429 status codes with exponential backoff and transparent upstream proxy pool rotation.
 ```
 
 ---
 
-## 3. Fitur Utama yang Aktif (Platform Capabilities)
+## 3. The Autonomous Cognitive Decision Framework: How to Select & Execute Tools
 
-Proxynth v0.1.0-beta mengintegrasikan mesin pengujian keamanan otomasi penuh:
+A common challenge for autonomous agents is knowing **when and why** to transition from general reconnaissance to a specialized vulnerability testing tool. Proxynth resolves this through two complementary mechanisms:
 
-### 1. Autonomous Campaign Orchestrator (Fire-and-Forget Workbench)
-Mesin orkestrasi pengujian menyeluruh yang mengeksekusi pipeline pentest lengkap secara mandiri dalam satu pemanggilan:
-- Crawling & Spidering target aplikasi
-- Penambangan rahasia dan rute tersembunyi dari JavaScript bundle
-- Penyemprotan canary OAST multi-protokol
-- Pengujian otorisasi horizontal (BOLA) dan vertikal (BFLA)
-- Audit mass assignment dan fuzzing parameter angka/logika bisnis
-- Penyaringan temuan melalui Deterministic Verification Gate untuk zero false-positive reporting.
+### A. Automatic Engine Feedback (`suggested_next_actions`)
+Every time the agent calls `send_http_request`, the Proxynth backend analyzes the URL path, HTTP method, request headers, parameters, and response body. If suspicious patterns are observed, the JSON response includes a `suggested_next_actions` array:
 
-### 2. Autonomous Web Spider & Form Discovery Engine
-Modul crawler internal yang membedah struktur HTML halaman target:
-- Ekstraksi tag `<form>`, `<input>`, `<button>`, dan `<textarea>`.
-- Rekonstruksi query parameters dan REST endpoint otomatis.
-- Auto-ingestion langsung ke Target Knowledge Graph.
-
-### 3. Autonomous Re-Authentication Macro & Session Keeper
-Menghilangkan masalah "session expiry amnesia" pada pengujian berdurasi panjang:
-- Menyimpan resep login (URL, HTTP method, JSON body, token JSONPath extraction).
-- Mendeteksi respons HTTP 401/403 dan memicu login ulang di background secara instan.
-- Memperbarui session cookies dan bearer token secara transparan ke seluruh outgoing requests.
-
-### 4. Unified Deterministic Verification Gate
-Orakel verifikasi ketat yang memvalidasi temuan sebelum dicatat sebagai vulnerability terkonfirmasi:
-- **XSS/DOM Sinks:** Dieksekusi pada Playwright Chromium headless sandbox.
-- **SQLi/Command Injection:** Divalidasi melalui differential timing Z-score.
-- **SSRF/RCE/JNDI:** Divalidasi melalui korelasi callback OAST definitif.
-
-### 5. Adaptive Rate-Limiter & Transparent Backoff Engine
-Mencegah agen terblokir oleh rate-limiting atau WAF target:
-- Menganalisis header `Retry-After` atau merespon HTTP 429 dengan exponential backoff dinamis.
-- Mengantrekan request agen dan melepaskannya kembali secara mulus.
-- Mendukung rotasi proxy upstream SOCKS5 secara transparan.
-
-### 6. Broken Function Level Authorization (BFLA) Matrix Engine
-Mendeteksi kegagalan pembatasan hak akses fungsi administratif (OWASP API5:2023):
-- Menguji endpoint sensitif menggunakan kredensial unprivileged dan anonymous.
-- Memvalidasi bypass method tampering (`GET` vs `POST` vs `DELETE` vs `PATCH`).
-
-### 7. Mass Assignment & Property Tampering Engine
-Mendeteksi celah penulisan atribut objek internal (OWASP API3:2023):
-- Menyuntikkan properti privileged (`is_admin`, `role`, `verified`, `balance`, `permissions`) pada payload JSON dan form-encoded.
-- Membandingkan status refleksi dan perubahan state aplikasi target.
-
-### 8. Numeric Business Logic & Currency Fuzzer
-Mendeteksi kerentanan logika bisnis finansial dan transaksi:
-- Pengujian nilai kuantitas negatif (`-1`, `-9999`).
-- Overflow integer, zero-price checkout, dan manipulasi presisi floating-point.
-- Currency switching tampering antar request checkout dan payment confirmation.
-
-### 9. Differential Injection Oracle & Noise Normalization
-Memvalidasi injeksi berbasis konten tanpa tertipu oleh respons dinamis:
-- Membersihkan dynamic noise (timestamp, token CSRF, nonces, request ID).
-- Menghitung unified diff deterministik untuk membuktikan keberadaan reflected payload atau anomaly.
-
-### 10. Multi-Protocol OAST Engine (HTTP, DNS UDP :5354, LDAP TCP :1390)
-Mendeteksi celah out-of-band tanpa bergantung pada server luar:
-- Built-in DNS Tunneling listener pada port UDP `5354`.
-- Built-in LDAP/JNDI callback server pada port TCP `1390`.
-- Built-in HTTP callback router pada port TCP `8000/oast/{token}`.
-- Dukungan integrasi Interactsh publik (`oast.fun`).
-
-### 11. LLM Semantic Response Distiller (P1 — Hemat Token 85–95%)
-Mengubah response HTML raksasa (100KB–1MB) menjadi struktur ringkas berorientasi keamanan:
-- Mengekstrak formulir, rute API, tautan interaktif, refleksi payload, dan kebocoran rahasia.
-- Mencegah context-window blowout pada model LLM.
-
-### 12. Stateful Agent Working Memory & Hypothesis Ledger (P3)
-Mencegah agen terjebak dalam perulangan pengujian tanpa akhir:
-- Melacak siklus hidup hipotesis pengujian (`PLANNED` -> `TESTING` -> `CONFIRMED` | `DISPROVEN` | `BLOCKED`).
-- Mengatur agenda pengujian berikutnya secara otomatis via `get_testing_agenda`.
-
-### 13. Browser DOM Execution Oracle Sandbox (P4)
-Menghilangkan halusinasi XSS model LLM:
-- Membuka halaman target di headless Chromium sandbox via Playwright.
-- Memverifikasi eksekusi dialog nyata (`alert`, `confirm`, `prompt`) dan evaluasi script sink.
-
-### 14. OWASP API Security Top 10 CI/CD Auditor & Scorecard
-Audit pasif otomatis terhadap seluruh lalu lintas pengujian:
-- Pemeriksaan missing security headers, CORS misconfiguration, insecure cookie flags, query credential exposure, dan sensitive data leaks.
-- Penilaian skor objektif 0–100 dengan letter grades (**A+** hingga **F**).
-- Ekspor laporan berstandar industri dalam format Markdown, JSON, dan SARIF 2.1.0.
-
-### 15. Transparent Runtime Auto-Enforcement (`sitecustomize.py`)
-Intersepsi proses Python zero-config:
-- Setiap script Python di terminal host otomatis dialihkan ke proxy `:8088`.
-- Otomatis mempercayai root CA Proxynth `.proxsynth_ca/proxsynth_ca.crt`.
-- Merotasi header browser realistis untuk menghindari deteksi WAF.
+```json
+{
+  "status": "success",
+  "log_id": 142,
+  "http_status": 200,
+  "suggested_next_actions": [
+    {
+      "vulnerability_focus": "Broken Object Level Authorization (BOLA / IDOR)",
+      "confidence": "HIGH",
+      "trigger_reason": "Observed resource identifier '42' in path '/api/v1/users/42'.",
+      "recommended_mcp_tool": "test_bola_idor",
+      "tool_arguments": {"log_id": 142}
+    },
+    {
+      "vulnerability_focus": "Broken Function Level Authorization (BFLA)",
+      "confidence": "HIGH",
+      "trigger_reason": "Privileged endpoint detected: [GET] /api/v1/admin/settings",
+      "recommended_mcp_tool": "audit_bfla_permissions",
+      "tool_arguments": {
+        "endpoint_url": "http://target/api/v1/admin/settings",
+        "privileged_role": "admin",
+        "unprivileged_role": "user"
+      }
+    }
+  ]
+}
+```
+**Agent Action:** When this block is present, the agent should immediately extract the `recommended_mcp_tool` and invoke it with `tool_arguments`.
 
 ---
 
-## 4. Katalog Lengkap 71 FastMCP Tools Reference
+### B. Cognitive Decision Matrix (Heuristic Rules)
 
-Berikut adalah katalog lengkap seluruh **71 FastMCP Tools** yang terdaftar di Proxynth v0.1.0-beta:
-
-| # | Tool Name | Subsystem | Deskripsi Utama |
-| :---: | :--- | :--- | :--- |
-| **1** | `add_interception_rule` | Interception Rules | Menambahkan aturan modifikasi header, rewrite body, atau synthetic mock response. |
-| **2** | `analyze_traffic_patterns` | Traffic Analytics | Menganalisis parameter teramati, header unik, dan pola routing pada traffic aktif. |
-| **3** | `analyze_waf_response` | WAF Evasion | Mendeteksi vendor WAF (Cloudflare, AWS WAF, Akamai) dan memberi rekomendasi bypass. |
-| **4** | `audit_bfla_permissions` | Auth & Permissions | Menguji Broken Function Level Authorization pada endpoint administratif antar role. |
-| **5** | `audit_differential_injection` | Injection Oracle | Validasi statistik injeksi SQLi/SSTI/Command Injection melalui normalisasi respon. |
-| **6** | `audit_jwt_security` | JWT Security | Audit token JWT untuk Alg None, weak HMAC brute-forcing, dan manipulasi claims. |
-| **7** | `audit_mass_assignment` | Business Logic | Menguji injeksi properti objek internal (`is_admin`, `role`, `balance`) pada request body. |
-| **8** | `audit_numeric_business_logic`| Business Logic | Fuzzing parameter angka kritis (kuantitas negatif, overflow integer, zero-price). |
-| **9** | `audit_websocket_security` | Protocol Security | Menguji handshake WebSocket terhadap CSWSH, plaintext transport, dan token leak. |
-| **10** | `browser_navigate_and_render` | Browser Automation | Membuka target via headless Playwright untuk menangkap dynamic DOM & Fetch/XHR calls. |
-| **11** | `clear_attack_surface_graph` | Attack Surface | Mengosongkan seluruh topologi aset, service, dan endpoint pada project aktif. |
-| **12** | `clear_csrf_tokens` | CSRF Engine | Menghapus cache token CSRF yang tersimpan. |
-| **13** | `close_public_tunnel` | Tunnel Manager | Menutup tunnel publik aktif (Cloudflare/ngrok) dan mengembalikan callback lokal. |
-| **14** | `compare_http_responses` | Diff Engine | Membandingkan dua respons HTTP setelah membersihkan dynamic noise (timestamp, nonces). |
-| **15** | `delete_attack_surface_node` | Attack Surface | Menghapus node spesifik (asset, service, atau endpoint) dari knowledge graph. |
-| **16** | `delete_interception_rule` | Interception Rules | Menghapus aturan intersepsi proxy berdasarkan ID. |
-| **17** | `distill_http_response` | **P1: Distiller** | Mereduksi respons HTML/JSON raksasa menjadi ekstrak padat keamanan (hemat token 90%). |
-| **18** | `execute_reauthentication` | Auth Keeper | Mengeksekusi alur login otomatis di background dan memperbarui token aktif. |
-| **19** | `execute_workflow_sequence` | Business Logic | Menjalankan urutan workflow multi-tahap dengan ekstraksi variabel dan deteksi step-skipping. |
-| **20** | `fuzz_endpoint` | Parameter Fuzzer | High-speed fuzzing pada marker posisi (`§...§`) dengan analisis delta status & panjang respon. |
-| **21** | `generate_audit_ci_report` | CI/CD Auditor | Menghasilkan laporan audit keamanan resmi dalam format Markdown, JSON, atau SARIF. |
-| **22** | `generate_exploit_poc` | PoC Generator | Membuat script exploit Python mandiri, cURL reproduction, dan dossier CVSS/CWE. |
-| **23** | `generate_nuclei_template` | PoC Generator | Membuat template eksploitasi Nuclei v3 YAML otomatis untuk validasi regression. |
-| **24** | `generate_oast_token` | **P2: OAST** | Menghasilkan token korelasi unik dan callback URL multi-protokol (HTTP, DNS, LDAP). |
-| **25** | `get_active_project` | Workspace Scope | Mengambil nama project aktif saat ini dan parameter direktori isolasinya. |
-| **26** | `get_attack_paths` | Attack Chains | Menghasilkan graf rantai serangan (Kill Chain) dari temuan awal menuju dampak kritis. |
-| **27** | `get_attack_surface` | Attack Surface | Mengambil topologi hirarkis aset, port/service terbuka, dan endpoint teramati. |
-| **28** | `get_bola_access_matrix` | BOLA / IDOR | Mengambil matriks otorisasi horizontal antar role akun yang teramati pada target. |
-| **29** | `get_ca_certificate_details` | Certificate CA | Mengambil path dan status root CA certificate (.crt) untuk kepercayaan TLS MITM. |
-| **30** | `get_captured_payloads` | Payload Vault | Menelusuri database payload eksploitasi yang tersimpan berdasarkan kategori atau kata kunci. |
-| **31** | `get_csrf_tokens` | CSRF Engine | Mengambil daftar token anti-CSRF yang berhasil disadap dari respons server target. |
-| **32** | `get_log_detail` | Telemetry History | Mengambil data utuh (headers dan body mentah tanpa truncation) dari sebuah transaksi HTTP. |
-| **33** | `get_testing_agenda` | **P3: Memory** | Mengambil daftar prioritas hipotesis pengujian yang belum tervalidasi guna memandu agen. |
-| **34** | `get_traffic_history` | Telemetry History | Mengambil ringkasan riwayat request/response HTTP terbaru pada project aktif. |
-| **35** | `get_tunnel_status` | Tunnel Manager | Mengambil status, uptime, dan public URL dari ingress tunnel yang sedang aktif. |
-| **36** | `infer_hidden_endpoints` | API Reconstructor | Menebak rute tersembunyi (CRUD mutations, swagger docs, actuator) berdasarkan pola REST. |
-| **37** | `inspect_graphql_endpoint` | Protocol Security | Menguji endpoint GraphQL terhadap introspection, field suggestions, dan batching attacks. |
-| **38** | `list_interception_rules` | Interception Rules | Mengambil daftar seluruh aturan intersepsi dan mocking aktif. |
-| **39** | `mine_javascript_assets` | JS Recon | Menambang bundle JavaScript untuk rute API, query params, source map, dan leaked secrets. |
-| **40** | `mutate_payload` | WAF Evasion | Menghasilkan mutasi payload eksploitasi (encoding, hex, comment injection, unicode bypass). |
-| **41** | `poll_oast_events` | **P2: OAST** | Menanyakan callback yang tertangkap (HTTP, DNS, LDAP) untuk token OAST tertentu. |
-| **42** | `record_target_asset` | Reconnaissance | Mencatat host, IP address, atau domain target baru ke dalam Target Knowledge Graph. |
-| **43** | `record_target_endpoint` | Reconnaissance | Mencatat rute URL, parameter, auth requirements, dan testing status endpoint. |
-| **44** | `record_target_service` | Reconnaissance | Mencatat port terbuka, protokol transport, dan service banner hasil port scanning. |
-| **45** | `record_test_payload` | Payload Vault | Menyimpan exploit string ke dalam Payload Vault dengan tag dan status keberhasilan. |
-| **46** | `record_testing_hypothesis` | **P3: Memory** | Mencatat hipotesis pengujian baru ke dalam working memory ledger agen. |
-| **47** | `register_auth_recipe` | Auth Keeper | Mendaftarkan alur login otomatis (URL, method, JSON payload, token JSONPath). |
-| **48** | `render_webpage` | Browser Automation | Mengambil snapshot visual dan DOM text dari sebuah URL via headless browser. |
-| **49** | `report_vulnerability` | Findings Ledger | Menandai log request sebagai temuan kerentanan terkonfirmasi dalam dashboard ledger. |
-| **50** | `request_manual_login` | Authentication | Membuka browser interaktif bagi operator manusia untuk menyelesaikan CAPTCHA/2FA. |
-| **51** | `run_autonomous_security_campaign` | **Autonomous God Tool**| Menjalankan seluruh alur audit keamanan dari hulu ke hilir dalam 1 perintah mandiri. |
-| **52** | `run_bola_matrix_scan` | BOLA / IDOR | Menjalankan scan matriks otorisasi horizontal antar role akun secara background. |
-| **53** | `run_pentest_command` | CLI Execution | Menjalankan perintah terminal (curl, nmap, sqlmap) dengan audit logging otomatis. |
-| **54** | `run_security_audit_suite` | CI/CD Auditor | Menjalankan audit kepatuhan OWASP API Security Top 10 dengan skor 0–100 dan grade A–F. |
-| **55** | `search_traffic_advanced` | Traffic Search | Pencarian multi-dimensi traffic berdasarkan status code, latency, keyword header/body. |
-| **56** | `semantic_diff_responses` | Diff Engine | Menghitung unified diff semantik antar respons untuk identifikasi anomaly respon. |
-| **57** | `send_http_request` | Core Network | HTTP client dengan auto-cookie injection, scope guardrails, proxy trap, dan distillation. |
-| **58** | `send_websocket_message` | Protocol Security | Mengirim dan merekam frame WebSocket ke target untuk pengujian protokol real-time. |
-| **59** | `set_active_project` | Workspace Scope | Mengubah konteks project aktif untuk mengisolasi traffic dan knowledge graph. |
-| **60** | `set_csrf_token` | CSRF Engine | Mengatur token anti-CSRF kustom untuk disuntikkan pada state-changing request. |
-| **61** | `set_identity_session` | BOLA / IDOR | Mendaftarkan cookie sesi role akun sekunder (attacker vs victim) untuk shadow replay. |
-| **62** | `setup_public_tunnel` | Tunnel Manager | Menginisiasi tunnel publik Cloudflare Quick Tunnel / ngrok untuk menerima callback eksternal. |
-| **63** | `spider_and_crawl_target` | Autonomous Recon | Menjalankan crawling web otomatis untuk menemukan halaman internal, form, dan endpoint. |
-| **64** | `spray_oast_canaries` | **P2: OAST Sprayer**| Menemukan input parameter dan menyemprotkan token canary multi-protokol secara masif. |
-| **65** | `test_bola_idor` | BOLA / IDOR | Mengeksekusi replay BOLA dual-track pada log request menggunakan role identitas sekunder. |
-| **66** | `test_race_condition` | Concurrency Burst| Menjalankan burst request mikrodetik via `asyncio.Barrier` untuk mendeteksi race condition. |
-| **67** | `toggle_interception_rule` | Interception Rules | Mengaktifkan atau menonaktifkan aturan intersepsi tertentu berdasarkan ID. |
-| **68** | `update_hypothesis_status` | **P3: Memory** | Mengubah status hipotesis (`PLANNED` -> `TESTING` -> `CONFIRMED` / `DISPROVEN` / `BLOCKED`). |
-| **69** | `update_proxsynth_system` | Auto-Updater | Memeriksa pembaruan upstream Git dan mengeksekusi upgrade codebase secara otomatis. |
-| **70** | `verify_dom_execution` | **P4: DOM Oracle** | Memverifikasi eksekusi payload XSS/DOM pada headless Chromium sandbox secara definitif. |
-| **71** | `verify_vulnerability_candidate` | **Verification Gate** | Memvalidasi kandidat temuan menggunakan orakel deterministik sebelum dimasukkan ke ledger. |
+If executing independently, the agent must evaluate the following deterministic rules against observed target resp| Observed Target Signal | Suspected Vulnerability Class | Recommended FastMCP Tool | Execution Trigger & Parameters |
+| :--- | :--- | :--- | :--- |
+| Target is a host, IP, CIDR, or domain needing port and service discovery | **Unauthenticated Services & Open Ports** | `scan_network_ports` | Call `scan_network_ports(target="...", ports_profile="top_100")` for zero-dependency TCP recon and Redis/Elastic/Docker audits. |
+| Target provides Swagger / OpenAPI spec (`/swagger.json`, `/openapi.json`) | **Unmapped API Attack Surface** | `import_api_schema` | Call `import_api_schema(spec_source="https://target/swagger.json")` to bulk-map 100+ routes, methods, and parameters. |
+| Target API returns HTTP 401 Unauthorized or 403 Forbidden | **API Gateway Access Control Bypass** | `audit_api_gateway_bypass` | Call `audit_api_gateway_bypass(target_url="...")` to test X-Forwarded-For, X-Original-URL, and semicolon matrix traversal. |
+| Ran Nmap, Masscan, Nuclei, FFUF, Gobuster, or Dirsearch in terminal | **External CLI Output Ingestion** | `mine_cli_output` | Call `mine_cli_output(command="...", raw_output="...")` or use `run_pentest_command` to auto-populate the Knowledge Graph. |
+| Single Page Application with dynamic client-side forms (React/Vue/Angular) | **Hidden SPA Sinks & AJAX Endpoints** | `spider_and_crawl_target` | Call `spider_and_crawl_target(root_url="...")` with Playwright hybrid DOM crawler enabled. |
+| Path contains numeric IDs, UUIDs, or hashes (`/users/123`, `/invoices/e4a...`), or params like `user_id`, `account_id` | **Broken Object Level Auth (BOLA / IDOR)** | `test_bola_idor` or `run_bola_matrix_scan` | Call `test_bola_idor(log_id=<ID>)` with victim & attacker session cookies. |
+| Path contains `/admin`, `/manage`, `/system`, `/roles`, `/audit`, or privileged HTTP verbs (`DELETE`, `PUT`, `PATCH`) | **Broken Function Level Auth (BFLA)** | `audit_bfla_permissions` | Call `audit_bfla_permissions(endpoint_url="...", privileged_role="admin", unprivileged_role="user")`. |
+| POST/PUT/PATCH endpoint with JSON body containing user fields (`name`, `email`, `role`, `status`, `balance`) | **Mass Assignment / Object Over-Posting** | `audit_mass_assignment` | Call `audit_mass_assignment(endpoint_url="...", base_payload={...})` to test attribute binding. |
+| Query or body parameters matching `qty`, `quantity`, `price`, `amount`, `discount`, `currency`, `balance` | **Numeric Business Logic & Currency Flaws** | `audit_numeric_business_logic` | Call `audit_numeric_business_logic(endpoint_url="...", target_param="qty")` to test negative quantities & overflows. |
+| Parameters matching `url`, `redirect`, `dest`, `callback`, `webhook`, `feed`, `host`, `target` | **Blind SSRF & JNDI / Log4j** | `spray_oast_canaries` | Call `spray_oast_canaries(target_url="...", vuln_types=["ssrf", "dns", "log4j", "xxe"])`. |
+| Input value is reflected verbatim or unencoded in HTML response body | **Cross-Site Scripting (Reflected / DOM XSS)** | `verify_dom_execution` | Call `verify_dom_execution(url="...", payload="<script>alert(1)</script>")` in sandboxed Chromium. |
+| Search, filter, or ID parameters returning subtle differences or database errors | **Differential SQLi / SSTI Injection** | `audit_differential_injection` | Call `audit_differential_injection(endpoint_url="...", injection_param="q", vuln_type="SQLI")`. |
+| `Authorization: Bearer ey...` header or JWT string found in response body | **JWT Cryptographic & Claim Tampering** | `audit_jwt_security` | Call `audit_jwt_security(token="...", test_url="...")` to test Alg None and weak secret brute-force. |
+| Handshake containing `Upgrade: websocket` or `Connection: Upgrade` | **WebSocket CSWSH & Protocol Flaws** | `audit_websocket_security` | Call `audit_websocket_security(url="wss://...")` to test origin spoofing and token leaks. |
+| Endpoint with sensitive rate-limited actions (coupon claim, balance withdrawal, voting) | **Concurrency & Race Conditions** | `test_race_condition` | Call `test_race_condition(url="...", concurrency=20)` to test microsecond burst synchronization. |
+| Multi-step workflow (e.g., Cart -> Address -> Payment -> Receipt) | **Business Logic Step-Skipping** | `execute_workflow_sequence` | Call `execute_workflow_sequence(sequence=[...], test_step_skipping=True)`. |
+| Unmapped frontend bundle files (`.js`, `.chunk.js`, `.map`) | **Hidden Routes & Secret Leakage** | `mine_javascript_assets` | Call `mine_javascript_assets(content_or_url="https://target/app.js")`. |
+| Unsure what to test next across the entire target engagement | **Autonomous Action Synthesis** | `get_autonomous_attack_guidance` | Call `get_autonomous_attack_guidance(project="...")` to receive prioritized attack targets. |
 
 ---
 
-## 5. SOP Pengujian Mandiri Tanpa Intervensi Manusia (Autonomous Flow)
+## 4. Key Subsystems & Architectural Modules
 
-Untuk mencapai tujuan **Zero-Human Intervention**, agen harus mengikuti siklus pengujian otonom berikut:
+1. **Universal Autonomous Campaign Orchestrator (`run_autonomous_security_campaign`)**:
+   A single-command coordinator that automatically classifies target inputs (Web URLs, REST APIs, or Network IP/hostnames), dispatches multi-track reconnaissance and audits, and validates findings through the deterministic verification gate.
+2. **Built-in Async Port & Service Scanner (`scan_network_ports`)**:
+   Zero-dependency socket scanner probing Top 20/100/custom TCP ports, grabbing service banners, populating the Target Knowledge Graph, and auditing unauthenticated access to Redis (:6379), Elasticsearch (:9200), and Docker sockets (:2375).
+3. **1-Click OpenAPI/Swagger Schema Importer (`import_api_schema`)**:
+   Parses OpenAPI 2.0/3.0/3.1 specs from URL or raw text, generating 100+ structured endpoints, parameter schemas, and mock attack templates.
+4. **API Gateway 401/403 Bypass Engine (`audit_api_gateway_bypass`)**:
+   Tests 12+ gateway bypass vectors including internal IP spoofing (`X-Forwarded-For`), routing overrides (`X-Original-URL`), and semicolon path normalization traversal.
+5. **Automated CLI Output Miner (`mine_cli_output`, `run_pentest_command`)**:
+   Mines stdout/stderr from external tools (Nmap, Masscan, Nuclei, FFUF, Gobuster) into structured SQLite assets, services, endpoints, and findings.
+6. **Hybrid Playwright SPA Spider (`spider_and_crawl_target`)**:
+   Combines fast HTTP crawling with headless Chromium DOM rendering for modern React/Vue/Angular apps to uncover dynamically generated forms and background API calls.
+7. **Autonomous Re-Authentication Macro & Session Keeper (`register_auth_recipe`, `execute_reauthentication`)**:
+   Eliminates session expiration blockers by storing login macros and automatically re-authenticating in the background when receiving HTTP 401/403 responses.
+8. **Unified Deterministic Verification Gate (`verify_vulnerability_candidate`)**:
+   Routes vulnerability candidates through objective verification oracles (Playwright Chromium DOM Sandbox for XSS, Z-Score timing analysis for SQLi, and database callback correlation for OAST).
+9. **Adaptive Rate-Limiting & Proxy Rotation**:
+   Transparently catches HTTP 429 status codes, applies exponential backoff with jitter, and rotates upstream proxy pools to evade WAF bans.
+10. **Broken Function Level Authorization (BFLA) Matrix (`audit_bfla_permissions`)**:
+    Tests administrative endpoints and HTTP verb tampering against privileged, unprivileged, and anonymous identities.
+11. **Mass Assignment & Object Injection (`audit_mass_assignment`)**:
+    Probes whether target APIs bind internal object properties (`is_admin`, `role`, `balance`, `verified`) to backend models.
+12. **Numeric Business Logic & Currency Fuzzer (`audit_numeric_business_logic`)**:
+    Probes for negative quantities, integer overflow boundaries, zero-price tampering, and currency switching anomalies.
+13. **Differential Injection Oracle (`audit_differential_injection`)**:
+    Validates SQL injection and SSTI through noise-filtered semantic response diffing and statistical variance analysis.
+14. **Nuclei v3 YAML Exploit Template Generator (`generate_nuclei_template`)**:
+    Automatically transforms confirmed findings into reproducible Nuclei v3 YAML templates for regression testing and CI/CD pipelines.
+15. **Multi-Protocol OAST Engine (`generate_oast_token`, `poll_oast_events`, `spray_oast_canaries`)**:
+    Detects blind vulnerabilities via built-in UDP DNS (:5354), TCP LDAP (:1390), and HTTP (:8000/oast) listeners.
+16. **LLM Semantic Response Distiller (`distill_http_response`)**:
+    Strips presentation noise to deliver 85–95% token savings on HTML and JSON response bodies.
+17. **Agent Working Memory & Hypothesis Ledger (`record_testing_hypothesis`, `get_testing_agenda`)**:
+    Maintains persistent state across prompts to prevent agent amnesia and redundant testing loops.
+18. **Browser DOM Execution Oracle Sandbox (`verify_dom_execution`)**:
+    Executes suspected XSS payloads inside a sandboxed headless Chromium browser to verify real `alert()`/`confirm()` dialog execution.
+19. **OWASP API Security Top 10 CI/CD Auditor (`run_security_audit_suite`, `generate_audit_ci_report`)**:
+    Passive compliance analyzer providing objective 0–100 scores, letter grades (A+ to F), and SARIF 2.1.0 exports.
+20. **Transparent Runtime Auto-Enforcement (`sitecustomize.py`)**:
+    Intercepts and decrypts all Python subprocess network traffic through port 8088 without manual proxy configuration.
+
+---
+
+## 5. Complete 76 FastMCP Tools Reference Specification
+
+| # | Tool Name | Subsystem | Key Arguments | Description |
+| :---: | :--- | :--- | :--- | :--- |
+| **1** | `add_interception_rule` | Interception Rules | `rule_type`, `match_pattern`, `actions` | Adds rule to rewrite headers, bodies, or return synthetic mock responses. |
+| **2** | `analyze_traffic_patterns` | Traffic Analytics | `project` | Analyzes observed parameters, unique headers, and routing patterns. |
+| **3** | `analyze_waf_response` | WAF Evasion | `status_code`, `headers`, `body` | Fingerprints WAF vendor (Cloudflare, AWS WAF, Akamai) and suggests bypasses. |
+| **4** | `audit_api_gateway_bypass` | API Security | `target_url`, `project` | Audits 401/403 endpoints against header spoofing, URL override, and path traversal bypasses. |
+| **5** | `audit_bfla_permissions` | Auth & Permissions | `endpoint_url`, `privileged_role`, `unprivileged_role` | Audits Broken Function Level Authorization against high vs low privilege roles. |
+| **6** | `audit_differential_injection` | Injection Oracle | `endpoint_url`, `injection_param`, `vuln_type` | Validates SQLi/SSTI injection via noise normalization and statistical deltas. |
+| **7** | `audit_jwt_security` | JWT Security | `token`, `test_url` | Audits JWT tokens for Algorithm None, weak HMAC secrets, and claim tampering. |
+| **8** | `audit_mass_assignment` | Business Logic | `endpoint_url`, `base_payload`, `method` | Injects sensitive attributes (`is_admin`, `role`) to detect mass assignment. |
+| **9** | `audit_numeric_business_logic` | Business Logic | `endpoint_url`, `target_param`, `base_payload` | Fuzzes numeric parameters with negative numbers, overflow boundaries, zero prices. |
+| **10** | `audit_websocket_security` | Protocol Security | `url` | Audits WebSocket handshake for CSWSH, plaintext transport, and token leaks. |
+| **11** | `browser_navigate_and_render` | Browser Automation | `url`, `wait_for_selector`, `timeout_ms` | Headless Playwright engine capturing dynamic DOM and network Fetch/XHR calls. |
+| **12** | `clear_attack_surface_graph` | Attack Surface | `project` | Wipes all attack surface records for a project workspace to reset reconnaissance. |
+| **13** | `clear_csrf_tokens` | CSRF Engine | *(none)* | Clears cached anti-CSRF tokens. |
+| **14** | `close_public_tunnel` | Tunnel Manager | *(none)* | Terminates active public tunnel and restores local callback base URL. |
+| **15** | `compare_http_responses` | Diff Engine | `response_a`, `response_b` | Compares two HTTP responses after stripping dynamic noise (timestamps, nonces). |
+| **16** | `delete_attack_surface_node` | Attack Surface | `node_type`, `node_id`, `project` | Prunes stale or false-positive assets, services, or endpoints from knowledge graph. |
+| **17** | `delete_interception_rule` | Interception Rules | `rule_id` | Deletes an interception rule by ID. |
+| **18** | `distill_http_response` | **P1: Distiller** | `raw_body`, `content_type` | Compresses HTML/JSON bodies into semantic security structures (85–95% savings). |
+| **19** | `execute_reauthentication` | Auth Keeper | `domain` | Manually triggers execution of the registered authentication recipe to refresh tokens. |
+| **20** | `execute_workflow_sequence` | Business Logic | `sequence`, `test_step_skipping` | Executes stateful workflows with dynamic variable extraction and step-skipping checks. |
+| **21** | `fuzz_endpoint` | Parameter Fuzzer | `url`, `payload_type`, `custom_payloads` | High-speed dictionary fuzzing against marker positions (`§...§`) with delta analysis. |
+| **22** | `generate_audit_ci_report` | CI/CD Auditor | `project`, `format` | Generates publication-grade Markdown, JSON, or SARIF 2.1.0 security compliance reports. |
+| **23** | `generate_exploit_poc` | PoC Generator | `finding_id` | Generates standalone Python PoC scripts, cURL commands, and CVSS/CWE dossiers. |
+| **24** | `generate_nuclei_template` | PoC Generator | `finding_id` | Generates standardized Nuclei v3 YAML exploit templates for regression scanning. |
+| **25** | `generate_oast_token` | **P2: OAST** | `vuln_type`, `description` | Generates unique correlation token and callback URLs for Out-of-Band testing. |
+| **26** | `get_active_project` | Workspace Scope | *(none)* | Retrieves the currently active project name and isolation directory. |
+| **27** | `get_attack_paths` | Attack Chains | `project` | Synthesizes Kill Chain attack paths from initial recon to Crown Jewels. |
+| **28** | `get_attack_surface` | Attack Surface | `project` | Returns hierarchical topology graph of assets, open ports, and endpoints. |
+| **29** | `get_autonomous_attack_guidance`| **Cognitive Advisor**| `project`, `log_id`, `target_url` | Analyzes observed traffic and recommends high-impact testing tools with exact args. |
+| **30** | `get_bola_access_matrix` | BOLA / IDOR | `project` | Retrieves compiled cross-role authorization matrix results for active project endpoints. |
+| **31** | `get_ca_certificate_details` | Certificate CA | *(none)* | Returns root CA certificate paths, thumbprint, and installation status for TLS MITM. |
+| **32** | `get_captured_payloads` | Payload Vault | `vuln_type`, `outcome`, `keyword` | Queries stored payloads with filtering by vulnerability type, outcome, and keyword. |
+| **33** | `get_csrf_tokens` | CSRF Engine | `domain` | Retrieves all auto-tracked and manual anti-CSRF tokens extracted from HTTP responses. |
+| **34** | `get_log_detail` | Telemetry History | `log_id` | Retrieves full un-truncated HTTP request/response headers and bodies by Log ID. |
+| **35** | `get_testing_agenda` | **P3: Memory** | `project` | Synthesizes an actionable testing agenda of unverified hypotheses to eliminate loops. |
+| **36** | `get_traffic_history` | Telemetry History | `project`, `limit`, `filter_status` | Lists recent HTTP transactions with status codes, latency, and triage tags. |
+| **37** | `get_tunnel_status` | Tunnel Manager | *(none)* | Returns operational status, public URL, provider, and uptime of active ingress tunnel. |
+| **38** | `import_api_schema` | API Reconstructor | `spec_source`, `target_base_url` | 1-Click OpenAPI/Swagger parser mapping 100+ endpoints and attack body templates into graph. |
+| **39** | `infer_hidden_endpoints` | API Reconstructor | `host`, `project` | Predicts unmapped REST endpoints (admin, actuator, docs, CRUD variants) from paths. |
+| **40** | `inspect_graphql_endpoint` | Protocol Security | `url` | Audits GraphQL for introspection disclosure, field suggestion leaks, and batching. |
+| **41** | `list_interception_rules` | Interception Rules | *(none)* | Lists all configured match & replace and response mocking rules. |
+| **42** | `mine_cli_output` | CLI Miner | `command`, `raw_output`, `target` | Mines Nmap, Masscan, Nuclei, FFUF, Gobuster stdout into structured services and findings. |
+| **43** | `mine_javascript_assets` | JS Recon | `content_or_url`, `project` | Mines JS bundles for hidden endpoints, query parameters, source maps, and secrets. |
+| **44** | `mutate_payload` | WAF Evasion | `raw_payload`, `vuln_type` | Generates obfuscated payload variations (URL, hex, comment injection, Unicode). |
+| **45** | `poll_oast_events` | **P2: OAST** | `token` | Queries captured callbacks (HTTP, DNS UDP 5354, LDAP TCP 1390) for an OAST token. |
+| **46** | `record_target_asset` | Reconnaissance | `host`, `ip_address`, `os` | Catalogs a host/machine, IP address, OS, and status in the knowledge graph. |
+| **47** | `record_target_endpoint` | Reconnaissance | `asset_id`, `url_path`, `http_method` | Catalogs target URL routes, parameters, auth requirements, and testing status. |
+| **48** | `record_target_service` | Reconnaissance | `asset_id`, `port`, `service_name` | Records open ports, protocols (TCP/UDP), and service banners for a target asset. |
+| **49** | `record_test_payload` | Payload Vault | `payload`, `vuln_type`, `outcome` | Stores exploit strings into the Payload Vault with categorization and tags. |
+| **50** | `record_testing_hypothesis` | **P3: Memory** | `target`, `vuln_type`, `hypothesis` | Logs an attack hypothesis into the stateful ledger tracking agent testing state. |
+| **51** | `register_auth_recipe` | Auth Keeper | `domain`, `login_url`, `payload` | Registers automated login recipe for transparent re-authentication when sessions expire. |
+| **52** | `render_webpage` | Browser Automation | `url`, `render_type` | Visual screenshot capture and DOM snapshot utility for single-page applications. |
+| **53** | `report_vulnerability` | Findings Ledger | `log_id`, `title`, `severity` | Flags an HTTP log entry as a confirmed vulnerability finding in the operator ledger. |
+| **54** | `request_manual_login` | Authentication | `target_url`, `instruction` | Spawns visible browser for human operator to solve CAPTCHA/2FA; auto-imports cookies. |
+| **55** | `run_autonomous_security_campaign` | **Unified God Tool** | `target_url`, `project`, `modes` | Universal multi-track campaign for Web, REST API, and Network Infra in 1 prompt. |
+| **56** | `run_bola_matrix_scan` | BOLA / IDOR | `project` | Executes comprehensive automated BOLA matrix replay across all logged endpoints. |
+| **57** | `run_pentest_command` | CLI Execution | `command`, `cwd`, `timeout_seconds` | Executes terminal commands with auto-proxy routing to `:8088` and automated output mining. |
+| **58** | `run_security_audit_suite` | CI/CD Auditor | `project`, `min_severity` | Runs automated OWASP API security audit across traffic, returning 0–100 score and grade. |
+| **59** | `scan_network_ports` | Network Recon | `target`, `ports_profile`, `ports_custom` | Autonomous async TCP port scanner & service exposure auditor (Redis, Elastic, Docker). |
+| **60** | `search_traffic_advanced` | Traffic Search | `query`, `min_status`, `max_status` | Multi-dimensional traffic search filtering by status range, latency, and full-text bodies. |
+| **61** | `semantic_diff_responses` | Diff Engine | `log_id_a`, `log_id_b` | Generates structured semantic difference between two historical proxy transactions. |
+| **62** | `send_http_request` | Core Network | `url`, `method`, `headers`, `body` | HTTP/HTTPS dispatcher with auto-auth, scope checks, proxy trap, distillation, and advice. |
+| **63** | `send_websocket_message` | Protocol Security | `url`, `message` | Transmits and logs WebSocket frames to target socket endpoints for protocol testing. |
+| **64** | `set_active_project` | Workspace Scope | `project_name` | Dynamically sets the active project scope for the agent session. |
+| **65** | `set_csrf_token` | CSRF Engine | `domain`, `token_value` | Sets an anti-CSRF token for target domain to be auto-injected in state-changing calls. |
+| **66** | `set_identity_session` | BOLA / IDOR | `domain`, `identity_role`, `raw_cookies` | Registers secondary user identity cookies (attacker vs victim) for shadow replay. |
+| **67** | `setup_public_tunnel` | Tunnel Manager | `provider` | Spins up Cloudflare Quick Tunnel / ngrok and binds public URL to OAST listener. |
+| **68** | `spider_and_crawl_target` | Autonomous Recon | `root_url`, `project`, `max_depth` | Hybrid web crawler with Playwright Chromium DOM engine for Single Page Apps. |
+| **69** | `spray_oast_canaries` | **P2: OAST Sprayer**| `target_url`, `vuln_types` | Ingests target URL and sprays context-aware canaries across all discovered inputs. |
+| **70** | `test_bola_idor` | BOLA / IDOR | `log_id`, `role_a`, `role_b` | Executes dual-track BOLA replay against an endpoint using registered identity roles. |
+| **71** | `test_race_condition` | Concurrency Burst| `url`, `concurrency`, `method` | Executes microsecond-synchronized request bursts using `asyncio.Barrier` for race testing. |
+| **72** | `toggle_interception_rule` | Interception Rules | `rule_id`, `enabled` | Toggles or updates the enabled state of an interception rule. |
+| **73** | `update_hypothesis_status` | **P3: Memory** | `hypothesis_id`, `status` | Transitions hypothesis lifecycle state (`PLANNED` -> `TESTING` -> `CONFIRMED`/`DISPROVEN`). |
+| **74** | `update_proxsynth_system` | Auto-Updater | `confirm`, `force_check` | Performs autonomous remote Git update checks and synchronized system upgrades. |
+| **75** | `verify_dom_execution` | **P4: DOM Oracle** | `url`, `payload` | Executes payload in sandboxed Playwright Chromium to deterministically verify DOM sinks. |
+| **76** | `verify_vulnerability_candidate` | **Verification Gate** | `finding_id`, `log_id` | Validates vulnerability candidates through deterministic DOM, timing, or OAST oracles. |
+
+---
+
+## 6. Zero-Human Autonomous Execution SOP
+
+To achieve full hands-free execution, agents must follow this continuous lifecycle loop:
 
 ```mermaid
 graph TD
-    A[Mulai Target Baru] --> B[Daftarkan Kredensial via register_auth_recipe]
-    B --> C[Jalankan Autonomous Campaign via run_autonomous_security_campaign]
+    A[Target Ingestion & Setup] --> B[Register Auth Recipe via register_auth_recipe]
+    B --> C[Execute Autonomous Campaign via run_autonomous_security_campaign]
     C --> D[Spider & Form Discovery]
-    D --> E[JS Secret & Route Mining]
-    E --> F[Multi-Protocol OAST Spraying]
-    F --> G[BFLA & BOLA Permission Matrix Audit]
-    G --> H[Mass Assignment & Numeric Logic Fuzzing]
-    H --> I[Differential Oracle & DOM Sandbox Verification Gate]
-    I --> J[Simpan Temuan Terverifikasi ke Findings Ledger]
-    J --> K[Generate Standalone Exploit PoC & Nuclei Templates]
+    D --> E[JavaScript Secret & Route Mining]
+    E --> F[Consult Cognitive Advisor via get_autonomous_attack_guidance]
+    F --> G[Execute Targeted Probing: BFLA / BOLA / Mass Assignment / Logic]
+    G --> H[Differential Oracle & DOM Sandbox Verification Gate]
+    H --> I[Auto-Confirm High-Confidence Findings in Ledger]
+    I --> J[Generate Standalone Exploit PoCs & Nuclei v3 Templates]
 ```
 
-1. **Inisialisasi & Resep Autentikasi:**
-   Jika target memerlukan login, segera daftarkan credential macro menggunakan `register_auth_recipe`. Hal ini menjamin jika session token kedaluwarsa di tengah pengujian, session keeper Proxynth akan me-refresh token secara mandiri.
-2. **Eksekusi 1-Command Campaign:**
-   Panggil `run_autonomous_security_campaign(target_url="...", project="...")`. Engine Proxynth akan menjalankan seluruh fase reconnaissance, crawling, parameter fuzzing, dan audit otorisasi secara asynchronous.
-3. **Penyaringan False Positive:**
-   Setiap anomali yang ditemukan otomatis divalidasi oleh `verify_vulnerability_candidate`. Hanya temuan yang lolos verifikasi deterministik yang dicatat sebagai `CONFIRMED`.
-4. **Deliverables Otomatis:**
-   Gunakan `generate_exploit_poc` untuk script reproduksi mandiri, `generate_nuclei_template` untuk template scanning, dan `generate_audit_ci_report` untuk laporan kepatuhan akhir.
+1. **Setup & Authentication Keeper:**
+   If the target requires authentication, register the authentication macro immediately using `register_auth_recipe`. This ensures Proxynth handles session refresh transparently throughout the assessment.
+2. **Launch Campaign Orchestration:**
+   Call `run_autonomous_security_campaign(target_url="https://target.com", project="...")` to map the target attack surface and uncover initial vulnerabilities.
+3. **Targeted Cognitive Probing:**
+   For uncovered endpoints, check the `suggested_next_actions` from `send_http_request` or call `get_autonomous_attack_guidance(project="...")` to prioritize testing high-risk business logic and access control boundaries.
+4. **Deterministic Verification & Deliverables:**
+   Pass candidates to `verify_vulnerability_candidate` to eliminate false positives. Finally, generate standalone exploit scripts with `generate_exploit_poc` and automated regression templates with `generate_nuclei_template`.

@@ -897,6 +897,23 @@ async def send_http_request(
         }
         if distilled_data:
             res_dict["distilled_response"] = distilled_data
+
+        try:
+            from backend.attack_advisor import suggest_attack_actions
+            advisor_suggestions = suggest_attack_actions(
+                url=url,
+                method=method,
+                headers=res_headers,
+                body=body,
+                response_status=status_code,
+                response_body=res_body,
+                log_id=logged_id
+            )
+            if advisor_suggestions:
+                res_dict["suggested_next_actions"] = advisor_suggestions
+        except Exception:
+            pass
+
         return json.dumps(res_dict, indent=2)
 
     if fmt_choice == "compact":
@@ -1306,11 +1323,26 @@ async def run_pentest_command(
     cmd_id = await _persist_and_stream_command(cmd_log_payload)
     cmd_id_str = f"#{cmd_id}" if cmd_id else "#untracked"
 
+    # Autonomous CLI Output Miner: Extract structured ports, services, endpoints, or findings
+    mined_summary = None
+    if stdout_text and len(stdout_text.strip()) > 10:
+        try:
+            from backend.cli_miner import mine_and_ingest_cli_output
+            mined_res = mine_and_ingest_cli_output(
+                command=cmd_clean,
+                raw_output=stdout_text,
+                project=target_project
+            )
+            if mined_res.get("services_ingested") or mined_res.get("endpoints_ingested") or mined_res.get("findings_recorded"):
+                mined_summary = mined_res
+        except Exception:
+            pass
+
     stdout_snippet = stdout_text[:5000] if stdout_text else "[No standard output]"
     stderr_snippet = f"\nSTDERR:\n{stderr_text[:2000]}" if stderr_text else ""
     fmt_choice = (output_format or "json").strip().lower()
     if fmt_choice == "json":
-        return json.dumps({
+        res_obj = {
             "command_id": cmd_id,
             "project": target_project,
             "agent_id": target_agent,
@@ -1322,7 +1354,10 @@ async def run_pentest_command(
             "stdout": stdout_snippet,
             "stderr": stderr_text[:2000] if stderr_text else "",
             "script_captured": bool(effective_script_content)
-        }, indent=2)
+        }
+        if mined_summary:
+            res_obj["mined_knowledge"] = mined_summary
+        return json.dumps(res_obj, indent=2)
 
     return (
         f"Project: [{target_project}] | Command ID: {cmd_id_str} | Agent: [{target_agent}] | Exit Code: {exit_code} | Duration: {duration_ms}ms | CWD: [{work_dir}] | Status: {status}\n"
@@ -3509,23 +3544,118 @@ async def verify_vulnerability_candidate(
 
 
 @mcp.tool()
+async def scan_network_ports(
+    target: str,
+    ports_profile: str = "top_100",
+    ports_custom: Optional[str] = None,
+    concurrency: int = 80,
+    project: Optional[str] = None,
+    audit_misconfigs: bool = True
+) -> str:
+    """
+    Autonomous Async Port & Network Scanner (Zero-Dependency).
+    Scans a target host, IP, or URL for open TCP ports and fingerprint services.
+    Automatically grabs service banners, registers assets and services into Target Knowledge Graph,
+    and conducts unauthenticated access audits for exposed databases (Redis, Elasticsearch, Docker daemon).
+    """
+    from backend.network_scanner import scan_target_ports
+    proj = _resolve_project(project, allow_all=False)
+    res = await scan_target_ports(
+        target=target,
+        ports_profile=ports_profile,
+        ports_custom=ports_custom,
+        concurrency=concurrency,
+        project=proj,
+        audit_misconfigs=audit_misconfigs
+    )
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def import_api_schema(
+    spec_source: str,
+    target_base_url: Optional[str] = None,
+    project: Optional[str] = None
+) -> str:
+    """
+    1-Click OpenAPI & Swagger Specification Importer.
+    Imports and maps an OpenAPI 2.0 / 3.0 / 3.1 specification (from URL or raw JSON/YAML string)
+    into structured endpoints, methods, parameters, and testable attack body templates in the Target Knowledge Graph.
+    """
+    from backend.api_importer import import_api_schema as engine_import_api_schema
+    proj = _resolve_project(project, allow_all=False)
+    res = await engine_import_api_schema(
+        spec_source=spec_source,
+        target_base_url=target_base_url,
+        project=proj
+    )
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def audit_api_gateway_bypass(
+    target_url: str,
+    project: Optional[str] = None
+) -> str:
+    """
+    API Gateway 401/403 Authorization Bypass Engine.
+    Evaluates protected API endpoints returning 401 Unauthorized or 403 Forbidden
+    against a matrix of gateway proxy spoofing headers (X-Forwarded-For, X-Custom-IP-Authorization),
+    URL override headers (X-Original-URL, X-Rewrite-URL), and path normalization traversal tricks (/..;/, /./, //).
+    Automatically logs verified bypass findings to the Findings Ledger.
+    """
+    from backend.api_importer import audit_api_gateway_bypass as engine_audit_api_gateway_bypass
+    proj = _resolve_project(project, allow_all=False)
+    res = await engine_audit_api_gateway_bypass(
+        target_url=target_url,
+        project=proj
+    )
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def mine_cli_output(
+    command: str,
+    raw_output: str,
+    target: str = "",
+    project: Optional[str] = None
+) -> str:
+    """
+    Automated CLI Output Miner & Structured Knowledge Extractor.
+    Parses raw terminal stdout/stderr from Nmap, Masscan, Nuclei, FFUF, Gobuster, or Dirsearch,
+    and automatically extracts open ports, service banners, fuzzing paths, and discovered vulnerabilities,
+    inserting them into the Target Knowledge Graph and Findings Ledger.
+    """
+    from backend.cli_miner import mine_and_ingest_cli_output
+    proj = _resolve_project(project, allow_all=False)
+    res = mine_and_ingest_cli_output(
+        command=command,
+        raw_output=raw_output,
+        target=target,
+        project=proj
+    )
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
 async def run_autonomous_security_campaign(
     target_url: str,
     modes: Optional[List[str]] = None,
     project: Optional[str] = None,
     max_pages: int = 15,
-    deep_verify: bool = True
+    deep_verify: bool = True,
+    ports_profile: str = "top_100",
+    enable_spa: bool = True
 ) -> str:
     """
-    Autonomous Campaign Orchestrator ('God Tool').
-    Executes a comprehensive, coordinated multi-stage security audit in a single call:
-    1. Spider & Form Discovery -> Ingests into Target Knowledge Graph
-    2. JavaScript Mining -> Extracts hidden routes and hardcoded API keys
-    3. OAST Canary Spraying -> Tests for Blind SSRF, Log4j, and RCE
-    4. BFLA & Method Tunneling -> Probes HTTP verb tampering and permissions
-    5. Mass Assignment -> Tests privileged attribute binding (role, admin, balance)
-    6. Business Logic -> Probes negative numbers, zero-cost, and integer overflow
-    7. Deterministic Verification Gate -> Verifies all findings and eliminates false positives
+    Unified Autonomous Campaign Orchestrator ('God Tool').
+    Executes a comprehensive, coordinated multi-track security audit in a single call:
+    0. Universal Target Classification -> Supports Web URLs, APIs, IPs, CIDRs, or hostnames
+    1. Track Infra & Network -> Built-in async port scanner & service exposure auditor (Redis, Elastic, Docker)
+    2. Track Web & SPA -> Hybrid crawler with Playwright Chromium DOM engine for React/Vue/Angular
+    3. Track API Security -> Route discovery, OpenAPI schema ingestion, & API Gateway 401/403 bypass
+    4. Deep Vulnerability Engine -> OAST canary spray (SSRF/RCE), BFLA verb tampering, Mass Assignment, Numeric Logic
+    5. Deterministic Verification Gate -> Verifies all findings with specialized oracles and eliminates false positives
     Returns a token-efficient executive dossier with verified findings and standalone PoC instructions.
     """
     from backend.campaign_orchestrator import run_autonomous_security_campaign
@@ -3535,8 +3665,65 @@ async def run_autonomous_security_campaign(
         modes=modes,
         project=proj,
         max_pages=max_pages,
-        deep_verify=deep_verify
+        deep_verify=deep_verify,
+        ports_profile=ports_profile,
+        enable_spa=enable_spa
     )
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def get_autonomous_attack_guidance(
+    project: Optional[str] = None,
+    log_id: Optional[int] = None,
+    target_url: Optional[str] = None
+) -> str:
+    """
+    Cognitive Attack Advisor: Analyzes target HTTP traffic or active project attack surface,
+    evaluating heuristic signals (object IDs, admin paths, mass assignment candidates,
+    numeric parameters, reflection sinks, SSRF callbacks, JWT tokens) and directly
+    recommends the next high-impact FastMCP security tools to invoke with exact arguments.
+    """
+    from backend.attack_advisor import get_project_attack_guidance, suggest_attack_actions
+    proj = _resolve_project(project, allow_all=False)
+
+    if log_id:
+        db = SessionLocal()
+        try:
+            entry = db.query(HttpLog).filter(HttpLog.id == int(log_id)).first()
+            if entry:
+                hdrs = {}
+                try:
+                    hdrs = json.loads(entry.request_headers) if isinstance(entry.request_headers, str) else entry.request_headers
+                except Exception:
+                    pass
+                actions = suggest_attack_actions(
+                    url=entry.url,
+                    method=entry.method,
+                    headers=hdrs,
+                    body=entry.request_body,
+                    response_status=entry.status_code,
+                    response_body=entry.response_body,
+                    log_id=entry.id
+                )
+                return json.dumps({
+                    "status": "success",
+                    "log_id": log_id,
+                    "target_url": entry.url,
+                    "recommended_actions": actions
+                }, indent=2)
+        finally:
+            db.close()
+
+    if target_url:
+        actions = suggest_attack_actions(url=target_url)
+        return json.dumps({
+            "status": "success",
+            "target_url": target_url,
+            "recommended_actions": actions
+        }, indent=2)
+
+    res = get_project_attack_guidance(project=proj, limit=15)
     return json.dumps(res, indent=2)
 
 
