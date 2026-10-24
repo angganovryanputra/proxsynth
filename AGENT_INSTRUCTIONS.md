@@ -243,7 +243,7 @@ If executing independently, the agent must evaluate the following deterministic 
 
 ---
 
-## 5. Complete 76 FastMCP Tools Reference Specification
+## 5. Complete 80 FastMCP Tools Reference Specification
 
 | # | Tool Name | Subsystem | Key Arguments | Description |
 | :---: | :--- | :--- | :--- | :--- |
@@ -273,7 +273,7 @@ If executing independently, the agent must evaluate the following deterministic 
 | **24** | `generate_nuclei_template` | PoC Generator | `finding_id` | Generates standardized Nuclei v3 YAML exploit templates for regression scanning. |
 | **25** | `generate_oast_token` | **P2: OAST** | `vuln_type`, `description` | Generates unique correlation token and callback URLs for Out-of-Band testing. |
 | **26** | `get_active_project` | Workspace Scope | *(none)* | Retrieves the currently active project name and isolation directory. |
-| **27** | `get_attack_paths` | Attack Chains | `project` | Synthesizes Kill Chain attack paths from initial recon to Crown Jewels. |
+| **27** | `get_attack_paths` | Attack Chains | `project` | Synthesizes multi-hop Kill Chain attack paths (Foothold -> Harvested Session -> Protected Route -> Crown Jewels) with Mermaid diagrams. |
 | **28** | `get_attack_surface` | Attack Surface | `project` | Returns hierarchical topology graph of assets, open ports, and endpoints. |
 | **29** | `get_autonomous_attack_guidance`| **Cognitive Advisor**| `project`, `log_id`, `target_url` | Analyzes observed traffic and recommends high-impact testing tools with exact args. |
 | **30** | `get_bola_access_matrix` | BOLA / IDOR | `project` | Retrieves compiled cross-role authorization matrix results for active project endpoints. |
@@ -284,12 +284,12 @@ If executing independently, the agent must evaluate the following deterministic 
 | **35** | `get_testing_agenda` | **P3: Memory** | `project` | Synthesizes an actionable testing agenda of unverified hypotheses to eliminate loops. |
 | **36** | `get_traffic_history` | Telemetry History | `project`, `limit`, `filter_status` | Lists recent HTTP transactions with status codes, latency, and triage tags. |
 | **37** | `get_tunnel_status` | Tunnel Manager | *(none)* | Returns operational status, public URL, provider, and uptime of active ingress tunnel. |
-| **38** | `import_api_schema` | API Reconstructor | `spec_source`, `target_base_url` | 1-Click OpenAPI/Swagger parser mapping 100+ endpoints and attack body templates into graph. |
+| **38** | `import_api_schema` | API Reconstructor | `spec_source`, `target_base_url` | Multi-format parser mapping OpenAPI 2/3, Postman v2.0/v2.1, GraphQL introspection, and HAR captures into graph. |
 | **39** | `infer_hidden_endpoints` | API Reconstructor | `host`, `project` | Predicts unmapped REST endpoints (admin, actuator, docs, CRUD variants) from paths. |
 | **40** | `inspect_graphql_endpoint` | Protocol Security | `url` | Audits GraphQL for introspection disclosure, field suggestion leaks, and batching. |
 | **41** | `list_interception_rules` | Interception Rules | *(none)* | Lists all configured match & replace and response mocking rules. |
 | **42** | `mine_cli_output` | CLI Miner | `command`, `raw_output`, `target` | Mines Nmap, Masscan, Nuclei, FFUF, Gobuster stdout into structured services and findings. |
-| **43** | `mine_javascript_assets` | JS Recon | `content_or_url`, `project` | Mines JS bundles for hidden endpoints, query parameters, source maps, and secrets. |
+| **43** | `mine_javascript_assets` | JS Recon | `content_or_url`, `parse_sourcemaps`, `follow_bundles` | Mines JS bundles and unpacks .map sourcemaps (extracting unminified TypeScript/ES6 from sourcesContent) for hidden routes and secrets. |
 | **44** | `mutate_payload` | WAF Evasion | `raw_payload`, `vuln_type` | Generates obfuscated payload variations (URL, hex, comment injection, Unicode). |
 | **45** | `poll_oast_events` | **P2: OAST** | `token` | Queries captured callbacks (HTTP, DNS UDP 5354, LDAP TCP 1390) for an OAST token. |
 | **46** | `record_target_asset` | Reconnaissance | `host`, `ip_address`, `os` | Catalogs a host/machine, IP address, OS, and status in the knowledge graph. |
@@ -309,7 +309,7 @@ If executing independently, the agent must evaluate the following deterministic 
 | **60** | `search_traffic_advanced` | Traffic Search | `query`, `min_status`, `max_status` | Multi-dimensional traffic search filtering by status range, latency, and full-text bodies. |
 | **61** | `semantic_diff_responses` | Diff Engine | `log_id_a`, `log_id_b` | Generates structured semantic difference between two historical proxy transactions. |
 | **62** | `send_http_request` | Core Network | `url`, `method`, `headers`, `body` | HTTP/HTTPS dispatcher with auto-auth, scope checks, proxy trap, distillation, and advice. |
-| **63** | `send_websocket_message` | Protocol Security | `url`, `message` | Transmits and logs WebSocket frames to target socket endpoints for protocol testing. |
+| **63** | `send_websocket_message` | Protocol Security | `url`, `message`, `protocol`, `event_name` | Transmits raw WebSocket or Socket.IO/Engine.IO framed packets to target sockets with automated handshakes. |
 | **64** | `set_active_project` | Workspace Scope | `project_name` | Dynamically sets the active project scope for the agent session. |
 | **65** | `set_csrf_token` | CSRF Engine | `domain`, `token_value` | Sets an anti-CSRF token for target domain to be auto-injected in state-changing calls. |
 | **66** | `set_identity_session` | BOLA / IDOR | `domain`, `identity_role`, `raw_cookies` | Registers secondary user identity cookies (attacker vs victim) for shadow replay. |
@@ -323,6 +323,10 @@ If executing independently, the agent must evaluate the following deterministic 
 | **74** | `update_proxsynth_system` | Auto-Updater | `confirm`, `force_check` | Performs autonomous remote Git update checks and synchronized system upgrades. |
 | **75** | `verify_dom_execution` | **P4: DOM Oracle** | `url`, `payload` | Executes payload in sandboxed Playwright Chromium to deterministically verify DOM sinks. |
 | **76** | `verify_vulnerability_candidate` | **Verification Gate** | `finding_id`, `log_id` | Validates vulnerability candidates through deterministic DOM, timing, or OAST oracles. |
+| **77** | `get_campaign_status` | **Autonomous Campaign**| `campaign_id` | Polls real-time phase progress, metrics, circuit breaker health, and verified findings. |
+| **78** | `list_campaigns` | **Autonomous Campaign**| `project` | Lists all registered autonomous security campaigns across the workspace or project. |
+| **79** | `get_tool_harness_manifest` | **Agent Harness** | *(none)* | Returns complete 80-tool taxonomy with read_only and destructive flags for auto-approval. |
+| **80** | `get_target_health` | **Recon & Observability** | `url`, `timeout`, `project` | Granular latency probe (DNS, TCP, TLS, TTFB) diagnosing 5xx flapping, packet latency, and target stability. |
 
 ---
 

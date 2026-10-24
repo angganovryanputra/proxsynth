@@ -151,3 +151,72 @@ def get_testing_agenda(project: str = "default") -> Dict[str, Any]:
         "active_agenda": testing + planned,
         "confirmed_findings": confirmed
     }
+
+
+def sync_finding_to_hypothesis(
+    project: str,
+    finding_id: Optional[int],
+    log_id: int,
+    title: str,
+    severity: str = "HIGH",
+    category: str = "General",
+    evidence: str = "",
+    agent_id: str = "primary_agent"
+) -> Dict[str, Any]:
+    """
+    Automatically links or elevates a TestingHypothesis in the working memory agenda
+    when a vulnerability finding is confirmed and reported.
+    Guarantees that get_testing_agenda() immediately reflects confirmed findings.
+    """
+    proj_name = (project or "default").strip().lower()
+    db = SessionLocal()
+    try:
+        # 1. Look for existing hypothesis linked to this exact log_id
+        entry = db.query(TestingHypothesis).filter(
+            TestingHypothesis.linked_log_id == log_id
+        ).first()
+
+        # 2. If not found, look up HTTP Log details to locate target URL
+        from backend.database import HttpLog
+        log_entry = db.query(HttpLog).filter(HttpLog.id == log_id).first()
+        target_str = log_entry.url if log_entry else f"Log #{log_id}"
+
+        if not entry and log_entry:
+            entry = db.query(TestingHypothesis).filter(
+                TestingHypothesis.project == proj_name,
+                TestingHypothesis.target == target_str,
+                TestingHypothesis.vuln_type == (category or "GENERAL").upper().strip()
+            ).first()
+
+        evidence_summary = f"[Finding #{finding_id or 'rec'} | {severity}] {title}: {evidence[:200] if evidence else 'Confirmed'}"
+
+        if entry:
+            entry.status = "CONFIRMED"
+            entry.evidence_notes = f"{entry.evidence_notes}\n{evidence_summary}".strip()
+            entry.updated_at = datetime.now()
+            if not entry.linked_log_id:
+                entry.linked_log_id = log_id
+            db.commit()
+            db.refresh(entry)
+            return entry.to_dict()
+        else:
+            # Auto-create confirmed hypothesis so agenda reflects the discovery
+            new_entry = TestingHypothesis(
+                project=proj_name,
+                agent_id=agent_id or (log_entry.agent_id if log_entry else "primary_agent"),
+                target=target_str,
+                vuln_type=(category or "GENERAL").upper().strip(),
+                hypothesis=f"Confirmed exploitability: {title}",
+                status="CONFIRMED",
+                evidence_notes=evidence_summary,
+                linked_log_id=log_id,
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            db.add(new_entry)
+            db.commit()
+            db.refresh(new_entry)
+            return new_entry.to_dict()
+    finally:
+        db.close()
+

@@ -1221,6 +1221,22 @@ async def create_finding_api(data: CreateFindingRequest, db: Session = Depends(g
         "log": log_entry.to_dict(include_body=False)
     })
 
+    # Auto-sync to testing hypothesis working memory
+    try:
+        from backend.hypothesis_manager import sync_finding_to_hypothesis
+        sync_finding_to_hypothesis(
+            project=log_entry.project,
+            finding_id=finding.id,
+            log_id=log_entry.id,
+            title=title_clean,
+            severity=sev,
+            category=(data.category or "General").strip(),
+            evidence=data.evidence or "",
+            agent_id=log_entry.agent_id
+        )
+    except Exception:
+        pass
+
     return {
         "status": "created",
         "id": finding.id,
@@ -3462,6 +3478,23 @@ def get_attack_guidance_endpoint(
         return {"status": "success", "target_url": target_url, "recommended_actions": actions}
 
     return get_project_attack_guidance(project=project)
+
+
+@app.get("/api/campaigns")
+def get_campaigns_list_api(project: Optional[str] = None):
+    """Lists all active and completed autonomous security testing campaigns."""
+    from backend.campaign_orchestrator import list_campaigns
+    return {"status": "success", "campaigns": list_campaigns(project=project)}
+
+
+@app.get("/api/campaigns/{campaign_id}")
+def get_campaign_detail_api(campaign_id: str):
+    """Retrieves real-time status, phase progress, and findings for a campaign."""
+    from backend.campaign_orchestrator import get_campaign_status
+    status = get_campaign_status(campaign_id)
+    if status.get("status") == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail=f"Campaign '{campaign_id}' not found")
+    return status
 
 
 @app.get("/api/health")

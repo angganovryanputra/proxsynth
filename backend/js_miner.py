@@ -2,6 +2,7 @@
 Proxsynth - Passive & Active JavaScript Recon, Endpoint & Secret Miner
 Extracts hidden API endpoints, routes, query/body parameters, source maps,
 and leaked credentials (AWS, JWT, Slack, API keys) from client-side JavaScript assets.
+Includes source map (.map) unpacker extracting unminified TypeScript/ES6 from `sourcesContent`.
 """
 
 import os
@@ -61,6 +62,12 @@ JS_ADDITIONAL_SECRETS = [
 
 SOURCEMAP_PATTERN = re.compile(r"""(?:\/\/|\/\*)[#@]\s*sourceMappingURL=([^\s*]+)""")
 
+BUNDLE_REFERENCE_PATTERNS = [
+    re.compile(r"""<script[^>]+src=["']([^"']+\.js[^"']*)["']""", re.IGNORECASE),
+    re.compile(r"""(?:import\s*\(\s*|require\s*\(\s*)['"]([^'"]+\.js[^"']*)['"]""", re.IGNORECASE),
+    re.compile(r"""['"]((?:static\/js\/|[a-zA-Z0-9_\-\.\/]+)(?:chunk|bundle|vendor|app|main)[a-zA-Z0-9_\-\.]*\.js)['"]""", re.IGNORECASE)
+]
+
 # File extensions to ignore when extracting endpoints
 IGNORE_EXTENSIONS = (
     ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp",
@@ -81,21 +88,16 @@ def extract_routes(js_content: str) -> List[str]:
     for pattern in JS_ENDPOINT_PATTERNS:
         for match in pattern.findall(js_content):
             path = match.strip()
-            # Clean string
             if not path or len(path) < 2:
                 continue
-            # Ignore MIME types or non-routes
             if any(path.startswith(prefix) for prefix in IGNORE_PREFIXES):
                 continue
-            # Ignore pure static image/font assets unless containing query/api indicators
             clean_path = path.split("?")[0].lower()
             if any(clean_path.endswith(ext) for ext in IGNORE_EXTENSIONS) and "api" not in clean_path:
                 continue
-            # Normalize path
             if path.startswith("//"):
-                continue  # Protocol-relative or comment artifact
+                continue
             if path.startswith("/"):
-                # Clean redundant slashes
                 normalized = "/" + "/".join(filter(None, path.split("/")))
                 routes.add(normalized)
                 if "?" in normalized:
@@ -138,7 +140,6 @@ def extract_secrets(js_content: str) -> List[Dict[str, Any]]:
                 matched_str = m if isinstance(m, str) else m[0] if isinstance(m, (list, tuple)) else str(m)
                 if not matched_str or len(matched_str) < 6:
                     continue
-                # Mask secret value in evidence preview
                 masked = matched_str[:4] + "*" * (len(matched_str) - 8) + matched_str[-4:] if len(matched_str) > 8 else "***"
                 findings.append({
                     "title": name,
@@ -166,23 +167,150 @@ def extract_sourcemaps(js_content: str, base_url: Optional[str] = None) -> List[
     return maps
 
 
+def extract_bundle_references(content: str, base_url: Optional[str] = None) -> List[str]:
+    """Extracts referenced chunk and vendor JS bundle URLs from HTML or JS scripts."""
+    bundles: Set[str] = set()
+    for pat in BUNDLE_REFERENCE_PATTERNS:
+        for match in pat.findall(content):
+            b_str = match.strip()
+            if b_str and not b_str.startswith("//") and b_str.lower().endswith(".js"):
+                if base_url and not b_str.startswith("http"):
+                    b_str = urllib.parse.urljoin(base_url, b_str)
+                bundles.add(b_str)
+    return sorted(list(bundles))
+
+
+async def unpack_sourcemap(
+    map_content_or_url: str,
+    base_url: Optional[str] = None,
+    timeout: float = 10.0,
+    upstream_proxy: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Unpacks a Source Map v3 JSON or remote .map URL, extracting unminified TypeScript/ES6
+    source files from `sourcesContent` and uncovering hidden routes, parameters, and secrets.
+    """
+    map_raw = ""
+    map_url = ""
+
+    if map_content_or_url.strip().startswith(("http://", "https://")):
+        map_url = map_content_or_url.strip()
+        proxy_kwargs = {}
+        if upstream_proxy and upstream_proxy.strip():
+            proxy_kwargs["proxy"] = upstream_proxy.strip()
+        else:
+            proxy_kwargs["proxy"] = None
+            proxy_kwargs["trust_env"] = False
+
+        headers = {}
+        apply_rotating_user_agent(headers)
+
+        try:
+            async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=timeout, **proxy_kwargs) as client:
+                resp = await client.get(map_url, headers=headers)
+                if resp.status_code == 200:
+                    map_raw = resp.text
+                else:
+                    return {
+                        "error": f"Failed to fetch sourcemap from {map_url} (HTTP {resp.status_code})",
+                        "map_url": map_url,
+                        "sources_count": 0,
+                        "endpoints_found": [],
+                        "parameters_found": [],
+                        "secrets_leaked": []
+                    }
+        except Exception as e:
+            return {
+                "error": f"Exception fetching sourcemap from {map_url}: {str(e)}",
+                "map_url": map_url,
+                "sources_count": 0,
+                "endpoints_found": [],
+                "parameters_found": [],
+                "secrets_leaked": []
+            }
+    else:
+        map_raw = map_content_or_url
+
+    try:
+        data = json.loads(map_raw)
+    except Exception as e:
+        return {
+            "error": f"Invalid sourcemap JSON: {str(e)}",
+            "map_url": map_url or "inline_map",
+            "sources_count": 0,
+            "endpoints_found": [],
+            "parameters_found": [],
+            "secrets_leaked": []
+        }
+
+    sources = data.get("sources", [])
+    sources_content = data.get("sourcesContent", [])
+
+    all_routes: Set[str] = set()
+    all_params: Set[str] = set()
+    all_secrets: List[Dict[str, Any]] = []
+    unpacked_files: List[Dict[str, Any]] = []
+
+    for idx, src_file in enumerate(sources):
+        src_code = ""
+        if isinstance(sources_content, list) and idx < len(sources_content):
+            src_code = sources_content[idx] or ""
+
+        routes = extract_routes(src_code) if src_code else []
+        params = extract_parameters(src_code) if src_code else []
+        secrets = extract_secrets(src_code) if src_code else []
+
+        for r in routes:
+            all_routes.add(r)
+        for p in params:
+            all_params.add(p)
+        for s in secrets:
+            s_copy = dict(s)
+            s_copy["evidence"] = f"Source: {src_file} | {s_copy.get('evidence', '')}"
+            s_copy["source_file"] = src_file
+            all_secrets.append(s_copy)
+
+        if src_code:
+            unpacked_files.append({
+                "source_file": src_file,
+                "lines_count": len(src_code.splitlines()),
+                "routes_count": len(routes),
+                "secrets_count": len(secrets)
+            })
+
+    return {
+        "map_url": map_url or "inline_map",
+        "sources_count": len(sources),
+        "unpacked_sources_count": len(unpacked_files),
+        "sources": sources[:50],
+        "unpacked_files": unpacked_files[:50],
+        "endpoints_found": sorted(list(all_routes)),
+        "parameters_found": sorted(list(all_params)),
+        "secrets_leaked": all_secrets
+    }
+
+
 async def mine_javascript(
     content_or_url: str,
     base_url: Optional[str] = None,
     auto_register: bool = True,
     project: str = "default",
-    upstream_proxy: Optional[str] = None
+    upstream_proxy: Optional[str] = None,
+    parse_sourcemaps: bool = True,
+    follow_bundles: bool = False
 ) -> Dict[str, Any]:
     """
-    Mines a JavaScript file or raw code snippet for hidden endpoints, query parameters,
-    leaked secrets, and source maps. Automatically registers endpoints into the target graph
-    and persists critical secret exposure findings if auto_register is True.
+    Mines a JavaScript file, HTML page, or raw code snippet for hidden endpoints, query parameters,
+    leaked secrets, and source maps. When `parse_sourcemaps=True`, automatically downloads and unpacks
+    associated `.map` files from `sourcesContent` for unminified code discovery.
+    When `follow_bundles=True`, follows and mines referenced JS vendor/chunk scripts.
+    Automatically registers endpoints into the target graph and persists secret findings.
     """
     target_project = (project or "default").strip().lower()
     raw_js = ""
     source_url = ""
 
-    # Determine if input is a remote URL or raw content
+    # Check if input is a remote URL or raw content
     if content_or_url.strip().startswith(("http://", "https://")):
         source_url = content_or_url.strip()
         base_url = base_url or source_url
@@ -243,11 +371,76 @@ async def mine_javascript(
             "summary": {"endpoints_count": 0, "params_count": 0, "secrets_count": 0}
         }
 
-    # Perform static extraction
-    routes = extract_routes(raw_js)
-    params = extract_parameters(raw_js)
+    # Static extraction from main JS payload
+    routes = set(extract_routes(raw_js))
+    params = set(extract_parameters(raw_js))
     secrets = extract_secrets(raw_js)
     sourcemaps = extract_sourcemaps(raw_js, base_url)
+    sourcemap_details = []
+
+    # 1. Sourcemap Unpacker Handling
+    # Also check opportunistic .js.map if no explicit sourcemap comment was found on a .js URL
+    if parse_sourcemaps:
+        map_targets = list(sourcemaps)
+        if not map_targets and source_url and source_url.split("?")[0].lower().endswith(".js"):
+            map_targets.append(f"{source_url}.map")
+
+        # Also check if input was directly a sourcemap JSON
+        if raw_js.strip().startswith("{") and '"sources"' in raw_js:
+            unpacked_direct = await unpack_sourcemap(raw_js, base_url=base_url)
+            if not unpacked_direct.get("error"):
+                sourcemap_details.append(unpacked_direct)
+                for r in unpacked_direct.get("endpoints_found", []):
+                    routes.add(r)
+                for p in unpacked_direct.get("parameters_found", []):
+                    params.add(p)
+                secrets.extend(unpacked_direct.get("secrets_leaked", []))
+
+        for sm_url in map_targets:
+            unpacked = await unpack_sourcemap(
+                map_content_or_url=sm_url,
+                base_url=base_url,
+                upstream_proxy=upstream_proxy
+            )
+            if not unpacked.get("error"):
+                sourcemap_details.append(unpacked)
+                for r in unpacked.get("endpoints_found", []):
+                    routes.add(r)
+                for p in unpacked.get("parameters_found", []):
+                    params.add(p)
+                secrets.extend(unpacked.get("secrets_leaked", []))
+                if sm_url not in sourcemaps:
+                    sourcemaps.append(sm_url)
+
+    # 2. Bundle Following (chunk & vendor script exploration)
+    followed_bundles = []
+    if follow_bundles:
+        bundle_urls = extract_bundle_references(raw_js, base_url=base_url)
+        # Filter out current URL and limit to 5 bundles to avoid explosion
+        filtered_bundles = [b for b in bundle_urls if b != source_url][:5]
+        for b_url in filtered_bundles:
+            try:
+                sub_res = await mine_javascript(
+                    content_or_url=b_url,
+                    base_url=base_url,
+                    auto_register=False,  # register will happen collectively below
+                    project=target_project,
+                    upstream_proxy=upstream_proxy,
+                    parse_sourcemaps=parse_sourcemaps,
+                    follow_bundles=False
+                )
+                if not sub_res.get("error"):
+                    followed_bundles.append(b_url)
+                    for r in sub_res.get("endpoints_found", []):
+                        routes.add(r)
+                    for p in sub_res.get("parameters_found", []):
+                        params.add(p)
+                    secrets.extend(sub_res.get("secrets_leaked", []))
+            except Exception:
+                pass
+
+    final_routes = sorted(list(routes))
+    final_params = sorted(list(params))
 
     # Optional Auto-Registration into Target Knowledge Graph & Database Findings
     if auto_register:
@@ -259,7 +452,7 @@ async def mine_javascript(
                 parsed_base = urllib.parse.urlparse(base_url)
                 target_host = parsed_base.netloc.split(":")[0].lower()
 
-            for route in routes:
+            for route in final_routes:
                 full_endpoint_url = route
                 if base_url and not route.startswith("http"):
                     full_endpoint_url = urllib.parse.urljoin(base_url, route)
@@ -275,18 +468,38 @@ async def mine_javascript(
                             host=ep_host,
                             url=full_endpoint_url,
                             method="GET",
-                            parameters=params[:10] if params else [],
+                            parameters=final_params[:10] if final_params else [],
                             tested_status="UNTESTED",
                             notes=f"Discovered via JS Recon Miner ({source_url or 'inline_script'})"
                         )
                     except Exception:
                         pass
 
-            # 2. Record critical secrets as Findings in database
+            # 2. Record critical secrets as Findings in database (linked to an HttpLog record)
             if secrets:
+                parsed_u = urllib.parse.urlparse(source_url or base_url or "http://client.local/script.js")
+                log_entry = HttpLog(
+                    project=target_project,
+                    agent_id="js_miner",
+                    source="JS_MINER",
+                    method="GET",
+                    url=source_url or (base_url or "inline_script"),
+                    host=parsed_u.netloc.split(":")[0].lower() if parsed_u.netloc else "client_script",
+                    path=parsed_u.path or "/script.js",
+                    status_code=200,
+                    duration_ms=0,
+                    request_headers=json.dumps({"User-Agent": "Proxsynth-Miner/1.0"}),
+                    response_body=(raw_js or "")[:100000],
+                    flag_status="POTENTIAL",
+                    reasoning=f"JavaScript Recon Miner detected {len(secrets)} potential leaked secrets."
+                )
+                db.add(log_entry)
+                db.commit()
+                db.refresh(log_entry)
+
                 for sec in secrets:
                     f = Finding(
-                        project=target_project,
+                        log_id=log_entry.id,
                         title=sec["title"],
                         severity=sec["severity"],
                         category=sec["category"],
@@ -303,25 +516,30 @@ async def mine_javascript(
 
     return {
         "source_url": source_url or "inline_content",
-        "endpoints_found": routes,
-        "parameters_found": params,
+        "endpoints_found": final_routes,
+        "parameters_found": final_params,
         "secrets_leaked": [
             {
                 "title": s["title"],
                 "severity": s["severity"],
                 "category": s["category"],
                 "evidence": s["evidence"],
-                "line": s["line"],
+                "line": s.get("line"),
+                "source_file": s.get("source_file"),
                 "remediation": s["remediation"]
             }
             for s in secrets
         ],
         "sourcemaps": sourcemaps,
+        "sourcemap_details": sourcemap_details,
+        "followed_bundles": followed_bundles,
         "summary": {
-            "endpoints_count": len(routes),
-            "params_count": len(params),
+            "endpoints_count": len(final_routes),
+            "params_count": len(final_params),
             "secrets_count": len(secrets),
-            "sourcemaps_count": len(sourcemaps)
+            "sourcemaps_count": len(sourcemaps),
+            "sourcemaps_unpacked": len(sourcemap_details),
+            "bundles_followed_count": len(followed_bundles)
         }
     }
 
@@ -331,7 +549,6 @@ def passive_mine_js_background(url: str, body: str, project: str = "default"):
     if not body or len(body) < 50:
         return
 
-    # Check if URL or content is javascript
     is_js_url = any(url.split("?")[0].lower().endswith(ext) for ext in [".js", ".mjs", ".jsx", ".ts", ".tsx"])
     if not is_js_url and "javascript" not in url.lower() and "function(" not in body and "var " not in body and "const " not in body:
         return
@@ -342,7 +559,9 @@ def passive_mine_js_background(url: str, body: str, project: str = "default"):
                 content_or_url=body,
                 base_url=url,
                 auto_register=True,
-                project=project
+                project=project,
+                parse_sourcemaps=True,
+                follow_bundles=False
             )
         except Exception:
             pass

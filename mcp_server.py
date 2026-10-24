@@ -34,6 +34,7 @@ if CURRENT_DIR not in sys.path:
     sys.path.insert(0, CURRENT_DIR)
 
 import difflib
+from sqlalchemy import func
 from backend.database import init_db, SessionLocal, ActiveSession, HttpLog, Finding, Project, AgentCommandLog, CapturedPayload, TargetAsset, TargetService, TargetEndpoint, OastEvent
 from backend.analyzer import analyze_traffic
 from backend.browser_handler import render_page, spawn_interactive_login
@@ -74,28 +75,43 @@ DEFAULT_PROJECT = os.getenv("PROXSYNTH_PROJECT", os.getenv("PROXSYNTH_PROJECT", 
 
 # Session State Scope Management
 _active_project: Optional[str] = None
+_active_write_project: Optional[str] = None
 
-def _resolve_project(project: Optional[str] = None, allow_all: bool = True) -> str:
+def _resolve_project(project: Optional[str] = None, allow_all: bool = True, target_host: Optional[str] = None) -> str:
     """
-    Resolusi hierarki project:
-    1. Explicit 'all', '*', 'any', 'global' -> return 'all' (if allow_all else _active_project or DEFAULT_PROJECT)
-    2. Explicit project string -> return sanitized string
-    3. None / empty -> 
-       - If _active_project is set: return _active_project (if allow_all or _active_project != 'all' else DEFAULT_PROJECT)
-       - If _active_project is None: if allow_all return 'all' else DEFAULT_PROJECT
+    Resolves project workspace scope for queries and mutations.
+    Separates global viewing mode ('all') from write scope:
+    - If allow_all is True: returns 'all' if requested or in global view mode.
+    - If allow_all is False: writes never mutate global scope. Resolves to _active_write_project,
+      or the target host's tagged project from TargetAsset, or explicit project, or DEFAULT_PROJECT.
     """
     p = (project or "").strip().lower()
     if p in ("all", "*", "any", "global"):
         if allow_all:
             return "all"
-        return _active_project if (_active_project and _active_project not in ("all", "*", "any", "global")) else DEFAULT_PROJECT
+        return _active_write_project or (_active_project if (_active_project and _active_project not in ("all", "*", "any", "global")) else DEFAULT_PROJECT)
     if p:
         return p
+
+    # If writing with target_host known, resolve from TargetAsset
+    if not allow_all and target_host:
+        try:
+            db = SessionLocal()
+            asset = db.query(TargetAsset).filter(TargetAsset.host.ilike(f"%{target_host.strip()}%")).first()
+            if asset and asset.project and asset.project.lower() not in ("all", "*", "any", "global"):
+                return asset.project.lower()
+        except Exception:
+            pass
+        finally:
+            db.close()
+
     if _active_project:
         if not allow_all and _active_project in ("all", "*", "any", "global"):
-            return DEFAULT_PROJECT
+            return _active_write_project or DEFAULT_PROJECT
         return _active_project
-    return "all" if allow_all else DEFAULT_PROJECT
+
+    return "all" if allow_all else (_active_write_project or DEFAULT_PROJECT)
+
 
 # Ensure DB is created
 init_db()
@@ -460,42 +476,54 @@ def _extract_domain_cookies(url: str, project: Optional[str] = None) -> Dict[str
 # ==============================================================================
 
 @mcp.tool()
-async def set_active_project(project: str) -> str:
+async def set_active_project(project: str, write_project: Optional[str] = None) -> str:
     """
     Sets the active project workspace scope for the current MCP session.
-    When set, all subsequent tool calls without an explicit project parameter
-    will default to this project instead of 'default'.
+    When set, subsequent tool calls without an explicit project parameter will default to this project.
     Passing 'all', '*', 'any', or 'global' enables global visibility stream across all projects.
+    When using 'all', you can optionally set write_project to specify which workspace receives write operations.
     """
-    global _active_project
+    global _active_project, _active_write_project
     p = (project or "").strip().lower()
+    if write_project:
+        _active_write_project = write_project.strip().lower()
+
     if p in ("all", "*", "any", "global"):
         _active_project = "all"
         return json.dumps({
             "status": "success",
             "active_project": "all",
+            "view_mode": "global",
+            "write_project": _active_write_project or DEFAULT_PROJECT,
             "scope_mode": "GLOBAL_ALL_PROJECTS",
-            "message": "Global multi-project stream enabled for reading/querying. Mutation operations will safeguard to default workspace."
+            "message": f"Global multi-project stream enabled for reading. Mutation writes will target '{_active_write_project or DEFAULT_PROJECT}' (or target asset's tagged project)."
         }, indent=2)
+
     _active_project = p if p else DEFAULT_PROJECT
+    _active_write_project = _active_project
     return json.dumps({
         "status": "success",
         "active_project": _active_project,
+        "view_mode": "scoped",
+        "write_project": _active_write_project,
         "scope_mode": "PROJECT_ISOLATED",
-        "message": f"Active project context set to '{_active_project}' for this session."
+        "message": f"Active project context set to '{_active_project}' for both reads and writes."
     }, indent=2)
 
 
 @mcp.tool()
 async def get_active_project() -> str:
     """
-    Returns the currently active project workspace scope and the system default project.
+    Returns the currently active project workspace scope, view mode, and write project.
     """
+    is_global = (_active_project or "").lower() in ("all", "*", "any", "global")
     return json.dumps({
         "active_project": _active_project or DEFAULT_PROJECT,
+        "view_mode": "global" if is_global else "scoped",
+        "write_project": _active_write_project or (_active_project if not is_global else DEFAULT_PROJECT),
         "session_active_project": _active_project,
         "default_project": DEFAULT_PROJECT,
-        "is_global_stream": (_active_project or "").lower() in ("all", "*", "any", "global")
+        "is_global_stream": is_global
     }, indent=2)
 
 
@@ -1781,6 +1809,21 @@ async def report_vulnerability(
         finally:
             db.close()
 
+    # Auto-sync finding to agent working memory testing hypothesis & agenda
+    try:
+        from backend.hypothesis_manager import sync_finding_to_hypothesis
+        sync_finding_to_hypothesis(
+            project=target_project,
+            finding_id=finding_id,
+            log_id=log_id,
+            title=title.strip(),
+            severity=sev_clean,
+            category=cat_clean,
+            evidence=evidence or ""
+        )
+    except Exception:
+        pass
+
     finding_str = f"#{finding_id}" if finding_id else "#recorded"
     return (
         f"[+] VULNERABILITY CONFIRMED & RECORDED ({source_info}):\n"
@@ -1788,7 +1831,7 @@ async def report_vulnerability(
         f"Title: {title} | Severity: [{sev_clean}] | Category: [{cat_clean}]\n"
         f"Flag Status Updated: [{log_flag}]\n"
         f"Evidence: {evidence or '[None provided]'}\n"
-        f"The finding is now actively registered in the Proxynth Dashboard and highlighted for operator review."
+        f"The finding is now actively registered in the Proxynth Dashboard and synchronized into the Testing Agenda."
     )
 
 
@@ -2219,11 +2262,23 @@ async def send_websocket_message(
     message: str,
     headers: Optional[Dict[str, str]] = None,
     timeout: float = 5.0,
-    project: Optional[str] = None
+    project: Optional[str] = None,
+    protocol: str = "raw",
+    event_name: str = "message"
 ) -> str:
     """
-    Dispatches a test message frame to a target WebSocket server, captures the server's reply frame,
-    and logs the transaction into the database for analysis and replay.
+    [HARNESS: ACTIVE_TRAFFIC]
+    Dispatches a test message frame to a target WebSocket or Socket.IO server,
+    captures the server's reply frame, and logs the transaction into the database for analysis and replay.
+
+    Parameters:
+      - url: Target WebSocket URL (ws:// or wss://, or http:// / https:// which will be converted).
+      - message: Raw message string, JSON string, or payload to dispatch.
+      - headers: Optional custom HTTP headers to pass during handshake.
+      - timeout: Timeout in seconds for connection and frame exchange (default: 5.0).
+      - project: Project workspace name.
+      - protocol: 'raw' for plain WebSockets, or 'socket.io' for Engine.IO/Socket.IO automatic handshake (default: 'raw').
+      - event_name: Socket.IO event identifier (e.g. 'message', 'login', 'query', default: 'message').
     """
     from backend.ws_manager import send_ws_message
     target_project = _resolve_project(project, allow_all=False)
@@ -2232,7 +2287,9 @@ async def send_websocket_message(
         message=message,
         headers=headers,
         timeout=timeout,
-        project=target_project
+        project=target_project,
+        protocol=protocol,
+        event_name=event_name
     )
     return json.dumps(res, indent=2)
 
@@ -2447,7 +2504,9 @@ async def mine_javascript_assets(
     content_or_url: str,
     base_url: Optional[str] = None,
     auto_register: bool = True,
-    project: Optional[str] = None
+    project: Optional[str] = None,
+    parse_sourcemaps: bool = True,
+    follow_bundles: bool = False
 ) -> str:
     """
     Extracts hidden API routes, endpoints, query/body parameter names, source maps (.map),
@@ -2460,6 +2519,8 @@ async def mine_javascript_assets(
       - base_url: Optional base URL for resolving relative API endpoints when supplying raw code.
       - auto_register: Automatically register endpoints into the Attack Surface Graph and record leaked secrets (default: True).
       - project: Project workspace name.
+      - parse_sourcemaps: Automatically download and unpack .map sourcemaps from `sourcesContent` for unminified code discovery (default: True).
+      - follow_bundles: Recursively follow and mine referenced vendor/chunk script bundles (default: False).
     """
     from backend.js_miner import mine_javascript
 
@@ -2481,7 +2542,9 @@ async def mine_javascript_assets(
         base_url=base_url,
         auto_register=auto_register,
         project=target_project,
-        upstream_proxy=upstream_proxy or None
+        upstream_proxy=upstream_proxy or None,
+        parse_sourcemaps=parse_sourcemaps,
+        follow_bundles=follow_bundles
     )
     return json.dumps(result, indent=2)
 
@@ -3638,6 +3701,187 @@ async def mine_cli_output(
 
 
 @mcp.tool()
+async def get_target_health(
+    url: str,
+    timeout: float = 8.0,
+    project: Optional[str] = None
+) -> str:
+    """
+    [HARNESS: READ_ONLY]
+    Diagnoses target host health and network latency breakdown:
+    DNS Resolution -> TCP Connect -> TLS Handshake -> HTTP Time To First Byte (TTFB).
+    Detects 5xx server flapping and high latency bottlenecks before launching heavy campaigns.
+
+    Parameters:
+      - url: Target URL or hostname to diagnose (e.g. 'http://target.local:3000' or 'https://api.example.com').
+      - timeout: Socket and probe timeout in seconds (default: 8.0).
+      - project: Optional project workspace to cross-reference recent 5xx error rates.
+    """
+    from backend.target_health import probe_target_health
+    target_project = _resolve_project(project, allow_all=True)
+    res = await probe_target_health(url=url, timeout=timeout, project=target_project)
+    return json.dumps(res, indent=2)
+
+
+TOOL_HARNESS_METADATA: Dict[str, Dict[str, Any]] = {
+    # 1. Project Context & Workspace
+    "set_active_project": {"read_only": False, "destructive": False, "category": "context"},
+    "get_active_project": {"read_only": True, "destructive": False, "category": "context"},
+
+    # 2. HTTP Traffic & Inspection
+    "send_http_request": {"read_only": False, "destructive": False, "category": "traffic"},
+    "get_traffic_history": {"read_only": True, "destructive": False, "category": "traffic"},
+    "get_log_detail": {"read_only": True, "destructive": False, "category": "traffic"},
+    "distill_http_response": {"read_only": True, "destructive": False, "category": "traffic"},
+    "search_traffic_advanced": {"read_only": True, "destructive": False, "category": "traffic"},
+    "analyze_traffic_patterns": {"read_only": True, "destructive": False, "category": "traffic"},
+    "compare_http_responses": {"read_only": True, "destructive": False, "category": "analysis"},
+    "semantic_diff_responses": {"read_only": True, "destructive": False, "category": "analysis"},
+
+    # 3. Browser & Interactive Session
+    "browser_navigate_and_render": {"read_only": False, "destructive": False, "category": "browser"},
+    "render_webpage": {"read_only": False, "destructive": False, "category": "browser"},
+    "request_manual_login": {"read_only": False, "destructive": False, "category": "auth"},
+
+    # 4. Command Execution & CLI Mining
+    "run_pentest_command": {"read_only": False, "destructive": True, "category": "cli"},
+    "mine_cli_output": {"read_only": True, "destructive": False, "category": "miner"},
+
+    # 5. Payload Vault & Fuzzing
+    "record_test_payload": {"read_only": False, "destructive": False, "category": "vault"},
+    "get_captured_payloads": {"read_only": True, "destructive": False, "category": "vault"},
+    "mutate_payload": {"read_only": False, "destructive": False, "category": "waf"},
+    "analyze_waf_response": {"read_only": False, "destructive": False, "category": "waf"},
+    "fuzz_endpoint": {"read_only": False, "destructive": True, "category": "fuzzing"},
+    "test_race_condition": {"read_only": False, "destructive": True, "category": "concurrency"},
+
+    # 6. Triage & Vulnerability Reporting
+    "report_vulnerability": {"read_only": False, "destructive": False, "category": "triage"},
+    "generate_exploit_poc": {"read_only": True, "destructive": False, "category": "exploit"},
+    "generate_nuclei_template": {"read_only": True, "destructive": False, "category": "exploit"},
+    "verify_vulnerability_candidate": {"read_only": False, "destructive": False, "category": "verification"},
+    "generate_audit_ci_report": {"read_only": True, "destructive": False, "category": "report"},
+
+    # 7. Knowledge Graph & Attack Surface
+    "get_attack_surface": {"read_only": True, "destructive": False, "category": "recon"},
+    "record_target_asset": {"read_only": False, "destructive": False, "category": "recon"},
+    "record_target_service": {"read_only": False, "destructive": False, "category": "recon"},
+    "record_target_endpoint": {"read_only": False, "destructive": False, "category": "recon"},
+    "infer_hidden_endpoints": {"read_only": True, "destructive": False, "category": "recon"},
+    "get_attack_paths": {"read_only": True, "destructive": False, "category": "killchain"},
+    "delete_attack_surface_node": {"read_only": False, "destructive": True, "category": "recon"},
+    "clear_attack_surface_graph": {"read_only": False, "destructive": True, "category": "recon"},
+
+    # 8. Out-of-Band (OAST) Engine
+    "generate_oast_token": {"read_only": False, "destructive": False, "category": "oast"},
+    "poll_oast_events": {"read_only": True, "destructive": False, "category": "oast"},
+    "spray_oast_canaries": {"read_only": False, "destructive": False, "category": "oast"},
+
+    # 9. Session, Auth & CSRF Management
+    "set_identity_session": {"read_only": False, "destructive": False, "category": "auth"},
+    "register_auth_recipe": {"read_only": False, "destructive": False, "category": "auth"},
+    "execute_reauthentication": {"read_only": False, "destructive": False, "category": "auth"},
+    "get_csrf_tokens": {"read_only": True, "destructive": False, "category": "session"},
+    "set_csrf_token": {"read_only": False, "destructive": False, "category": "session"},
+    "clear_csrf_tokens": {"read_only": False, "destructive": True, "category": "session"},
+
+    # 10. API, GraphQL & WebSocket Security Auditing
+    "inspect_graphql_endpoint": {"read_only": False, "destructive": False, "category": "graphql"},
+    "send_websocket_message": {"read_only": False, "destructive": False, "category": "websocket"},
+    "audit_websocket_security": {"read_only": False, "destructive": False, "category": "websocket"},
+    "audit_jwt_security": {"read_only": False, "destructive": False, "category": "audit"},
+    "audit_bfla_permissions": {"read_only": False, "destructive": False, "category": "audit"},
+    "audit_mass_assignment": {"read_only": False, "destructive": False, "category": "audit"},
+    "audit_numeric_business_logic": {"read_only": False, "destructive": False, "category": "audit"},
+    "audit_differential_injection": {"read_only": False, "destructive": False, "category": "audit"},
+    "audit_api_gateway_bypass": {"read_only": False, "destructive": False, "category": "audit"},
+    "import_api_schema": {"read_only": False, "destructive": False, "category": "api_import"},
+
+    # 11. BOLA / IDOR Testing
+    "test_bola_idor": {"read_only": False, "destructive": True, "category": "bola"},
+    "get_bola_access_matrix": {"read_only": True, "destructive": False, "category": "bola"},
+    "run_bola_matrix_scan": {"read_only": False, "destructive": True, "category": "bola"},
+
+    # 12. Recon, Spider & Infrastructure
+    "spider_and_crawl_target": {"read_only": False, "destructive": False, "category": "spider"},
+    "mine_javascript_assets": {"read_only": False, "destructive": False, "category": "js"},
+    "scan_network_ports": {"read_only": False, "destructive": False, "category": "network"},
+    "get_target_health": {"read_only": True, "destructive": False, "category": "recon"},
+
+    # 13. Working Memory Agenda & Hypotheses
+    "record_testing_hypothesis": {"read_only": False, "destructive": False, "category": "agenda"},
+    "get_testing_agenda": {"read_only": True, "destructive": False, "category": "agenda"},
+    "update_hypothesis_status": {"read_only": False, "destructive": False, "category": "agenda"},
+
+    # 14. Network Interception & Proxy
+    "add_interception_rule": {"read_only": False, "destructive": False, "category": "intercept"},
+    "list_interception_rules": {"read_only": True, "destructive": False, "category": "intercept"},
+    "toggle_interception_rule": {"read_only": False, "destructive": False, "category": "intercept"},
+    "delete_interception_rule": {"read_only": False, "destructive": True, "category": "intercept"},
+    "get_ca_certificate_details": {"read_only": True, "destructive": False, "category": "ca"},
+    "setup_public_tunnel": {"read_only": False, "destructive": False, "category": "tunnel"},
+    "get_tunnel_status": {"read_only": True, "destructive": False, "category": "tunnel"},
+    "close_public_tunnel": {"read_only": False, "destructive": False, "category": "tunnel"},
+
+    # 15. DOM & Client-Side Verification
+    "verify_dom_execution": {"read_only": False, "destructive": False, "category": "xss"},
+
+    # 16. Multi-Step Workflows & Suites
+    "execute_workflow_sequence": {"read_only": False, "destructive": True, "category": "workflow"},
+    "run_security_audit_suite": {"read_only": False, "destructive": True, "category": "suite"},
+    "update_proxsynth_system": {"read_only": False, "destructive": True, "category": "admin"},
+
+    # 17. Autonomous Campaign & Cognitive Guidance
+    "run_autonomous_security_campaign": {"read_only": False, "destructive": True, "category": "orchestration"},
+    "get_campaign_status": {"read_only": True, "destructive": False, "category": "orchestration"},
+    "list_campaigns": {"read_only": True, "destructive": False, "category": "orchestration"},
+    "get_autonomous_attack_guidance": {"read_only": True, "destructive": False, "category": "advisor"},
+    "get_tool_harness_manifest": {"read_only": True, "destructive": False, "category": "meta"}
+}
+
+
+@mcp.tool()
+async def get_tool_harness_manifest() -> str:
+    """
+    [HARNESS: READ_ONLY]
+    Returns the complete security harness manifest for all Proxynth FastMCP tools,
+    including read_only hints, destructive flags, and capability taxonomy.
+    Essential for autonomous AI harnesses to auto-approve safe reconnaissance tools
+    while prompting confirmation for intrusive mutations or destructive commands.
+    """
+    return json.dumps({
+        "status": "success",
+        "total_tools": len(TOOL_HARNESS_METADATA),
+        "manifest": TOOL_HARNESS_METADATA
+    }, indent=2)
+
+
+@mcp.tool()
+async def get_campaign_status(campaign_id: str) -> str:
+    """
+    [HARNESS: READ_ONLY]
+    Retrieves real-time status, phase progress, target classification, execution metrics,
+    circuit breaker status, and findings summary for an autonomous security campaign.
+    Use this tool to poll the progress of campaigns spawned by run_autonomous_security_campaign.
+    """
+    from backend.campaign_orchestrator import get_campaign_status as engine_get_campaign_status
+    res = engine_get_campaign_status(campaign_id=campaign_id)
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def list_campaigns(project: Optional[str] = None) -> str:
+    """
+    [HARNESS: READ_ONLY]
+    Lists all registered autonomous security campaigns across the workspace or filtered by project.
+    """
+    from backend.campaign_orchestrator import list_campaigns as engine_list_campaigns
+    proj = _resolve_project(project, allow_all=True)
+    res = engine_list_campaigns(project=proj)
+    return json.dumps({"status": "success", "campaigns": res}, indent=2)
+
+
+@mcp.tool()
 async def run_autonomous_security_campaign(
     target_url: str,
     modes: Optional[List[str]] = None,
@@ -3645,31 +3889,40 @@ async def run_autonomous_security_campaign(
     max_pages: int = 15,
     deep_verify: bool = True,
     ports_profile: str = "top_100",
-    enable_spa: bool = True
+    enable_spa: bool = True,
+    wait_for_completion: bool = False,
+    consecutive_5xx_threshold: int = 3
 ) -> str:
     """
+    [HARNESS: DESTRUCTIVE / HIGH_IMPACT]
     Unified Autonomous Campaign Orchestrator ('God Tool').
-    Executes a comprehensive, coordinated multi-track security audit in a single call:
+    Executes a comprehensive, coordinated multi-track security audit:
     0. Universal Target Classification -> Supports Web URLs, APIs, IPs, CIDRs, or hostnames
     1. Track Infra & Network -> Built-in async port scanner & service exposure auditor (Redis, Elastic, Docker)
     2. Track Web & SPA -> Hybrid crawler with Playwright Chromium DOM engine for React/Vue/Angular
     3. Track API Security -> Route discovery, OpenAPI schema ingestion, & API Gateway 401/403 bypass
     4. Deep Vulnerability Engine -> OAST canary spray (SSRF/RCE), BFLA verb tampering, Mass Assignment, Numeric Logic
     5. Deterministic Verification Gate -> Verifies all findings with specialized oracles and eliminates false positives
-    Returns a token-efficient executive dossier with verified findings and standalone PoC instructions.
+    6. Intelligent 5xx Circuit Breaker -> Auto-pauses if >=3 consecutive 503/502 errors occur to prevent target crashes
+
+    By default (wait_for_completion=False), returns a campaign_id immediately to prevent MCP 120s timeouts.
+    Call get_campaign_status(campaign_id) to poll real-time phase progress and findings.
     """
-    from backend.campaign_orchestrator import run_autonomous_security_campaign
+    from backend.campaign_orchestrator import run_autonomous_security_campaign as engine_run_campaign
     proj = _resolve_project(project, allow_all=False)
-    res = await run_autonomous_security_campaign(
+    res = await engine_run_campaign(
         target_url=target_url,
         modes=modes,
         project=proj,
         max_pages=max_pages,
         deep_verify=deep_verify,
         ports_profile=ports_profile,
-        enable_spa=enable_spa
+        enable_spa=enable_spa,
+        wait_for_completion=wait_for_completion,
+        consecutive_5xx_threshold=consecutive_5xx_threshold
     )
     return json.dumps(res, indent=2)
+
 
 
 @mcp.tool()

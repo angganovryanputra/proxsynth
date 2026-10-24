@@ -298,6 +298,7 @@ async def run_fuzz_attack(
                     if anomalies:
                         try:
                             from backend.forward_proxy import _dispatch_log
+                            from backend.database import SessionLocal, CapturedPayload
                             import urllib.parse
                             parsed_fz = urllib.parse.urlparse(req_url)
                             is_critical = any(a in ["SQL_ERROR_LEAK", "SSTI_EVALUATED_49"] for a in anomalies)
@@ -321,6 +322,30 @@ async def run_fuzz_attack(
                                 "finding_severity": "HIGH" if is_critical else "MEDIUM",
                                 "payload_hint": payload
                             })
+
+                            # Directly persist to Payload Vault (CapturedPayload)
+                            db = SessionLocal()
+                            try:
+                                cap = CapturedPayload(
+                                    project=project,
+                                    agent_id=agent_id,
+                                    vuln_type=payload_type.upper() if payload_type else "CUSTOM",
+                                    target_param="fuzzy_parameter",
+                                    raw_payload=payload,
+                                    mutation_type="FUZZ_ANOMALY",
+                                    target_url=req_url,
+                                    http_method=method,
+                                    outcome="ANOMALY",
+                                    http_status=resp.status_code,
+                                    response_signature=",".join(anomalies)[:255],
+                                    notes=f"Detected anomaly: {', '.join(anomalies)} (Status: {resp.status_code})"
+                                )
+                                db.add(cap)
+                                db.commit()
+                                db.refresh(cap)
+                                item["captured_payload_id"] = cap.id
+                            finally:
+                                db.close()
                         except Exception:
                             pass
                 except Exception as e:

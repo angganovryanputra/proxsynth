@@ -129,6 +129,7 @@ class HttpLog(Base):
     path = Column(Text, nullable=False)
     status_code = Column(Integer, nullable=True, index=True)
     duration_ms = Column(Integer, default=0)
+    proxy_attempts = Column(Integer, default=1)
     request_headers = Column(Text, default="{}")  # JSON String
     request_body = Column(Text, default="")
     response_headers = Column(Text, default="{}")  # JSON String
@@ -161,6 +162,7 @@ class HttpLog(Base):
             "path": self.path,
             "status_code": self.status_code,
             "duration_ms": self.duration_ms,
+            "proxy_attempts": self.proxy_attempts if self.proxy_attempts is not None else 1,
             "request_headers": req_headers,
             "response_headers": res_headers,
             "flag_status": self.flag_status,
@@ -610,6 +612,8 @@ def _run_migrations():
         log_cols = [row[1] for row in cur.fetchall()]
         if "agent_id" not in log_cols:
             cur.execute("ALTER TABLE http_logs ADD COLUMN agent_id VARCHAR(100) DEFAULT 'primary_agent'")
+        if "proxy_attempts" not in log_cols:
+            cur.execute("ALTER TABLE http_logs ADD COLUMN proxy_attempts INTEGER DEFAULT 1")
 
         cur.execute("PRAGMA table_info(active_sessions)")
         sess_cols = [row[1] for row in cur.fetchall()]

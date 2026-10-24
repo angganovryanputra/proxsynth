@@ -53,12 +53,15 @@ async def import_api_schema(
     spec_source: str,
     target_base_url: Optional[str] = None,
     project: str = "default",
-    headers: Optional[Dict[str, str]] = None
+    headers: Optional[Dict[str, str]] = None,
+    base_url: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Imports and maps an OpenAPI 2.0 / 3.0 / 3.1 specification (from URL or raw string content)
-    into structured endpoints and testable attack templates in the Target Knowledge Graph.
+    Imports and maps OpenAPI 2.0/3.x, Postman v2.0/v2.1, GraphQL Introspection, or HAR v1.2
+    specifications (from URL or raw string content) into structured endpoints and testable
+    attack templates in the Target Knowledge Graph.
     """
+    target_base_url = target_base_url or base_url
     raw_content = ""
     target_project = (project or "default").strip().lower()
 
@@ -90,9 +93,20 @@ async def import_api_schema(
     if not isinstance(spec_data, dict):
         raise ValueError("Invalid specification structure: root must be an object.")
 
-    # 3. Determine Base Host / URL
-    title = spec_data.get("info", {}).get("title", "Imported API")
-    version = spec_data.get("info", {}).get("version", "1.0.0")
+    # 3. Detect Format
+    fmt = "OPENAPI"
+    if "paths" in spec_data or "openapi" in spec_data or "swagger" in spec_data:
+        fmt = "OPENAPI"
+    elif "item" in spec_data and isinstance(spec_data["item"], list):
+        fmt = "POSTMAN"
+    elif "__schema" in spec_data or ("data" in spec_data and isinstance(spec_data["data"], dict) and "__schema" in spec_data["data"]):
+        fmt = "GRAPHQL"
+    elif "log" in spec_data and "entries" in spec_data["log"]:
+        fmt = "HAR"
+
+    # 4. Determine Base Host / URL
+    title = spec_data.get("info", {}).get("title", f"Imported {fmt} Spec") if isinstance(spec_data.get("info"), dict) else f"Imported {fmt} Spec"
+    version = spec_data.get("info", {}).get("version", "1.0.0") if isinstance(spec_data.get("info"), dict) else "1.0.0"
 
     base_url = target_base_url or ""
     if not base_url:
@@ -114,81 +128,245 @@ async def import_api_schema(
         upsert_target_asset(
             project=target_project,
             host=clean_host,
-            notes=f"API Spec: {title} v{version}"
+            notes=f"{fmt} Spec: {title} v{version}"
         )
     except Exception:
         pass
 
-    paths = spec_data.get("paths", {})
     imported_endpoints: List[Dict[str, Any]] = []
 
-    for path, path_item in paths.items():
-        if not isinstance(path_item, dict):
-            continue
-
-        for method in ["get", "post", "put", "delete", "patch", "options"]:
-            op = path_item.get(method)
-            if not op or not isinstance(op, dict):
+    # 5a. PARSER: OpenAPI / Swagger
+    if fmt == "OPENAPI":
+        paths = spec_data.get("paths", {})
+        for path, path_item in paths.items():
+            if not isinstance(path_item, dict):
                 continue
 
-            param_names: List[str] = []
-            # Extract parameters
-            params = op.get("parameters", []) + path_item.get("parameters", [])
-            for p in params:
-                if isinstance(p, dict) and p.get("name"):
-                    param_names.append(p["name"])
+            for method in ["get", "post", "put", "delete", "patch", "options"]:
+                op = path_item.get(method)
+                if not op or not isinstance(op, dict):
+                    continue
 
-            # Extract request body schema properties
-            body_template: Optional[Dict[str, Any]] = None
-            rb = op.get("requestBody", {})
-            if isinstance(rb, dict):
-                content = rb.get("content", {})
-                json_schema = content.get("application/json", {}).get("schema", {})
-                if json_schema:
-                    body_template = generate_mock_value(json_schema)
-                    if isinstance(body_template, dict):
-                        param_names.extend(list(body_template.keys()))
+                param_names: List[str] = []
+                params = op.get("parameters", []) + path_item.get("parameters", [])
+                for p in params:
+                    if isinstance(p, dict) and p.get("name"):
+                        param_names.append(p["name"])
 
-            # Deduplicate parameter names
-            param_names = list(set(param_names))
+                body_template: Optional[Dict[str, Any]] = None
+                rb = op.get("requestBody", {})
+                if isinstance(rb, dict):
+                    content = rb.get("content", {})
+                    json_schema = content.get("application/json", {}).get("schema", {})
+                    if json_schema:
+                        body_template = generate_mock_value(json_schema)
+                        if isinstance(body_template, dict):
+                            param_names.extend(list(body_template.keys()))
 
-            full_endpoint_url = urllib.parse.urljoin(base_url, path.lstrip("/"))
-            summary = op.get("summary") or op.get("operationId") or f"{method.upper()} {path}"
-            auth_req = bool(op.get("security", spec_data.get("security", [])))
+                param_names = list(set(param_names))
+                full_endpoint_url = urllib.parse.urljoin(base_url, path.lstrip("/"))
+                summary = op.get("summary") or op.get("operationId") or f"{method.upper()} {path}"
+                auth_req = bool(op.get("security", spec_data.get("security", [])))
 
-            # Register endpoint in Knowledge Graph
+                try:
+                    add_or_update_endpoint(
+                        project=target_project,
+                        host=clean_host,
+                        url=full_endpoint_url,
+                        method=method.upper(),
+                        parameters=param_names,
+                        auth_required=auth_req,
+                        tested_status="DISCOVERED",
+                        notes=f"{summary} | Body: {json.dumps(body_template)[:100] if body_template else 'None'}"
+                    )
+                except Exception:
+                    pass
+
+                imported_endpoints.append({
+                    "path": path,
+                    "method": method.upper(),
+                    "url": full_endpoint_url,
+                    "parameters": param_names,
+                    "auth_required": auth_req,
+                    "summary": summary,
+                    "body_template": body_template
+                })
+
+    # 5b. PARSER: Postman Collection v2.0 / v2.1
+    elif fmt == "POSTMAN":
+        def _parse_postman_items(items: list) -> list:
+            eps = []
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                if "item" in it and isinstance(it["item"], list):
+                    eps.extend(_parse_postman_items(it["item"]))
+                elif "request" in it and isinstance(it["request"], dict):
+                    req = it["request"]
+                    m = req.get("method", "GET").upper()
+                    u_obj = req.get("url", "")
+                    raw_u = ""
+                    p_names = []
+                    if isinstance(u_obj, str):
+                        raw_u = u_obj
+                    elif isinstance(u_obj, dict):
+                        raw_u = u_obj.get("raw", "")
+                        for q in u_obj.get("query", []):
+                            if isinstance(q, dict) and q.get("key"):
+                                p_names.append(q["key"])
+
+                    body_template = None
+                    b_obj = req.get("body", {})
+                    if isinstance(b_obj, dict):
+                        raw_b = b_obj.get("raw", "")
+                        if raw_b:
+                            try:
+                                body_template = json.loads(raw_b)
+                                if isinstance(body_template, dict):
+                                    p_names.extend(list(body_template.keys()))
+                            except Exception:
+                                pass
+
+                    if raw_u.startswith("http://") or raw_u.startswith("https://"):
+                        full_u = raw_u
+                    else:
+                        full_u = urllib.parse.urljoin(base_url, raw_u.lstrip("/"))
+
+                    p_path = urllib.parse.urlparse(full_u).path or "/"
+                    eps.append({
+                        "path": p_path,
+                        "method": m,
+                        "url": full_u,
+                        "parameters": list(set(p_names)),
+                        "auth_required": bool(req.get("auth")),
+                        "summary": it.get("name") or f"{m} {p_path}",
+                        "body_template": body_template
+                    })
+            return eps
+
+        postman_eps = _parse_postman_items(spec_data.get("item", []))
+        for ep in postman_eps:
             try:
-                ep_rec = add_or_update_endpoint(
+                add_or_update_endpoint(
                     project=target_project,
-                    host=clean_host,
-                    url=full_endpoint_url,
-                    method=method.upper(),
-                    parameters=param_names,
-                    auth_required=auth_req,
+                    host=urllib.parse.urlparse(ep["url"]).netloc or clean_host,
+                    url=ep["url"],
+                    method=ep["method"],
+                    parameters=ep["parameters"],
+                    auth_required=ep["auth_required"],
                     tested_status="DISCOVERED",
-                    notes=f"{summary} | Body: {json.dumps(body_template)[:100] if body_template else 'None'}"
+                    notes=f"Postman: {ep['summary']}"
+                )
+            except Exception:
+                pass
+            imported_endpoints.append(ep)
+
+    # 5c. PARSER: GraphQL Introspection JSON
+    elif fmt == "GRAPHQL":
+        schema = spec_data.get("__schema") or spec_data.get("data", {}).get("__schema", {})
+        types = schema.get("types", [])
+        graphql_url = urllib.parse.urljoin(base_url, "/graphql")
+
+        query_type_name = schema.get("queryType", {}).get("name", "Query")
+        mutation_type_name = schema.get("mutationType", {}).get("name", "Mutation")
+
+        for t in types:
+            t_name = t.get("name")
+            if t_name in (query_type_name, mutation_type_name):
+                op_type = "query" if t_name == query_type_name else "mutation"
+                for field in t.get("fields", []) or []:
+                    f_name = field.get("name")
+                    args = [a.get("name") for a in field.get("args", []) if a.get("name")]
+                    op_summary = f"GraphQL {op_type.upper()}: {f_name}({', '.join(args)})"
+
+                    try:
+                        add_or_update_endpoint(
+                            project=target_project,
+                            host=clean_host,
+                            url=f"{graphql_url}?op={f_name}",
+                            method="POST",
+                            parameters=args,
+                            auth_required=True,
+                            tested_status="DISCOVERED",
+                            notes=op_summary
+                        )
+                    except Exception:
+                        pass
+
+                    imported_endpoints.append({
+                        "path": f"/graphql?op={f_name}",
+                        "method": "POST",
+                        "url": f"{graphql_url}?op={f_name}",
+                        "parameters": args,
+                        "auth_required": True,
+                        "summary": op_summary,
+                        "body_template": {"query": f"{op_type} {{ {f_name} }}"}
+                    })
+
+    # 5d. PARSER: HAR (HTTP Archive)
+    elif fmt == "HAR":
+        entries = spec_data.get("log", {}).get("entries", [])
+        seen_keys = set()
+        for e in entries:
+            req = e.get("request", {})
+            m = req.get("method", "GET").upper()
+            u = req.get("url", "")
+            if not u or not (u.startswith("http://") or u.startswith("https://")):
+                continue
+
+            parsed_u = urllib.parse.urlparse(u)
+            ep_key = (m, parsed_u.netloc, parsed_u.path)
+            if ep_key in seen_keys:
+                continue
+            seen_keys.add(ep_key)
+
+            p_names = [q.get("name") for q in req.get("queryString", []) if q.get("name")]
+            body_template = None
+            pd = req.get("postData", {})
+            if pd and pd.get("text"):
+                try:
+                    body_template = json.loads(pd["text"])
+                    if isinstance(body_template, dict):
+                        p_names.extend(list(body_template.keys()))
+                except Exception:
+                    pass
+
+            p_names = list(set(p_names))
+            try:
+                add_or_update_endpoint(
+                    project=target_project,
+                    host=parsed_u.netloc,
+                    url=u.split("?")[0],
+                    method=m,
+                    parameters=p_names,
+                    auth_required=any(h.get("name", "").lower() in ("authorization", "cookie") for h in req.get("headers", [])),
+                    tested_status="DISCOVERED",
+                    notes=f"HAR Imported from browser session capture"
                 )
             except Exception:
                 pass
 
             imported_endpoints.append({
-                "path": path,
-                "method": method.upper(),
-                "url": full_endpoint_url,
-                "parameters": param_names,
-                "auth_required": auth_req,
-                "summary": summary,
+                "path": parsed_u.path,
+                "method": m,
+                "url": u,
+                "parameters": p_names,
+                "auth_required": False,
+                "summary": f"HAR: {m} {parsed_u.path}",
                 "body_template": body_template
             })
 
     return {
         "status": "completed",
+        "format_detected": fmt,
+        "schema_format": fmt,
         "api_title": title,
         "api_version": version,
         "base_url": base_url,
         "endpoints_count": len(imported_endpoints),
+        "endpoints_imported": len(imported_endpoints),
         "endpoints": imported_endpoints[:50],
-        "summary": f"Successfully parsed and ingested {len(imported_endpoints)} API endpoints into Target Knowledge Graph."
+        "summary": f"Successfully parsed {fmt} specification and ingested {len(imported_endpoints)} API endpoints into Target Knowledge Graph."
     }
 
 

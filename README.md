@@ -508,7 +508,7 @@ PROXSYNTH's FastMCP server ([`mcp_server.py`](file:///d:/PROJECT/01/mcp_server.p
 | **67** | `set_active_project` | `project_name` | Dynamically sets the active project scope for the agent session. |
 | **68** | `get_active_project` | *(none)* | Retrieves the currently active project name and isolation directory. |
 
-### Category M: Tunnels, Traffic Analysis & System Upgrades (Tools 69 – 76)
+### Category M: Tunnels, Traffic Analysis, Campaigns & System Upgrades (Tools 69 – 80)
 | # | Tool Name | Key Arguments | Description |
 | :---: | :--- | :--- | :--- |
 | **69** | `setup_public_tunnel` | `provider` | Spins up Cloudflare Quick Tunnel / ngrok and binds public URL to OAST listener. |
@@ -516,9 +516,13 @@ PROXSYNTH's FastMCP server ([`mcp_server.py`](file:///d:/PROJECT/01/mcp_server.p
 | **71** | `close_public_tunnel` | *(none)* | Terminates active public tunnel and restores local callback base URL. |
 | **72** | `search_traffic_advanced` | `query`, `min_status`, `max_status` | Multi-dimensional traffic search filtering by status range, latency, and full-text bodies. |
 | **73** | `analyze_traffic_patterns` | `project` | Analyzes captured traffic, aggregating unique routes and discovered parameter inventory. |
-| **74** | `get_attack_paths` | `project` | Synthesizes Kill Chain attack paths from initial recon to Crown Jewels (RCE, DB dump). |
+| **74** | `get_attack_paths` | `project` | Synthesizes multi-hop Kill Chain attack paths from initial recon to Crown Jewels with Mermaid diagrams. |
 | **75** | `get_ca_certificate_details` | *(none)* | Returns root CA certificate paths, thumbprint, and installation status for TLS MITM. |
 | **76** | `update_proxsynth_system` | `confirm`, `force_check` | Performs autonomous remote Git update checks and synchronized system upgrades for Web & MCP. |
+| **77** | `get_campaign_status` | `campaign_id` | Polls real-time phase progress, metrics, circuit breaker health, and verified findings for a campaign. |
+| **78** | `list_campaigns` | `project` | Lists all registered autonomous security campaigns across the workspace or project. |
+| **79** | `get_tool_harness_manifest` | *(none)* | Returns complete 80-tool taxonomy with read_only and destructive flags for harness auto-approval. |
+| **80** | `get_target_health` | `url`, `timeout`, `project` | Granular latency probe (DNS, TCP, TLS, TTFB) diagnosing 5xx flapping, packet latency, and target stability. |
 
 ---
 
