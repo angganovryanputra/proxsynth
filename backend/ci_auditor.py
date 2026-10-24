@@ -219,15 +219,124 @@ def run_security_audit_suite(
         db.close()
 
 
+def generate_sarif_report(project: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Generates standard SARIF v2.1.0 static/dynamic analysis output for GitHub Code Scanning,
+    GitLab CI, DefectDojo, and enterprise vulnerability management platforms.
+    """
+    res = run_security_audit_suite(project=project)
+    violations = res.get("violations", [])
+
+    rules_dict: Dict[str, Dict[str, Any]] = {}
+    sarif_results: List[Dict[str, Any]] = []
+
+    level_map = {
+        "CRITICAL": "error",
+        "HIGH": "error",
+        "MEDIUM": "warning",
+        "LOW": "note",
+        "INFO": "note"
+    }
+
+    score_map = {
+        "CRITICAL": "9.0",
+        "HIGH": "7.5",
+        "MEDIUM": "5.0",
+        "LOW": "2.5",
+        "INFO": "1.0"
+    }
+
+    for v in violations:
+        rule_name = v.get("rule", "API Security Violation")
+        rule_id = re.sub(r'[^a-zA-Z0-9_-]', '-', rule_name.strip().lower())
+        rule_id = re.sub(r'-+', '-', rule_id).strip('-')
+        if not rule_id:
+            rule_id = "proxsynth-api-rule"
+        rule_id = f"PROXSYNTH-{rule_id.upper()}"
+
+        sev = v.get("severity", "MEDIUM").upper()
+        sarif_level = level_map.get(sev, "warning")
+
+        if rule_id not in rules_dict:
+            rules_dict[rule_id] = {
+                "id": rule_id,
+                "name": rule_name,
+                "shortDescription": {"text": rule_name},
+                "fullDescription": {"text": v.get("description", rule_name)},
+                "help": {
+                    "text": f"Remediation: {v.get('remediation', 'Follow OWASP security recommendations.')}",
+                    "markdown": f"**Category**: {v.get('category', 'OWASP API Security')}\n\n**Remediation**:\n{v.get('remediation', '')}"
+                },
+                "properties": {
+                    "category": v.get("category", "OWASP API Security"),
+                    "security-severity": score_map.get(sev, "5.0")
+                }
+            }
+
+        target_uri = v.get("target", "") or "https://api.local"
+        if not (target_uri.startswith("http://") or target_uri.startswith("https://")):
+            target_uri = f"https://{target_uri}"
+
+        sarif_results.append({
+            "ruleId": rule_id,
+            "level": sarif_level,
+            "message": {
+                "text": f"[{sev}] {rule_name} on {v.get('target', '')}: {v.get('description', '')}"
+            },
+            "locations": [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {
+                            "uri": target_uri
+                        }
+                    }
+                }
+            ],
+            "properties": {
+                "severity": sev,
+                "remediation": v.get("remediation", ""),
+                "category": v.get("category", "Security")
+            }
+        })
+
+    return {
+        "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "Proxsynth",
+                        "version": "0.1.0-beta",
+                        "informationUri": "https://github.com/angganovryanputra/proxynth",
+                        "rules": list(rules_dict.values())
+                    }
+                },
+                "invocations": [
+                    {
+                        "executionSuccessful": True,
+                        "endTimeUtc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    }
+                ],
+                "results": sarif_results
+            }
+        ]
+    }
+
+
 def generate_audit_ci_report(
     project: Optional[str] = None,
     output_format: str = "markdown"
 ) -> str:
     """
-    Generates a publication-grade Markdown or JSON compliance report for CI/CD pipelines.
+    Generates a publication-grade Markdown, JSON, or SARIF v2.1.0 compliance report for CI/CD pipelines.
     """
+    fmt = output_format.lower().strip()
+    if fmt == "sarif":
+        return json.dumps(generate_sarif_report(project=project), indent=2)
+
     res = run_security_audit_suite(project=project)
-    if output_format.lower() == "json":
+    if fmt == "json":
         return json.dumps(res, indent=2)
 
     # Markdown format

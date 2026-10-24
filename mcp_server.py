@@ -1,8 +1,11 @@
 """
 Proxynth MCP - Autonomous Security Testing Gateway & Interception Platform
+Version: 0.1.0-beta (Initial Beta Release)
 Model Context Protocol (MCP) Server Entrypoint (Stdio & SSE Transport)
 Features: Scope Guardrails, Interactive Intercept Proxy Trap, AI Reasoning Correlation, & Multi-Project Isolation.
 """
+
+__version__ = "0.1.0-beta"
 
 import os
 import sys
@@ -735,6 +738,35 @@ async def send_http_request(
         )
         status_code = response.status_code
         res_headers = dict(response.headers)
+
+        # Autonomous Session Re-Authentication Check (Zero-Human Session Maintenance)
+        if status_code in (401, 403):
+            try:
+                from backend.auth_macro import maybe_auto_reauth, get_active_credentials
+                reauth_success = await maybe_auto_reauth(status_code, target_project)
+                if reauth_success:
+                    creds = get_active_credentials(target_project)
+                    if creds and creds.get("headers"):
+                        outbound_headers.update(creds["headers"])
+                        response = await client.request(
+                            method=method,
+                            url=url,
+                            headers=outbound_headers,
+                            content=content_bytes
+                        )
+                        status_code = response.status_code
+                        res_headers = dict(response.headers)
+            except Exception:
+                pass
+
+        # Autonomous Adaptive Rate-Limit Backoff (Anti-429 & Anti-Ban)
+        if status_code == 429:
+            try:
+                from backend.adaptive_limiter import handle_rate_limit
+                await handle_rate_limit(status_code, res_headers, domain=host)
+            except Exception:
+                pass
+
         try:
             if hasattr(response, "request") and hasattr(response.request, "headers"):
                 final_req_headers = dict(response.request.headers)
@@ -3197,6 +3229,314 @@ async def update_proxsynth_system(
 
     # Perform automated update
     res = await async_perform_system_update()
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# MCP Tools: Nuclei Exploit Templates & BOLA Access Matrix & CA Tools
+# ==============================================================================
+
+@mcp.tool()
+async def generate_nuclei_template(
+    finding_id: Optional[int] = None,
+    log_id: Optional[int] = None,
+    title: Optional[str] = None,
+    severity: str = "medium"
+) -> str:
+    """
+    Generates a standard Nuclei v3 YAML exploit/regression template from an existing Finding or HttpLog.
+    Enables autonomous DAST regression pipelines and instant reproduction.
+    """
+    db = SessionLocal()
+    try:
+        if finding_id:
+            from backend.nuclei_generator import generate_nuclei_yaml_from_finding
+            f = db.query(Finding).filter(Finding.id == finding_id).first()
+            if not f:
+                return f"[!] Finding #{finding_id} not found."
+            l = db.query(HttpLog).filter(HttpLog.id == f.log_id).first()
+            res = generate_nuclei_yaml_from_finding(f, l)
+            return res.get("yaml", "")
+        elif log_id:
+            from backend.nuclei_generator import generate_nuclei_yaml_from_log
+            l = db.query(HttpLog).filter(HttpLog.id == log_id).first()
+            if not l:
+                return f"[!] HttpLog #{log_id} not found."
+            res = generate_nuclei_yaml_from_log(l, title=title, severity=severity)
+            return res.get("yaml", "")
+        else:
+            return "[!] Please provide either finding_id or log_id."
+    finally:
+        db.close()
+
+
+@mcp.tool()
+async def get_bola_access_matrix(project: Optional[str] = None) -> str:
+    """
+    Retrieves the cross-identity BOLA/IDOR access control matrix for candidate object-level endpoints.
+    Lists candidate endpoints, active identity roles, and current vulnerability/protection states.
+    """
+    from backend.bola_matrix import get_bola_matrix_data
+    proj = _resolve_project(project, allow_all=True)
+    matrix = get_bola_matrix_data(project=proj)
+    return json.dumps(matrix, indent=2)
+
+
+@mcp.tool()
+async def run_bola_matrix_scan(project: Optional[str] = None) -> str:
+    """
+    Executes automated BOLA shadow replay scans across all observed candidate endpoints in the project.
+    Tests each candidate endpoint against all secondary identities and unauthenticated roles.
+    """
+    from backend.bola_matrix import run_full_bola_matrix_scan
+    proj = _resolve_project(project, allow_all=False)
+    res = await run_full_bola_matrix_scan(project=proj)
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def get_ca_certificate_details() -> str:
+    """
+    Returns Root CA certificate status, SHA-256 fingerprint, and OS-specific trust store installation commands.
+    """
+    from backend.ca_manager import get_ca_metadata, get_os_trust_scripts
+    meta = get_ca_metadata()
+    scripts = get_os_trust_scripts("proxsynth-ca.crt")
+    return json.dumps({"metadata": meta, "trust_scripts": scripts}, indent=2)
+
+
+# ==============================================================================
+# Advanced Security Audit Tools: BFLA, Mass Assignment, Logic Fuzz, Differential Injection
+# ==============================================================================
+
+@mcp.tool()
+async def audit_bfla_permissions(
+    url: str,
+    method: str = "GET",
+    headers: Optional[Dict[str, Any]] = None,
+    body: Optional[str] = None,
+    project: Optional[str] = None,
+    log_id: Optional[int] = None
+) -> str:
+    """
+    Audits an endpoint for Broken Function Level Authorization (BFLA) and HTTP Method Tampering.
+    Tests method flipping (PUT, DELETE, PATCH against GET endpoints), verb tunneling headers (X-HTTP-Method-Override),
+    and administrative privilege escalation across all secondary identities (attacker, unauthenticated).
+    """
+    from backend.bfla_engine import audit_bfla_endpoint
+    proj = _resolve_project(project, allow_all=False)
+    res = await audit_bfla_endpoint(url=url, method=method, req_headers=headers, req_body=body, project=proj, log_id=log_id)
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def audit_mass_assignment(
+    log_id: int,
+    custom_attributes: Optional[Dict[str, Any]] = None,
+    project: Optional[str] = None
+) -> str:
+    """
+    Scans a captured mutation request (POST, PUT, PATCH) for Mass Assignment (Over-Posting) flaws.
+    Injects elevated privilege attributes (e.g. role, is_admin, tier, balance, permissions)
+    and verifies whether the server binds and persists the injected properties.
+    """
+    from backend.mass_assignment_engine import audit_mass_assignment
+    proj = _resolve_project(project, allow_all=False)
+    res = await audit_mass_assignment(log_id=log_id, custom_attributes=custom_attributes, project=proj)
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def audit_numeric_business_logic(
+    log_id: int,
+    target_param: Optional[str] = None,
+    project: Optional[str] = None
+) -> str:
+    """
+    Audits numeric, currency, quantity, and limit parameters for Business Logic & Boundary Flaws.
+    Tests negative values (-1, -9999), zero-cost bypasses, fractional underflow (0.0000001),
+    and integer arithmetic overflow (2147483648).
+    """
+    from backend.logic_fuzzer import audit_numeric_business_logic
+    proj = _resolve_project(project, allow_all=False)
+    res = await audit_numeric_business_logic(log_id=log_id, target_param=target_param, project=proj)
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def audit_differential_injection(
+    url: str,
+    param_name: str,
+    method: str = "GET",
+    param_type: str = "query",
+    headers: Optional[Dict[str, str]] = None,
+    body: Optional[str] = None,
+    project: Optional[str] = None,
+    log_id: Optional[int] = None
+) -> str:
+    """
+    Validates Blind SQL Injection, NoSQLi, and SSTI using 3-point boolean differential comparison
+    and statistical Z-score timing verification, completely eliminating network jitter false positives.
+    """
+    from backend.differential_oracle import audit_differential_injection
+    proj = _resolve_project(project, allow_all=False)
+    res = await audit_differential_injection(
+        url=url, param_name=param_name, method=method, param_type=param_type,
+        base_headers=headers, base_body=body, project=proj, log_id=log_id
+    )
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def semantic_diff_responses(log_id_a: int, log_id_b: int) -> str:
+    """
+    Performs noise-filtered semantic differential analysis between two logged HTTP responses.
+    Filters volatile dynamic tokens (timestamps, UUIDs, CSRF nonces) and returns only meaningful
+    data changes and soft error indicators, saving up to 80% context tokens for the AI agent.
+    """
+    from backend.diff_engine import compute_semantic_diff
+    db = SessionLocal()
+    try:
+        l_a = db.query(HttpLog).filter(HttpLog.id == log_id_a).first()
+        l_b = db.query(HttpLog).filter(HttpLog.id == log_id_b).first()
+        if not l_a or not l_b:
+            return f"[!] Logs #{log_id_a} and/or #{log_id_b} not found."
+        headers_a = json.loads(l_a.response_headers or "{}") if l_a.response_headers else {}
+        headers_b = json.loads(l_b.response_headers or "{}") if l_b.response_headers else {}
+        resp_a = {"status_code": l_a.status_code, "body": l_a.response_body or "", "headers": headers_a}
+        resp_b = {"status_code": l_b.status_code, "body": l_b.response_body or "", "headers": headers_b}
+        diff = compute_semantic_diff(resp_a, resp_b)
+        return json.dumps(diff, indent=2)
+    finally:
+        db.close()
+
+
+# ==============================================================================
+# AUTONOMOUS CAMPAIGN & ZERO-HUMAN INTERACTION MCP TOOLS
+# ==============================================================================
+
+@mcp.tool()
+async def spider_and_crawl_target(
+    root_url: str,
+    max_depth: int = 2,
+    max_pages: int = 25,
+    project: Optional[str] = None
+) -> str:
+    """
+    Autonomously crawls and spiders a web target to map out internal links,
+    HTML forms, input parameters, and JSON API endpoints.
+    Automatically populates the Target Knowledge Graph (assets & endpoints) with zero manual guidance.
+    """
+    from backend.spider_engine import crawl_and_map_target
+    proj = _resolve_project(project, allow_all=False)
+    res = await crawl_and_map_target(
+        root_url=root_url,
+        max_depth=max_depth,
+        max_pages=max_pages,
+        project=proj
+    )
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def register_auth_recipe(
+    login_url: str,
+    method: str = "POST",
+    payload: Optional[Dict[str, Any]] = None,
+    headers: Optional[Dict[str, str]] = None,
+    token_json_path: str = "token",
+    auth_header_format: str = "Bearer {token}",
+    cookie_names: Optional[List[str]] = None,
+    project: Optional[str] = None
+) -> str:
+    """
+    Registers an autonomous re-authentication recipe for zero-human session maintenance.
+    Whenever authentication drops or a 401 is encountered, Proxynth will replay this recipe
+    in the background, refresh bearer tokens / session cookies, and keep the agent unblocked.
+    """
+    from backend.auth_macro import register_auth_recipe
+    proj = _resolve_project(project, allow_all=False)
+    res = register_auth_recipe(
+        project=proj,
+        login_url=login_url,
+        method=method,
+        payload=payload,
+        headers=headers,
+        token_json_path=token_json_path,
+        auth_header_format=auth_header_format,
+        cookie_names=cookie_names
+    )
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def execute_reauthentication(project: Optional[str] = None) -> str:
+    """
+    Manually or proactively triggers the registered re-authentication recipe for a project.
+    Refreshes session tokens and cookies in the active credential vault.
+    """
+    from backend.auth_macro import execute_reauth
+    proj = _resolve_project(project, allow_all=False)
+    res = await execute_reauth(proj)
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def verify_vulnerability_candidate(
+    finding_id: Optional[int] = None,
+    log_id: Optional[int] = None,
+    vuln_type: Optional[str] = None,
+    project: Optional[str] = None
+) -> str:
+    """
+    Unified Deterministic Verification Gate.
+    Verifies suspected vulnerabilities using specialized oracles:
+    - Headless Chromium DOM Sandbox for XSS
+    - 3-Point Differential Boolean & Z-Score Timing for SQLi/SSTI
+    - OAST Interaction Correlator for SSRF/RCE
+    - Unauthenticated Shadow Replay for BOLA/BFLA
+    Eliminates false positives and marks genuine exploits as VERIFIED_EXPLOITABLE.
+    """
+    from backend.verification_gate import verify_vulnerability_candidate
+    proj = _resolve_project(project, allow_all=False)
+    res = await verify_vulnerability_candidate(
+        finding_id=finding_id,
+        log_id=log_id,
+        vuln_type=vuln_type,
+        project=proj
+    )
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def run_autonomous_security_campaign(
+    target_url: str,
+    modes: Optional[List[str]] = None,
+    project: Optional[str] = None,
+    max_pages: int = 15,
+    deep_verify: bool = True
+) -> str:
+    """
+    Autonomous Campaign Orchestrator ('God Tool').
+    Executes a comprehensive, coordinated multi-stage security audit in a single call:
+    1. Spider & Form Discovery -> Ingests into Target Knowledge Graph
+    2. JavaScript Mining -> Extracts hidden routes and hardcoded API keys
+    3. OAST Canary Spraying -> Tests for Blind SSRF, Log4j, and RCE
+    4. BFLA & Method Tunneling -> Probes HTTP verb tampering and permissions
+    5. Mass Assignment -> Tests privileged attribute binding (role, admin, balance)
+    6. Business Logic -> Probes negative numbers, zero-cost, and integer overflow
+    7. Deterministic Verification Gate -> Verifies all findings and eliminates false positives
+    Returns a token-efficient executive dossier with verified findings and standalone PoC instructions.
+    """
+    from backend.campaign_orchestrator import run_autonomous_security_campaign
+    proj = _resolve_project(project, allow_all=False)
+    res = await run_autonomous_security_campaign(
+        target_url=target_url,
+        modes=modes,
+        project=proj,
+        max_pages=max_pages,
+        deep_verify=deep_verify
+    )
     return json.dumps(res, indent=2)
 
 

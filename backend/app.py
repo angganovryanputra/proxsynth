@@ -2977,12 +2977,374 @@ def run_ci_audit_endpoint(project: Optional[str] = None, min_severity: str = "LO
 
 @app.get("/api/audit/report")
 def get_ci_audit_report_endpoint(project: Optional[str] = None, format: str = "markdown"):
-    """Generates a publication-grade Markdown or JSON security audit report for CI/CD."""
+    """Generates a publication-grade Markdown, JSON, or SARIF v2.1.0 security audit report for CI/CD."""
     from backend.ci_auditor import generate_audit_ci_report
-    rep = generate_audit_ci_report(project=project, output_format=format)
-    if format.lower() == "markdown":
+    fmt = (format or "markdown").lower().strip()
+    rep = generate_audit_ci_report(project=project, output_format=fmt)
+    if fmt == "markdown":
         return Response(content=rep, media_type="text/markdown")
+    elif fmt == "sarif":
+        safe_proj = (project or "all").replace("/", "_").replace("\\", "_")
+        return JSONResponse(
+            content=json.loads(rep),
+            media_type="application/sarif+json",
+            headers={"Content-Disposition": f'attachment; filename="proxsynth_audit_{safe_proj}.sarif"'}
+        )
     return JSONResponse(content=json.loads(rep))
+
+
+# ==============================================================================
+# Nuclei v3 Exploit Template Generator Endpoints
+# ==============================================================================
+
+@app.get("/api/findings/{id}/nuclei")
+def get_finding_nuclei_template(id: int, db: Session = Depends(get_db)):
+    """Generates standardized Nuclei v3 YAML exploit/regression template from a finding."""
+    from backend.nuclei_generator import generate_nuclei_yaml_from_finding
+    finding = db.query(Finding).filter(Finding.id == id).first()
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    log = db.query(HttpLog).filter(HttpLog.id == finding.log_id).first()
+    return generate_nuclei_yaml_from_finding(finding, log)
+
+
+class NucleiCustomRequest(BaseModel):
+    log_id: int
+    title: Optional[str] = None
+    severity: Optional[str] = "medium"
+    match_words: Optional[List[str]] = None
+
+
+@app.post("/api/nuclei/generate")
+def generate_custom_nuclei_template_api(req: NucleiCustomRequest, db: Session = Depends(get_db)):
+    """Generates custom Nuclei v3 template from an observed HTTP log."""
+    from backend.nuclei_generator import generate_nuclei_yaml_from_log
+    log = db.query(HttpLog).filter(HttpLog.id == req.log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    return generate_nuclei_yaml_from_log(log, title=req.title, severity=req.severity or "medium", match_words=req.match_words)
+
+
+# ==============================================================================
+# BOLA / IDOR Interactive Access Matrix Endpoints
+# ==============================================================================
+
+@app.get("/api/bola/matrix")
+def get_bola_matrix_endpoint(project: str = "default"):
+    """Returns candidate object-level endpoints cross-tabulated against all active identity roles."""
+    from backend.bola_matrix import get_bola_matrix_data
+    return get_bola_matrix_data(project=project)
+
+
+class BolaScanRequest(BaseModel):
+    project: Optional[str] = "default"
+
+
+@app.post("/api/bola/scan-matrix")
+async def run_bola_matrix_scan_endpoint(req: BolaScanRequest):
+    """Executes autonomous multi-identity shadow replay scan across candidate endpoints."""
+    from backend.bola_matrix import run_full_bola_matrix_scan
+    return await run_full_bola_matrix_scan(project=req.project or "default", ws_broadcast_callback=ws_manager.broadcast)
+
+
+# ==============================================================================
+# CA Certificate & OS Trust Store Endpoints
+# ==============================================================================
+
+@app.get("/api/ca/download")
+def download_ca_certificate():
+    """Downloads the generated Root CA certificate for local OS / device installation."""
+    from backend.ca_manager import get_ca_pem_bytes
+    pem_data = get_ca_pem_bytes()
+    if not pem_data:
+        raise HTTPException(status_code=404, detail="CA certificate not generated yet")
+    return Response(
+        content=pem_data,
+        media_type="application/x-x509-ca-cert",
+        headers={"Content-Disposition": 'attachment; filename="proxsynth-ca.crt"'}
+    )
+
+
+@app.get("/api/ca/info")
+def get_ca_certificate_info():
+    """Returns CA metadata, fingerprints, and OS-specific trust store installation commands."""
+    from backend.ca_manager import get_ca_metadata, get_os_trust_scripts
+    return {
+        "metadata": get_ca_metadata(),
+        "scripts": get_os_trust_scripts("proxsynth-ca.crt")
+    }
+
+
+# ==============================================================================
+# OpenAPI Interactive Sandbox Explorer Endpoints
+# ==============================================================================
+
+@app.get("/api/projects/{name}/openapi")
+def get_project_openapi_spec(name: str, db: Session = Depends(get_db)):
+    """Returns reverse-engineered OpenAPI 3.0.3 specification for interactive UI exploration."""
+    spec = generate_openapi_spec(name, db)
+    return {"spec": spec, "endpoints_count": len(spec.get("paths", {}))}
+
+
+class OpenApiSandboxRequest(BaseModel):
+    method: str = "GET"
+    url: str
+    headers: Optional[Dict[str, str]] = None
+    body: Optional[str] = None
+    project: Optional[str] = "default"
+
+
+@app.post("/api/openapi/sandbox-execute")
+async def execute_openapi_sandbox_request(req: OpenApiSandboxRequest):
+    """Executes live API request in sandbox explorer with timing and headers."""
+    from backend.forward_proxy import _get_upstream_proxy
+    start_time = time.time()
+    upstream_p = _get_upstream_proxy(req.project or "default")
+    proxy_kwargs = {"proxy": upstream_p} if upstream_p else {"proxy": None, "trust_env": False}
+    try:
+        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=15.0, **proxy_kwargs) as client:
+            res = await client.request(
+                method=req.method.upper(),
+                url=req.url,
+                headers=req.headers or {},
+                content=req.body.encode("utf-8") if req.body else None
+            )
+            duration_ms = int((time.time() - start_time) * 1000)
+            return {
+                "status_code": res.status_code,
+                "duration_ms": duration_ms,
+                "headers": dict(res.headers),
+                "body": res.text,
+                "url": req.url,
+                "method": req.method.upper()
+            }
+    except Exception as ex:
+        duration_ms = int((time.time() - start_time) * 1000)
+        return {
+            "status_code": 502,
+            "duration_ms": duration_ms,
+            "headers": {},
+            "body": f"Sandbox Request Execution Failed: {str(ex)}",
+            "url": req.url,
+            "method": req.method.upper()
+        }
+
+
+# ==============================================================================
+# Advanced Security Audit Engines (BFLA, Mass Assignment, Logic Fuzzer, Differential Oracle)
+# ==============================================================================
+
+class BflaAuditRequest(BaseModel):
+    url: str
+    method: Optional[str] = "GET"
+    headers: Optional[Dict[str, Any]] = None
+    body: Optional[str] = None
+    project: Optional[str] = "default"
+    log_id: Optional[int] = None
+
+
+@app.post("/api/audit/bfla")
+async def run_bfla_audit_api(req: BflaAuditRequest):
+    """Audits endpoint for Broken Function Level Authorization and Method Tampering."""
+    from backend.bfla_engine import audit_bfla_endpoint
+    return await audit_bfla_endpoint(
+        url=req.url, method=req.method or "GET", req_headers=req.headers,
+        req_body=req.body, project=req.project or "default",
+        log_id=req.log_id, ws_broadcast_callback=ws_manager.broadcast
+    )
+
+
+class MassAssignmentRequest(BaseModel):
+    log_id: int
+    custom_attributes: Optional[Dict[str, Any]] = None
+    project: Optional[str] = "default"
+
+
+@app.post("/api/audit/mass-assignment")
+async def run_mass_assignment_audit_api(req: MassAssignmentRequest):
+    """Scans mutation request for Mass Assignment / Over-Posting vulnerabilities."""
+    from backend.mass_assignment_engine import audit_mass_assignment
+    return await audit_mass_assignment(
+        log_id=req.log_id, custom_attributes=req.custom_attributes,
+        project=req.project or "default", ws_broadcast_callback=ws_manager.broadcast
+    )
+
+
+class LogicFuzzRequest(BaseModel):
+    log_id: int
+    target_param: Optional[str] = None
+    project: Optional[str] = "default"
+
+
+@app.post("/api/audit/business-logic")
+async def run_business_logic_audit_api(req: LogicFuzzRequest):
+    """Audits numeric, currency, quantity parameters for Business Logic & Boundary Flaws."""
+    from backend.logic_fuzzer import audit_numeric_business_logic
+    return await audit_numeric_business_logic(
+        log_id=req.log_id, target_param=req.target_param,
+        project=req.project or "default", ws_broadcast_callback=ws_manager.broadcast
+    )
+
+
+class DiffInjectionRequest(BaseModel):
+    url: str
+    param_name: str
+    method: Optional[str] = "GET"
+    param_type: Optional[str] = "query"
+    headers: Optional[Dict[str, str]] = None
+    body: Optional[str] = None
+    project: Optional[str] = "default"
+    log_id: Optional[int] = None
+
+
+@app.post("/api/audit/differential-injection")
+async def run_diff_injection_audit_api(req: DiffInjectionRequest):
+    """Executes 3-point boolean differential comparison and statistical Z-score timing verification."""
+    from backend.differential_oracle import audit_differential_injection
+    return await audit_differential_injection(
+        url=req.url, param_name=req.param_name, method=req.method or "GET",
+        param_type=req.param_type or "query", base_headers=req.headers,
+        base_body=req.body, project=req.project or "default",
+        log_id=req.log_id, ws_broadcast_callback=ws_manager.broadcast
+    )
+
+
+class SemanticDiffRequest(BaseModel):
+    log_id_a: int
+    log_id_b: int
+
+
+@app.post("/api/audit/semantic-diff")
+def run_semantic_diff_api(req: SemanticDiffRequest, db: Session = Depends(get_db)):
+    """Computes noise-filtered structural semantic diff between two logged HTTP responses."""
+    from backend.diff_engine import compute_semantic_diff
+    l_a = db.query(HttpLog).filter(HttpLog.id == req.log_id_a).first()
+    l_b = db.query(HttpLog).filter(HttpLog.id == req.log_id_b).first()
+    if not l_a or not l_b:
+        raise HTTPException(status_code=404, detail="One or both logs not found")
+    headers_a = {}
+    headers_b = {}
+    if l_a.response_headers:
+        try:
+            headers_a = json.loads(l_a.response_headers)
+        except Exception:
+            pass
+    if l_b.response_headers:
+        try:
+            headers_b = json.loads(l_b.response_headers)
+        except Exception:
+            pass
+    resp_a = {"status_code": l_a.status_code, "body": l_a.response_body or "", "headers": headers_a}
+    resp_b = {"status_code": l_b.status_code, "body": l_b.response_body or "", "headers": headers_b}
+    return compute_semantic_diff(resp_a, resp_b)
+
+
+class SpiderCrawlRequest(BaseModel):
+    root_url: str
+    max_depth: int = 2
+    max_pages: int = 25
+    project: str = "default"
+    headers: Optional[Dict[str, str]] = None
+
+
+@app.post("/api/spider/crawl")
+async def spider_crawl_endpoint(req: SpiderCrawlRequest, db: Session = Depends(get_db)):
+    """Autonomously crawls a web target, extracts forms and endpoints, and populates Target Graph."""
+    from backend.spider_engine import crawl_and_map_target
+    proj = req.project.strip().lower()
+    return await crawl_and_map_target(
+        root_url=req.root_url,
+        max_depth=req.max_depth,
+        max_pages=req.max_pages,
+        project=proj,
+        headers=req.headers
+    )
+
+
+class AuthRecipeRequest(BaseModel):
+    project: str = "default"
+    login_url: str
+    method: str = "POST"
+    payload: Optional[Dict[str, Any]] = None
+    headers: Optional[Dict[str, str]] = None
+    token_json_path: str = "token"
+    auth_header_format: str = "Bearer {token}"
+    cookie_names: Optional[List[str]] = None
+
+
+@app.post("/api/auth/recipe")
+def save_auth_recipe_endpoint(req: AuthRecipeRequest):
+    """Registers automated login macro recipe for zero-human session maintenance."""
+    from backend.auth_macro import register_auth_recipe
+    return register_auth_recipe(
+        project=req.project.strip().lower(),
+        login_url=req.login_url,
+        method=req.method,
+        payload=req.payload,
+        headers=req.headers,
+        token_json_path=req.token_json_path,
+        auth_header_format=req.auth_header_format,
+        cookie_names=req.cookie_names
+    )
+
+
+@app.get("/api/auth/recipe")
+def get_auth_recipe_endpoint(project: str = "default"):
+    """Retrieves current auth recipe and active credentials status."""
+    from backend.auth_macro import get_auth_recipe, get_active_credentials
+    proj = project.strip().lower()
+    return {
+        "recipe": get_auth_recipe(proj),
+        "active_credentials": get_active_credentials(proj)
+    }
+
+
+@app.post("/api/auth/execute")
+async def execute_auth_endpoint(project: str = "default"):
+    """Manually or autonomously executes re-authentication macro for project."""
+    from backend.auth_macro import execute_reauth
+    return await execute_reauth(project.strip().lower())
+
+
+class VerifyCandidateRequest(BaseModel):
+    finding_id: Optional[int] = None
+    log_id: Optional[int] = None
+    vuln_type: Optional[str] = None
+    project: str = "default"
+
+
+@app.post("/api/verification/verify")
+async def verify_candidate_endpoint(req: VerifyCandidateRequest):
+    """Deterministically verifies suspected vulnerability via specialized oracles."""
+    from backend.verification_gate import verify_vulnerability_candidate
+    return await verify_vulnerability_candidate(
+        finding_id=req.finding_id,
+        log_id=req.log_id,
+        vuln_type=req.vuln_type,
+        project=req.project.strip().lower()
+    )
+
+
+class CampaignRunRequest(BaseModel):
+    target_url: str
+    modes: Optional[List[str]] = None
+    project: str = "default"
+    max_pages: int = 15
+    deep_verify: bool = True
+
+
+@app.post("/api/campaign/run")
+async def run_campaign_endpoint(req: CampaignRunRequest, db: Session = Depends(get_db)):
+    """Executes full autonomous multi-phase security campaign pipeline."""
+    from backend.campaign_orchestrator import run_autonomous_security_campaign
+    proj = req.project.strip().lower()
+    return await run_autonomous_security_campaign(
+        target_url=req.target_url,
+        modes=req.modes,
+        project=proj,
+        max_pages=req.max_pages,
+        deep_verify=req.deep_verify
+    )
 
 
 @app.get("/api/health")

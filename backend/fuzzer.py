@@ -72,6 +72,34 @@ BUILTIN_PAYLOADS = {
         "null",
         "undefined",
         "NaN"
+    ],
+    "business_logic": [
+        "-1",
+        "-9999",
+        "-0.01",
+        "0",
+        "0.00",
+        "0.0000001",
+        "0.004",
+        "2147483648",
+        "9223372036854775808",
+        "NaN",
+        "Infinity",
+        "-Infinity",
+        "1e10",
+        "1e-10"
+    ],
+    "mass_assignment": [
+        '{"role": "admin"}',
+        '{"is_admin": true}',
+        '{"isAdmin": true}',
+        '{"permissions": ["*"]}',
+        '{"verified": true}',
+        '{"tier": "enterprise"}',
+        '{"balance": 999999}',
+        '{"discount": 100}',
+        '{"org_id": 1}',
+        '{"plan": "unlimited"}'
     ]
 }
 

@@ -15,6 +15,7 @@ import urllib.parse
 import ssl
 import datetime
 import warnings
+import re
 
 warnings.filterwarnings("ignore", message=r".*eof_received.*")
 import ipaddress
@@ -75,21 +76,53 @@ def get_ca_cert_path() -> str:
         pass
     return cand
 
+_upstream_proxy_indices: Dict[str, int] = {}
+
 def _get_upstream_proxy(project_name: str) -> Optional[str]:
-    """Retrieves project-specific upstream proxy or falls back to global PROXSYNTH_UPSTREAM_PROXY/PROXSYNTH_UPSTREAM_PROXY."""
+    """
+    Retrieves project-specific upstream proxy or falls back to global PROXSYNTH_UPSTREAM_PROXY.
+    Supports SOCKS5, Tor (socks5://127.0.0.1:9050), HTTP, HTTPS, and rotating proxy pools (comma/newline separated).
+    """
+    raw_proxy = ""
     db = SessionLocal()
     try:
         p = db.query(Project).filter(Project.name == (project_name or "default").strip().lower()).first()
         if p and p.upstream_proxy and p.upstream_proxy.strip():
-            return p.upstream_proxy.strip()
-        fallback = os.getenv("PROXSYNTH_UPSTREAM_PROXY", os.getenv("PROXSYNTH_UPSTREAM_PROXY", "")).strip()
-        return fallback if fallback else None
+            raw_proxy = p.upstream_proxy.strip()
     except Exception:
         pass
     finally:
         db.close()
-    env_p = (os.getenv("PROXSYNTH_UPSTREAM_PROXY") or "").strip()
-    return env_p if env_p else None
+
+    if not raw_proxy:
+        raw_proxy = os.getenv("PROXSYNTH_UPSTREAM_PROXY", os.getenv("PROXSYNTH_UPSTREAM_PROXY", "")).strip()
+
+    if not raw_proxy:
+        return None
+
+    # Handle multiple proxies in pool (comma, semicolon, or newline separated)
+    candidates = [cp.strip() for cp in re.split(r'[,;\n]+', raw_proxy) if cp.strip()]
+    if not candidates:
+        return None
+
+    proj_key = (project_name or "default").lower()
+    curr_idx = _upstream_proxy_indices.get(proj_key, 0)
+    selected = candidates[curr_idx % len(candidates)]
+    _upstream_proxy_indices[proj_key] = (curr_idx + 1) % len(candidates)
+
+    # Shorthand aliases & protocol prefixes
+    selected_lower = selected.lower()
+    if selected_lower in ["tor", "tor-daemon"]:
+        return "socks5://127.0.0.1:9050"
+    if selected_lower in ["tor-browser"]:
+        return "socks5://127.0.0.1:9150"
+    if selected_lower.startswith(("socks5://", "socks5h://", "http://", "https://")):
+        return selected
+    if ":" in selected and not selected.startswith("http"):
+        if "9050" in selected or "1080" in selected:
+            return f"socks5://{selected}"
+        return f"http://{selected}"
+    return selected
 
 def _ensure_ca() -> Tuple[Any, Any]:
     global _ca_cert, _ca_key

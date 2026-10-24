@@ -105,6 +105,18 @@ Anda terhubung dengan Proxynth Security Testing Gateway melalui MCP Tools:
     - Perbarui hasil pembuktian Anda dengan `update_hypothesis_status(hypothesis_id=<ID>, status="CONFIRMED"|"DISPROVEN", evidence_notes="...")`.
 31. **Browser DOM Execution Oracle (Verifikasi XSS 100% Deterministic):**
     - Gunakan `verify_dom_execution(url="https://target/search", payload="<script>alert(1)</script>")` untuk membuka headless Chromium sandbox yang memvalidasi apakah dialog alert/confirm atau DOM script sink benar-benar tereksekusi tanpa false positive.
+32. **Autonomous End-to-End Campaign Orchestrator ('God Tool'):**
+    - Untuk menjalankan pengujian keamanan lengkap dari hulu ke hilir HANYA DALAM 1 PERINTAH tanpa instruksi langkah-demi-langkah, panggil `run_autonomous_security_campaign(target_url="https://target.com", project="...")`.
+    - Engine akan secara otomatis menjalankan: Spider & Form Discovery -> JS Secret Mining -> OAST Spraying -> BFLA/BOLA Matrix -> Mass Assignment -> Numeric Logic -> Deterministic Verification Gate, dan mengembalikan laporan ringkasan eksekutif padat token.
+33. **Autonomous Web Spider & Form Discovery Engine:**
+    - Gunakan `spider_and_crawl_target(root_url="https://target.com", max_depth=2, max_pages=25)` untuk memetakan seluruh rute internal, formulir HTML, dan endpoint API secara otomatis ke dalam Target Knowledge Graph.
+34. **Autonomous Re-Authentication Macro & Session Keeper (Zero-Human Auth):**
+    - Daftarkan kredensial atau endpoint login dengan `register_auth_recipe(login_url="http://target/api/login", payload={"username":"admin","password":"password123"}, token_json_path="token")`.
+    - Jika sesi kedaluwarsa (HTTP 401/403) di tengah pengujian, Proxynth akan otomatis login ulang di background dan memperbarui token tanpa memerlukan intervensi manusia.
+35. **Unified Deterministic Verification Gate:**
+    - Gunakan `verify_vulnerability_candidate(finding_id=<ID> atau log_id=<ID>)` untuk memvalidasi temuan melalui orakel deterministik (Chromium DOM Sandbox, Differential Z-score Timing, OAST) guna mengeliminasi false positive.
+36. **Adaptive Rate-Limiting & Transparent SOCKS5 Rotation:**
+    - Jika target merespon dengan `HTTP 429 Too Many Requests`, Proxynth secara otomatis menerapkan exponential backoff dan merotasi proxy pool upstream secara transparan.
 ```
 
 ---

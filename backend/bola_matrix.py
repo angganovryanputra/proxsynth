@@ -305,3 +305,180 @@ async def execute_bola_shadow_replay(
             continue
 
     return None
+
+
+def get_bola_matrix_data(project: str = "default") -> Dict[str, Any]:
+    """
+    Aggregates candidate object-level endpoints and cross-tabulates them against all active
+    identity roles (e.g. primary, attacker, victim, unauthenticated) to build the access control matrix.
+    """
+    clean_project = (project or "default").strip().lower()
+    db = SessionLocal()
+    try:
+        q = db.query(HttpLog)
+        if clean_project != "all":
+            q = q.filter(HttpLog.project == clean_project)
+        
+        logs = q.order_by(HttpLog.id.desc()).limit(200).all()
+
+        # Query all known roles for project
+        sess_query = db.query(ActiveSession)
+        if clean_project != "all":
+            sess_query = sess_query.filter(ActiveSession.project == clean_project)
+        sessions = sess_query.all()
+        known_roles = set(["primary", "unauthenticated"])
+        for s in sessions:
+            if s.identity_role:
+                known_roles.add(s.identity_role.lower())
+        
+        # Ensure standard ordering: primary first, unauthenticated last
+        role_list = ["primary"]
+        for r in sorted(known_roles):
+            if r not in ["primary", "unauthenticated"]:
+                role_list.append(r)
+        if "unauthenticated" not in role_list:
+            role_list.append("unauthenticated")
+
+        # Query existing BOLA findings for project
+        findings_query = db.query(Finding).filter(Finding.category.like("%BOLA%") | Finding.category.like("%IDOR%"))
+        all_findings = findings_query.all()
+        finding_by_log_id = {f.log_id: f for f in all_findings}
+
+        candidates = []
+        seen_paths = set()
+
+        for l in logs:
+            req_body = l.request_body or ""
+            if not is_candidate_for_bola(l.url, l.method, req_body):
+                continue
+
+            path_key = f"{l.method}:{l.path}"
+            if path_key in seen_paths:
+                continue
+            seen_paths.add(path_key)
+
+            parsed = urllib.parse.urlparse(l.url)
+            
+            # Extract resource ID
+            res_match = _RESOURCE_ID_PATH_REGEX.search(parsed.path)
+            res_id = res_match.group(2) if res_match else ""
+            if not res_id and parsed.query:
+                param_match = _RESOURCE_ID_PARAM_REGEX.search(parsed.query)
+                res_id = param_match.group(2) if param_match else ""
+
+            # Check if this log has an existing BOLA finding
+            matched_finding = finding_by_log_id.get(l.id)
+            vuln_role = "attacker"
+            if matched_finding:
+                for r in role_list:
+                    if f"[{r}]" in (matched_finding.title or "").lower():
+                        vuln_role = r
+                        break
+
+            # Build access map per role
+            access_map = {}
+            for r in role_list:
+                if r == "primary":
+                    access_map[r] = {
+                        "status": l.status_code or 200,
+                        "state": "ALLOWED",
+                        "summary": "Legitimate resource owner access"
+                    }
+                elif matched_finding and r == vuln_role:
+                    access_map[r] = {
+                        "status": 200,
+                        "state": "VULNERABLE",
+                        "summary": f"BOLA Confirmed ({matched_finding.severity})",
+                        "finding_id": matched_finding.id
+                    }
+                else:
+                    access_map[r] = {
+                        "status": None,
+                        "state": "UNTESTED",
+                        "summary": "Pending shadow replay audit"
+                    }
+
+            candidates.append({
+                "log_id": l.id,
+                "project": l.project or clean_project,
+                "method": l.method,
+                "url": l.url,
+                "path": l.path or parsed.path,
+                "host": l.host or parsed.netloc,
+                "resource_id": res_id,
+                "timestamp": l.timestamp.isoformat() if l.timestamp else "",
+                "status_code": l.status_code,
+                "access": access_map
+            })
+
+        return {
+            "project": clean_project,
+            "roles": role_list,
+            "total_candidates": len(candidates),
+            "vulnerabilities_detected": len([c for c in candidates if any(a.get("state") == "VULNERABLE" for a in c["access"].values())]),
+            "candidates": candidates
+        }
+    finally:
+        db.close()
+
+
+async def run_full_bola_matrix_scan(project: str = "default", ws_broadcast_callback=None) -> Dict[str, Any]:
+    """
+    Executes automated BOLA shadow replay scans across all observed candidate endpoints in the project.
+    """
+    clean_project = (project or "default").strip().lower()
+    db = SessionLocal()
+    candidates_to_test = []
+    try:
+        q = db.query(HttpLog)
+        if clean_project != "all":
+            q = q.filter(HttpLog.project == clean_project)
+        logs = q.order_by(HttpLog.id.desc()).limit(100).all()
+        for l in logs:
+            if is_candidate_for_bola(l.url, l.method, l.request_body or ""):
+                req_headers = {}
+                if l.request_headers:
+                    try:
+                        req_headers = json.loads(l.request_headers)
+                    except Exception:
+                        pass
+                candidates_to_test.append({
+                    "id": l.id,
+                    "project": l.project or clean_project,
+                    "url": l.url,
+                    "method": l.method,
+                    "headers": req_headers,
+                    "body": l.request_body or "",
+                    "orig_status": l.status_code or 200,
+                    "orig_body": l.response_body or ""
+                })
+    finally:
+        db.close()
+
+    scanned_count = 0
+    vulns_found = 0
+
+    for c in candidates_to_test:
+        scanned_count += 1
+        finding = await execute_bola_shadow_replay(
+            log_id=c["id"],
+            project=c["project"],
+            url=c["url"],
+            method=c["method"],
+            req_headers=c["headers"],
+            req_body=c["body"],
+            orig_status=c["orig_status"],
+            orig_body=c["orig_body"],
+            ws_broadcast_callback=ws_broadcast_callback
+        )
+        if finding:
+            vulns_found += 1
+
+    updated_matrix = get_bola_matrix_data(project=clean_project)
+    return {
+        "status": "success",
+        "project": clean_project,
+        "scanned_endpoints": scanned_count,
+        "vulnerabilities_detected": vulns_found,
+        "matrix": updated_matrix
+    }

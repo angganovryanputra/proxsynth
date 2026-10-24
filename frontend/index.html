@@ -281,6 +281,21 @@
               class="px-1.5 py-0.5 rounded text-[10px] bg-indigo-950/80 text-indigo-300 border border-indigo-800/60"
               x-text="interceptionRules.length"></span>
           </button>
+
+          <!-- BOLA / IDOR Access Matrix -->
+          <button @click="currentAppTab = 'bola_matrix'; fetchBolaMatrix()"
+            :class="currentAppTab === 'bola_matrix' ? 'bg-rose-500/15 text-rose-300 border border-rose-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
+            :title="!sidebarExpanded ? 'BOLA / IDOR Access Control Matrix' : ''"
+            class="w-full rounded-lg transition-all duration-150 flex items-center"
+            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
+            <div class="flex items-center space-x-2.5 truncate">
+              <i data-lucide="grid-3x3" class="w-4 h-4 shrink-0 text-rose-400"></i>
+              <span x-show="sidebarExpanded" class="truncate">BOLA Matrix</span>
+            </div>
+            <span x-show="sidebarExpanded && bolaMatrixData && bolaMatrixData.vulnerabilities_detected > 0"
+              class="px-1.5 py-0.5 rounded text-[10px] bg-rose-950/80 text-rose-300 border border-rose-800/60 font-bold"
+              x-text="bolaMatrixData ? bolaMatrixData.vulnerabilities_detected + ' Vuln' : ''"></span>
+          </button>
         </nav>
       </div>
 
@@ -324,6 +339,37 @@
               class="px-1.5 py-0.5 rounded text-[10px] bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-semibold"
               :class="!sidebarExpanded ? 'absolute top-1 right-1 text-[8px] px-1' : ''"
               x-text="attackSurfaceData && attackSurfaceData.summary ? attackSurfaceData.summary.total_endpoints : 0"></span>
+          </button>
+
+          <!-- Autonomous Security Campaign -->
+          <button @click="currentAppTab = 'campaign'; fetchCampaignData()"
+            :class="currentAppTab === 'campaign' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
+            :title="!sidebarExpanded ? 'Autonomous Security Campaign (Zero-Human)' : ''"
+            class="w-full rounded-lg transition-all duration-150 flex items-center relative"
+            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
+            <div class="flex items-center space-x-2.5 truncate">
+              <i data-lucide="bot" class="w-4 h-4 shrink-0 text-amber-400"></i>
+              <span x-show="sidebarExpanded" class="truncate">Auto Campaign</span>
+            </div>
+            <span x-show="campaignRunning"
+              class="px-1.5 py-0.5 rounded text-[9px] bg-amber-950/80 text-amber-300 border border-amber-800/60 font-bold animate-pulse"
+              :class="!sidebarExpanded ? 'absolute top-1 right-1' : ''">LIVE</span>
+          </button>
+
+          <!-- OpenAPI Sandbox Explorer -->
+          <button @click="currentAppTab = 'openapi_explorer'; fetchOpenApiExplorer()"
+            :class="currentAppTab === 'openapi_explorer' ? 'bg-purple-500/15 text-purple-300 border border-purple-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
+            :title="!sidebarExpanded ? 'OpenAPI 3.0 Interactive Sandbox' : ''"
+            class="w-full rounded-lg transition-all duration-150 flex items-center relative"
+            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
+            <div class="flex items-center space-x-2.5 truncate">
+              <i data-lucide="play-circle" class="w-4 h-4 shrink-0 text-purple-400"></i>
+              <span x-show="sidebarExpanded" class="truncate">OpenAPI Sandbox</span>
+            </div>
+            <span x-show="openApiEndpointsCount > 0"
+              class="px-1.5 py-0.5 rounded text-[10px] bg-purple-950/80 text-purple-300 border border-purple-800/60 font-semibold"
+              :class="!sidebarExpanded ? 'absolute top-1 right-1 text-[8px] px-1' : ''"
+              x-text="openApiEndpointsCount"></span>
           </button>
 
           <!-- Attack Hypothesis Ledger / Agent Working Memory -->
@@ -582,11 +628,17 @@
             <i data-lucide="file-text" class="w-3.5 h-3.5 mr-1 text-emerald-400"></i>
             <span>Report</span>
           </button>
-          <button @click="exportOpenAPI()"
-            class="px-2.5 py-1.5 hover:bg-[#1E293B] text-slate-300 transition flex items-center"
+ <button @click="exportOpenAPI()"
+            class="px-2.5 py-1.5 hover:bg-[#1E293B] text-slate-300 transition flex items-center border-r border-[#1E293B]"
             title="Generate Auto-Reverse OpenAPI 3.0 / Swagger">
             <i data-lucide="file-code" class="w-3.5 h-3.5 mr-1 text-purple-400"></i>
             <span>OpenAPI</span>
+          </button>
+          <button @click="openCaWizard()"
+            class="px-2.5 py-1.5 hover:bg-[#1E293B] text-slate-300 transition flex items-center"
+            title="Root CA Certificate & OS Trust Setup">
+            <i data-lucide="shield-check" class="w-3.5 h-3.5 mr-1 text-emerald-400"></i>
+            <span class="hidden sm:inline">Root CA</span>
           </button>
         </div>
 
@@ -1206,6 +1258,12 @@
               <i data-lucide="copy" class="w-3 h-3 mr-1"></i>
               <span x-text="copiedCurl ? 'Copied cURL!' : 'Copy cURL'"></span>
             </button>
+            <button x-show="selectedLogDetail" @click="openNucleiFromLog(selectedLogDetail.id)"
+              class="px-2 py-1 rounded bg-purple-950/70 hover:bg-purple-900 border border-purple-700/60 text-purple-300 text-[11px] font-mono flex items-center transition shadow-sm"
+              title="Generate Nuclei v3 Exploit / Regression Template">
+              <i data-lucide="zap" class="w-3 h-3 mr-1 text-purple-400"></i>
+              <span>Nuclei</span>
+            </button>
 
             <!-- Maximize Inspector Toggle -->
             <button @click="toggleMaximize('inspector')"
@@ -1585,7 +1643,45 @@
               </div>
 
               <!-- TAB 3: TRIAGE -->
-              <div x-show="inspectorTab === 'triage'" class="space-y-4">
+              <div x-show="inspectorTab === 'triage'" class="space-y-4 font-mono">
+                <!-- Advanced Active Audit Toolbar -->
+                <div class="p-3 bg-[#0B0F17] border border-[#1E293B] rounded-lg flex flex-wrap items-center justify-between gap-2 shadow-md">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Audits:</span>
+                    <button @click="runMassAssignmentAudit(selectedLogDetail.id)" :disabled="massAuditing"
+                      class="px-2.5 py-1 rounded bg-amber-950/70 hover:bg-amber-900 border border-amber-700/70 text-[11px] font-semibold text-amber-200 flex items-center space-x-1.5 transition disabled:opacity-50"
+                      title="Inject privileged attributes into request payload to test for Mass Assignment">
+                      <i data-lucide="tag" class="w-3.5 h-3.5 text-amber-400" :class="massAuditing ? 'animate-spin' : ''"></i>
+                      <span x-text="massAuditing ? 'Scanning...' : 'Mass Assignment'"></span>
+                    </button>
+                    <button @click="runBusinessLogicAudit(selectedLogDetail.id)" :disabled="logicAuditing"
+                      class="px-2.5 py-1 rounded bg-purple-950/70 hover:bg-purple-900 border border-purple-700/70 text-[11px] font-semibold text-purple-200 flex items-center space-x-1.5 transition disabled:opacity-50"
+                      title="Probe numeric boundaries, zero costs, and integer overflows">
+                      <i data-lucide="calculator" class="w-3.5 h-3.5 text-purple-400" :class="logicAuditing ? 'animate-spin' : ''"></i>
+                      <span x-text="logicAuditing ? 'Testing...' : 'Numeric Logic'"></span>
+                    </button>
+                    <button @click="runBflaAudit(selectedLogDetail.url, selectedLogDetail.method, selectedLogDetail.id)" :disabled="bflaAuditing"
+                      class="px-2.5 py-1 rounded bg-rose-950/70 hover:bg-rose-900 border border-rose-700/70 text-[11px] font-semibold text-rose-200 flex items-center space-x-1.5 transition disabled:opacity-50"
+                      title="Perform HTTP verb tampering and role privilege escalation audit">
+                      <i data-lucide="shield-alert" class="w-3.5 h-3.5 text-rose-400" :class="bflaAuditing ? 'animate-spin' : ''"></i>
+                      <span x-text="bflaAuditing ? 'Auditing...' : 'BFLA / Method Tunneling'"></span>
+                    </button>
+                  </div>
+                  <div class="text-[10px] text-slate-400">
+                    <span class="font-bold text-slate-200" x-text="selectedLogDetail.findings ? selectedLogDetail.findings.length : 0"></span> Findings Detected
+                  </div>
+                </div>
+
+                <!-- Empty State -->
+                <div x-show="!selectedLogDetail.findings || selectedLogDetail.findings.length === 0"
+                  class="p-8 rounded-lg bg-[#0B0F17] border border-[#1E293B] text-center space-y-2">
+                  <i data-lucide="shield-check" class="w-8 h-8 mx-auto text-emerald-400/60"></i>
+                  <div class="text-xs font-bold text-slate-300">No Vulnerabilities Flagged Yet</div>
+                  <p class="text-[11px] text-slate-500 max-w-sm mx-auto">
+                    Use the active audit triggers above to test this specific request against Broken Function Level Authorization (BFLA), Mass Assignment, or Numeric Logic boundaries.
+                  </p>
+                </div>
+
                 <template x-for="finding in selectedLogDetail.findings" :key="finding.id">
                   <div class="p-4 rounded-lg bg-[#0B0F17] border space-y-3"
                     :class="finding.severity === 'CRITICAL' || finding.severity === 'HIGH' ? 'border-rose-800/80 glow-rose' : 'border-amber-800/60'">
@@ -1607,6 +1703,11 @@
                         class="px-2.5 py-1 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-700/80 text-[11px] font-mono font-bold text-rose-200 flex items-center space-x-1.5 transition shadow">
                         <i data-lucide="file-code-2" class="w-3.5 h-3.5 text-rose-400"></i>
                         <span>Generate Standalone PoC &amp; Dossier</span>
+                      </button>
+                      <button @click="openNucleiFromFinding(finding.id)"
+                        class="px-2.5 py-1 rounded bg-purple-950/80 hover:bg-purple-900 border border-purple-700/80 text-[11px] font-mono font-bold text-purple-200 flex items-center space-x-1.5 transition shadow">
+                        <i data-lucide="zap" class="w-3.5 h-3.5 text-purple-400"></i>
+                        <span>⚡ Nuclei Template</span>
                       </button>
                     </div>
                   </div>
@@ -2188,6 +2289,8 @@
               <option value="cmd_injection">💻 Command Injection (7 payloads)</option>
               <option value="ssti">🧩 SSTI Template (6 payloads)</option>
               <option value="auth_bypass">🔑 Auth / Bypass (10 payloads)</option>
+              <option value="business_logic">🧮 Business Logic &amp; Numeric Boundaries (14 payloads)</option>
+              <option value="mass_assignment">🏷️ Mass Assignment &amp; Privilege Attributes (10 payloads)</option>
               <option value="custom">✏️ Custom Payload List</option>
             </select>
           </div>
@@ -2440,12 +2543,19 @@
             class="w-full bg-[#0B0F17] border border-[#1E293B] rounded p-2.5 text-slate-100 focus:outline-none focus:border-amber-500 font-mono text-xs">
         </div>
 
-        <!-- Upstream Proxy Chaining -->
+        <!-- Upstream Proxy Chaining & Multi-Protocol Pool -->
         <div class="space-y-2">
-          <label class="block font-bold text-indigo-400">Upstream Proxy Chaining (Burp Suite / Caido / ZAP):</label>
-          <p class="text-slate-500 text-[11px]">Forward all AI Agent HTTP and Playwright traffic to an upstream proxy
-            listener (e.g. <code>http://127.0.0.1:8080</code>).</p>
-          <input type="text" x-model="scopeForm.upstream_proxy" placeholder="http://127.0.0.1:8080"
+          <div class="flex items-center justify-between">
+            <label class="block font-bold text-indigo-400">Multi-Protocol Upstream Proxy &amp; Rotating Pool:</label>
+            <div class="flex items-center space-x-1.5 text-[9px] font-mono">
+              <span class="px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">HTTP/HTTPS</span>
+              <span class="px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800">SOCKS5</span>
+              <span class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">Tor (9050)</span>
+              <span class="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800">Pool Rotation</span>
+            </div>
+          </div>
+          <p class="text-slate-500 text-[11px]">Forward proxy traffic through upstream tools (Burp/Caido), SOCKS5 gateways, or Tor network. Supports comma/newline-separated pools for round-robin rotation (e.g. <code>socks5://127.0.0.1:9050, http://127.0.0.1:8080</code> or <code>tor</code>).</p>
+          <input type="text" x-model="scopeForm.upstream_proxy" placeholder="socks5://127.0.0.1:9050, http://127.0.0.1:8080"
             class="w-full bg-[#0B0F17] border border-[#1E293B] rounded p-2.5 text-slate-100 focus:outline-none focus:border-indigo-500 font-mono text-xs">
         </div>
 
@@ -3896,7 +4006,13 @@
             </div>
           </div>
           <div class="flex items-center space-x-2">
-            <button @click="copyCiMarkdownReport()"
+            <button @click="downloadSarifReport()"
+              class="px-3 py-1.5 rounded-lg bg-cyan-950/70 hover:bg-cyan-900 border border-cyan-700/60 text-cyan-300 flex items-center space-x-1.5 transition shadow-sm text-xs font-mono font-semibold"
+              title="Download SARIF v2.1.0 for GitHub Code Scanning, GitLab CI, and DefectDojo">
+              <i data-lucide="download" class="w-3.5 h-3.5 text-cyan-400"></i>
+              <span>Export SARIF (v2.1.0)</span>
+            </button>
+            <button @click="copyCiMarkdownReport()" 
               class="px-3 py-1.5 rounded-lg bg-[#1E293B] hover:bg-[#334155] text-slate-300 flex items-center space-x-1.5 transition">
               <i data-lucide="copy" class="w-3.5 h-3.5"></i>
               <span>Copy Markdown Report</span>
@@ -4008,6 +4124,590 @@
         </div>
       </div>
 
+      <!-- VIEW: BOLA / IDOR INTERACTIVE ACCESS MATRIX -->
+      <div x-show="currentAppTab === 'bola_matrix'" class="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden bg-[#0B0F17] font-mono">
+        <!-- Matrix Top Bar -->
+        <div class="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#1E293B] pb-4 shrink-0">
+          <div>
+            <div class="flex items-center space-x-2.5">
+              <div class="p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400">
+                <i data-lucide="grid-3x3" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h1 class="text-sm font-bold text-slate-100 flex items-center space-x-2">
+                  <span>BOLA / IDOR Interactive Access Matrix</span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700"
+                    x-text="'Workspace: ' + selectedProject"></span>
+                </h1>
+                <p class="text-[11px] text-slate-400">
+                  Autonomous cross-identity shadow replay testing to detect broken object-level authorization vulnerabilities.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- Filter Candidates -->
+            <div class="relative">
+              <input type="text" x-model="bolaFilterText" placeholder="Filter endpoint or resource ID..."
+                class="bg-[#111827] border border-[#1E293B] rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 w-48 sm:w-64 focus:outline-none focus:border-rose-500">
+              <i data-lucide="search" class="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-2.5 pointer-events-none"></i>
+            </div>
+
+            <!-- Run BFLA & Method Tunneling Audit -->
+            <button @click="runBflaBatchScan()" :disabled="bflaScanning"
+              class="px-3.5 py-1.5 rounded-lg bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-200 font-semibold text-xs flex items-center space-x-1.5 shadow-md transition disabled:opacity-50"
+              title="Audit candidates for Broken Function Level Authorization &amp; HTTP Verb Tunneling">
+              <i data-lucide="shield-alert" class="w-3.5 h-3.5 text-indigo-400" :class="bflaScanning ? 'animate-spin' : ''"></i>
+              <span x-text="bflaScanning ? 'Auditing BFLA...' : 'Run BFLA & Method Audit'"></span>
+            </button>
+
+            <!-- Run Shadow Replay Scan -->
+            <button @click="runBolaMatrixScan()" :disabled="bolaScanning"
+              class="px-4 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-purple-600 hover:from-rose-500 hover:to-purple-500 text-white font-semibold text-xs flex items-center space-x-1.5 shadow-md transition disabled:opacity-50">
+              <i data-lucide="play" class="w-3.5 h-3.5" :class="bolaScanning ? 'animate-spin' : ''"></i>
+              <span x-text="bolaScanning ? 'Auditing Authorization...' : 'Run Shadow Matrix Scan'"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Metric Badges -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 shrink-0">
+          <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between">
+            <div>
+              <div class="text-[10px] text-slate-400 uppercase font-semibold">Candidate Endpoints</div>
+              <div class="text-xl font-bold text-slate-200 mt-0.5" x-text="bolaMatrixData ? bolaMatrixData.total_candidates : 0"></div>
+            </div>
+            <i data-lucide="layers" class="w-5 h-5 text-sky-400 opacity-60"></i>
+          </div>
+
+          <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between"
+            :class="bolaMatrixData && bolaMatrixData.vulnerabilities_detected > 0 ? 'border-rose-500/50 bg-rose-950/20' : ''">
+            <div>
+              <div class="text-[10px] text-slate-400 uppercase font-semibold">Confirmed BOLA / IDOR</div>
+              <div class="text-xl font-bold mt-0.5"
+                :class="bolaMatrixData && bolaMatrixData.vulnerabilities_detected > 0 ? 'text-rose-400 animate-pulse' : 'text-emerald-400'"
+                x-text="bolaMatrixData ? bolaMatrixData.vulnerabilities_detected : 0"></div>
+            </div>
+            <i data-lucide="alert-octagon" class="w-5 h-5"
+              :class="bolaMatrixData && bolaMatrixData.vulnerabilities_detected > 0 ? 'text-rose-400' : 'text-slate-600'"></i>
+          </div>
+
+          <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between">
+            <div>
+              <div class="text-[10px] text-slate-400 uppercase font-semibold">Active Identities</div>
+              <div class="text-xl font-bold text-purple-300 mt-0.5" x-text="bolaMatrixData ? bolaMatrixData.roles.length : 0"></div>
+            </div>
+            <i data-lucide="users" class="w-5 h-5 text-purple-400 opacity-60"></i>
+          </div>
+
+          <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between">
+            <div>
+              <div class="text-[10px] text-slate-400 uppercase font-semibold">Audit Protection Rate</div>
+              <div class="text-xl font-bold text-emerald-400 mt-0.5"
+                x-text="bolaMatrixData && bolaMatrixData.total_candidates > 0 ? (Math.round(((bolaMatrixData.total_candidates - bolaMatrixData.vulnerabilities_detected) / bolaMatrixData.total_candidates) * 100) + '%') : '100%'"></div>
+            </div>
+            <i data-lucide="shield-check" class="w-5 h-5 text-emerald-400 opacity-60"></i>
+          </div>
+        </div>
+
+        <!-- Matrix Interactive Grid Table -->
+        <div class="flex-1 min-h-0 bg-[#111827] border border-[#1E293B] rounded-xl overflow-hidden flex flex-col shadow-xl">
+          <div class="flex-1 overflow-auto smooth-scroll">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead class="sticky top-0 bg-[#0E1526] border-b border-[#1E293B] z-10 select-none">
+                <tr class="text-slate-400 font-bold uppercase text-[10px] tracking-wider">
+                  <th class="px-4 py-3 min-w-[200px]">Endpoint / Resource Target</th>
+                  <th class="px-3 py-3 w-28">Resource ID</th>
+                  <th class="px-3 py-3 w-32">Timestamp</th>
+                  <template x-for="role in (bolaMatrixData ? bolaMatrixData.roles : [])" :key="role">
+                    <th class="px-4 py-3 text-center border-l border-[#1E293B]/70 min-w-[140px]">
+                      <div class="flex items-center justify-center space-x-1.5">
+                        <i :data-lucide="role === 'primary' ? 'user-check' : (role === 'unauthenticated' ? 'user-x' : 'user-minus')"
+                          class="w-3.5 h-3.5"
+                          :class="role === 'primary' ? 'text-sky-400' : (role === 'unauthenticated' ? 'text-slate-400' : 'text-purple-400')"></i>
+                        <span x-text="role.toUpperCase()"></span>
+                      </div>
+                    </th>
+                  </template>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[#1E293B]/60 font-mono">
+                <template x-for="c in getFilteredBolaCandidates()" :key="c.log_id">
+                  <tr class="hover:bg-[#1E293B]/40 transition group">
+                    <!-- Endpoint & Method -->
+                    <td class="px-4 py-3">
+                      <div class="flex items-center space-x-2">
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold"
+                          :class="c.method === 'GET' ? 'bg-sky-950 text-sky-400 border border-sky-800' : (c.method === 'POST' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : (c.method === 'DELETE' ? 'bg-rose-950 text-rose-400 border border-rose-800' : 'bg-amber-950 text-amber-400 border border-amber-800'))"
+                          x-text="c.method"></span>
+                        <span class="font-bold text-slate-100 hover:text-sky-300 cursor-pointer truncate max-w-xs md:max-w-md"
+                          @click="selectedLogId = c.log_id; fetchLogDetail(c.log_id); currentAppTab = 'proxy'"
+                          :title="c.url"
+                          x-text="c.path"></span>
+                        <button @click="runBflaAudit(c.url, c.method, c.log_id)" :disabled="bflaAuditing"
+                          class="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-700/60 hover:bg-indigo-900 transition flex items-center space-x-1"
+                          title="Run BFLA &amp; Verb Tunneling Audit on this candidate">
+                          <i data-lucide="shield-alert" class="w-3 h-3 text-indigo-400"></i>
+                          <span>BFLA</span>
+                        </button>
+                      </div>
+                    </td>
+
+                    <!-- Resource ID -->
+                    <td class="px-3 py-3">
+                      <span class="px-2 py-0.5 rounded bg-amber-950/40 text-amber-300 border border-amber-800/60 text-[11px]"
+                        x-text="c.resource_id || '-' "></span>
+                    </td>
+
+                    <!-- Timestamp -->
+                    <td class="px-3 py-3 text-[11px] text-slate-400 whitespace-nowrap"
+                      x-text="c.timestamp ? c.timestamp.split('T')[1].slice(0, 8) : '-'"></td>
+
+                    <!-- Role Matrix Columns -->
+                    <template x-for="role in (bolaMatrixData ? bolaMatrixData.roles : [])" :key="role">
+                      <td class="px-4 py-3 text-center border-l border-[#1E293B]/70">
+                        <!-- Allowed / Primary -->
+                        <template x-if="c.access[role] && c.access[role].state === 'ALLOWED'">
+                          <span class="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-sky-950/70 text-sky-300 border border-sky-700/60"
+                            :title="c.access[role].summary">
+                            <i data-lucide="check" class="w-3 h-3 text-sky-400"></i>
+                            <span>ALLOWED (200)</span>
+                          </span>
+                        </template>
+
+                        <!-- Vulnerable (BOLA Confirmed) -->
+                        <template x-if="c.access[role] && c.access[role].state === 'VULNERABLE'">
+                          <button @click="selectedLogId = c.log_id; fetchLogDetail(c.log_id); inspectorTab = 'triage'; currentAppTab = 'proxy'"
+                            class="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-950 text-rose-200 border border-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)] animate-pulse hover:bg-rose-900 transition"
+                            :title="c.access[role].summary + ' - Click to inspect vulnerability'">
+                            <i data-lucide="alert-triangle" class="w-3 h-3 text-rose-300"></i>
+                            <span>VULNERABLE (200)</span>
+                          </button>
+                        </template>
+
+                        <!-- Protected -->
+                        <template x-if="c.access[role] && c.access[role].state === 'PROTECTED'">
+                          <span class="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-950/70 text-emerald-300 border border-emerald-700/60"
+                            :title="c.access[role].summary">
+                            <i data-lucide="shield-check" class="w-3 h-3 text-emerald-400"></i>
+                            <span x-text="'PROTECTED (' + (c.access[role].status || '403') + ')'"></span>
+                          </span>
+                        </template>
+
+                        <!-- Untested -->
+                        <template x-if="!c.access[role] || c.access[role].state === 'UNTESTED'">
+                          <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] bg-slate-900 text-slate-500 border border-slate-800"
+                            title="Pending automated shadow replay">
+                            <i data-lucide="help-circle" class="w-3 h-3"></i>
+                            <span>UNTESTED</span>
+                          </span>
+                        </template>
+                      </td>
+                    </template>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+
+            <!-- Empty State -->
+            <div x-show="!bolaMatrixData || getFilteredBolaCandidates().length === 0"
+              class="py-16 text-center text-slate-500 space-y-3">
+              <i data-lucide="grid-3x3" class="w-12 h-12 mx-auto text-slate-600"></i>
+              <div class="text-sm font-semibold text-slate-400">No Candidate Object-Level Endpoints Observed</div>
+              <p class="text-xs max-w-md mx-auto text-slate-500">
+                Browse or audit target endpoints containing object identifiers (e.g. <code class="text-amber-400">/users/{id}</code> or <code class="text-amber-400">?account_id=123</code>) via the proxy. Proxsynth will automatically populate the access matrix.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW: AUTONOMOUS SECURITY CAMPAIGN WORKBENCH (ZERO-HUMAN MODE) -->
+      <div x-show="currentAppTab === 'campaign'" class="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden bg-[#0B0F17] font-mono">
+        <!-- Top Toolbar -->
+        <div class="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#1E293B] pb-4 shrink-0">
+          <div>
+            <div class="flex items-center space-x-2.5">
+              <div class="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400">
+                <i data-lucide="bot" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h1 class="text-sm font-bold text-slate-100 flex items-center space-x-2">
+                  <span>Autonomous Security Campaign Workbench</span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-800"
+                    x-text="'Scope: ' + selectedProject"></span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                    ZERO-HUMAN MODE
+                  </span>
+                </h1>
+                <p class="text-[11px] text-slate-400">
+                  Coordinated multi-phase autonomous audit: Spider &rarr; JS Secrets &rarr; OAST Canaries &rarr; BOLA/BFLA &rarr; Mass Assignment &rarr; Numeric Logic &rarr; Deterministic Verification.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <button @click="runAutonomousCampaign()" :disabled="campaignRunning || !campaignTargetUrl"
+              class="px-4 py-2 rounded-lg bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white font-bold text-xs flex items-center space-x-2 shadow-lg transition disabled:opacity-50">
+              <i data-lucide="play" class="w-4 h-4" :class="campaignRunning ? 'animate-spin' : ''"></i>
+              <span x-text="campaignRunning ? 'Executing Autonomous Campaign...' : 'Launch Full Autonomous Campaign'"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Scrollable Content Grid -->
+        <div class="flex-1 overflow-y-auto space-y-4 pr-1 smooth-scroll">
+          <!-- Campaign Config Row -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <!-- Target & Scope Configuration (2 Cols) -->
+            <div class="lg:col-span-2 p-4 rounded-xl bg-[#111827] border border-[#1E293B] space-y-3">
+              <div class="flex items-center justify-between">
+                <div class="text-xs font-bold text-slate-200 flex items-center space-x-2">
+                  <i data-lucide="crosshair" class="w-4 h-4 text-amber-400"></i>
+                  <span>Target Entry Point &amp; Phase Selection</span>
+                </div>
+                <div class="text-[10px] text-slate-400">Auto-crawls internal routes &amp; forms</div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                <div class="sm:col-span-3">
+                  <input type="text" x-model="campaignTargetUrl" placeholder="https://target.com or http://127.0.0.1:8996"
+                    class="w-full bg-[#0B0F17] border border-[#1E293B] rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500">
+                </div>
+                <div>
+                  <input type="number" x-model.number="campaignMaxPages" min="1" max="50" placeholder="Max Pages"
+                    class="w-full bg-[#0B0F17] border border-[#1E293B] rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500">
+                </div>
+              </div>
+
+              <!-- Phase Selector Pills -->
+              <div class="space-y-1.5 pt-1 border-t border-[#1E293B]">
+                <div class="text-[10px] font-bold text-slate-400 uppercase">Active Audit Pipeline Phases:</div>
+                <div class="flex flex-wrap gap-1.5">
+                  <template x-for="mode in ['spider', 'js_mine', 'oast_spray', 'bfla_audit', 'mass_assignment', 'business_logic', 'verify_gate']" :key="mode">
+                    <button @click="toggleCampaignMode(mode)"
+                      :class="campaignModes.includes(mode) ? 'bg-amber-500/20 text-amber-300 border-amber-500/50' : 'bg-slate-900 text-slate-500 border-slate-800'"
+                      class="px-2.5 py-1 rounded text-[10px] font-bold border transition flex items-center space-x-1">
+                      <span x-text="campaignModes.includes(mode) ? '✓' : '+'"></span>
+                      <span x-text="mode.replace('_', ' ').toUpperCase()"></span>
+                    </button>
+                  </template>
+                </div>
+              </div>
+            </div>
+
+            <!-- Zero-Human Session Re-Auth Macro (1 Col) -->
+            <div class="p-4 rounded-xl bg-[#111827] border border-[#1E293B] space-y-3">
+              <div class="flex items-center justify-between">
+                <div class="text-xs font-bold text-slate-200 flex items-center space-x-2">
+                  <i data-lucide="key" class="w-4 h-4 text-sky-400"></i>
+                  <span>Autonomous Auth Macro</span>
+                </div>
+                <button @click="testAuthRecipe()" :disabled="authTesting || !authRecipe.login_url"
+                  class="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-950 text-sky-300 border border-sky-800 hover:bg-sky-900 transition disabled:opacity-50">
+                  <span x-text="authTesting ? 'Testing...' : '⚡ Test Auth'"></span>
+                </button>
+              </div>
+              <p class="text-[11px] text-slate-400">
+                If sessions expire during fuzzing, Proxynth auto-refreshes tokens without human assistance.
+              </p>
+              <input type="text" x-model="authRecipe.login_url" placeholder="Login URL: http://target/api/login"
+                class="w-full bg-[#0B0F17] border border-[#1E293B] rounded px-2.5 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-sky-500">
+              <input type="text" x-model="authRecipe.token_json_path" placeholder="Token JSONPath (e.g. token or data.token)"
+                class="w-full bg-[#0B0F17] border border-[#1E293B] rounded px-2.5 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-sky-500">
+              <textarea x-model="authRecipe.payload" rows="2" placeholder='JSON Credentials: {"username":"admin", "password":"..."}'
+                class="w-full bg-[#0B0F17] border border-[#1E293B] rounded px-2.5 py-1 text-[11px] font-mono text-slate-200 focus:outline-none focus:border-sky-500 resize-none"></textarea>
+              <div class="flex justify-end pt-1">
+                <button @click="saveAuthRecipe()"
+                  class="px-3 py-1 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-200 text-xs font-semibold transition">
+                  Save Auth Macro
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Metrics Telemetry Cards -->
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between">
+              <div>
+                <div class="text-[10px] text-slate-400 uppercase font-semibold">Endpoints Mapped</div>
+                <div class="text-lg font-bold text-sky-300 mt-0.5" x-text="campaignResults?.metrics?.endpoints_mapped || 0"></div>
+              </div>
+              <i data-lucide="compass" class="w-4 h-4 text-sky-400 opacity-60"></i>
+            </div>
+            <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between">
+              <div>
+                <div class="text-[10px] text-slate-400 uppercase font-semibold">Forms Identified</div>
+                <div class="text-lg font-bold text-purple-300 mt-0.5" x-text="campaignResults?.metrics?.forms_identified || 0"></div>
+              </div>
+              <i data-lucide="file-input" class="w-4 h-4 text-purple-400 opacity-60"></i>
+            </div>
+            <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between">
+              <div>
+                <div class="text-[10px] text-slate-400 uppercase font-semibold">Canaries Sprayed</div>
+                <div class="text-lg font-bold text-amber-300 mt-0.5" x-text="campaignResults?.metrics?.canaries_sprayed || 0"></div>
+              </div>
+              <i data-lucide="radio" class="w-4 h-4 text-amber-400 opacity-60"></i>
+            </div>
+            <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between"
+              :class="campaignResults?.metrics?.vulnerabilities_confirmed > 0 ? 'border-rose-500/50 bg-rose-950/20' : ''">
+              <div>
+                <div class="text-[10px] text-slate-400 uppercase font-semibold">Confirmed Exploits</div>
+                <div class="text-lg font-bold mt-0.5"
+                  :class="campaignResults?.metrics?.vulnerabilities_confirmed > 0 ? 'text-rose-400 animate-pulse' : 'text-slate-400'"
+                  x-text="campaignResults?.metrics?.vulnerabilities_confirmed || 0"></div>
+              </div>
+              <i data-lucide="shield-alert" class="w-4 h-4 text-rose-400"></i>
+            </div>
+            <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between">
+              <div>
+                <div class="text-[10px] text-slate-400 uppercase font-semibold">False Positives Filtered</div>
+                <div class="text-lg font-bold text-emerald-400 mt-0.5" x-text="campaignResults?.metrics?.false_positives_filtered || 0"></div>
+              </div>
+              <i data-lucide="filter" class="w-4 h-4 text-emerald-400 opacity-60"></i>
+            </div>
+          </div>
+
+          <!-- Campaign Findings Dossier Table -->
+          <div class="bg-[#111827] border border-[#1E293B] rounded-xl overflow-hidden flex flex-col shadow-xl">
+            <div class="p-3 bg-[#0E1526] border-b border-[#1E293B] flex items-center justify-between">
+              <div class="text-xs font-bold text-slate-200 flex items-center space-x-2">
+                <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+                <span>Autonomous Findings &amp; Proof-of-Concept Ledger</span>
+              </div>
+              <span class="text-[10px] text-slate-400 font-mono"
+                x-text="(campaignResults?.findings_summary?.length || 0) + ' Total Findings'"></span>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead class="bg-[#0B0F17] border-b border-[#1E293B] text-[10px] text-slate-400 uppercase font-bold">
+                  <tr>
+                    <th class="px-3 py-2.5 w-20">Severity</th>
+                    <th class="px-3 py-2.5 min-w-[200px]">Vulnerability Title</th>
+                    <th class="px-3 py-2.5 w-36">Category</th>
+                    <th class="px-3 py-2.5 w-28">Status</th>
+                    <th class="px-3 py-2.5 w-48 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1E293B]/60 font-mono">
+                  <template x-for="f in (campaignResults?.findings_summary || [])" :key="f.id">
+                    <tr class="hover:bg-[#1E293B]/40 transition">
+                      <td class="px-3 py-2.5">
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold"
+                          :class="f.severity === 'CRITICAL' || f.severity === 'HIGH' ? 'bg-rose-950 text-rose-300 border border-rose-800' : 'bg-amber-950 text-amber-300 border border-amber-800'"
+                          x-text="f.severity"></span>
+                      </td>
+                      <td class="px-3 py-2.5 font-bold text-slate-200" x-text="f.title"></td>
+                      <td class="px-3 py-2.5 text-slate-400 text-[11px]" x-text="f.category"></td>
+                      <td class="px-3 py-2.5">
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold"
+                          :class="f.flag_status === 'CONFIRMED' ? 'bg-rose-950/80 text-rose-400 border border-rose-700' : 'bg-slate-900 text-slate-400'"
+                          x-text="f.flag_status"></span>
+                      </td>
+                      <td class="px-3 py-2.5 text-right space-x-1.5">
+                        <button @click="generateFindingDossier(f.id)"
+                          class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-800 hover:bg-rose-900 transition">
+                          PoC
+                        </button>
+                        <button @click="openNucleiFromFinding(f.id)"
+                          class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-950 text-purple-300 border border-purple-800 hover:bg-purple-900 transition">
+                          Nuclei
+                        </button>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+
+              <!-- Empty State -->
+              <div x-show="!campaignResults || !campaignResults.findings_summary || campaignResults.findings_summary.length === 0"
+                class="py-12 text-center text-slate-500 space-y-2">
+                <i data-lucide="bot" class="w-10 h-10 mx-auto text-slate-600"></i>
+                <div class="text-xs font-semibold text-slate-400">No Autonomous Campaign Executed Yet</div>
+                <p class="text-[11px] max-w-sm mx-auto text-slate-500">
+                  Enter a target URL above and click "Launch Full Autonomous Campaign" to initiate the zero-human testing loop.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW: INTERACTIVE OPENAPI 3.0 SANDBOX EXPLORER -->
+      <div x-show="currentAppTab === 'openapi_explorer'" class="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden bg-[#0B0F17] font-mono">
+        <!-- Top Toolbar -->
+        <div class="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#1E293B] pb-4 shrink-0">
+          <div>
+            <div class="flex items-center space-x-2.5">
+              <div class="p-2 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-400">
+                <i data-lucide="file-code" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h1 class="text-sm font-bold text-slate-100 flex items-center space-x-2">
+                  <span>OpenAPI 3.0.3 Explorer &amp; Live Execution Sandbox</span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-950 text-purple-300 border border-purple-800"
+                    x-text="openApiEndpointsCount + ' Endpoints'"></span>
+                </h1>
+                <p class="text-[11px] text-slate-400">
+                  Interactive API documentation and live execution workbench auto-synthesized from observed traffic.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <button @click="fetchOpenApiExplorer()"
+              class="px-3 py-1.5 rounded-lg bg-[#1E293B] hover:bg-[#334155] text-slate-300 flex items-center space-x-1.5 text-xs transition">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5" :class="openApiLoading ? 'animate-spin' : ''"></i>
+              <span>Refresh Spec</span>
+            </button>
+            <button @click="exportOpenAPI()"
+              class="px-3 py-1.5 rounded-lg bg-purple-950 hover:bg-purple-900 border border-purple-700/80 text-purple-200 flex items-center space-x-1.5 text-xs font-semibold shadow transition">
+              <i data-lucide="download" class="w-3.5 h-3.5 text-purple-400"></i>
+              <span>Download OpenAPI Spec</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Two-Column Responsive Split Layout -->
+        <div class="flex-1 min-h-0 flex flex-col lg:flex-row border border-[#1E293B] rounded-xl overflow-hidden bg-[#111827]">
+          <!-- Left Column: Endpoint Tree Explorer -->
+          <div class="w-full lg:w-80 shrink-0 border-b lg:border-b-0 lg:border-r border-[#1E293B] bg-[#0E1526] flex flex-col min-h-0">
+            <!-- Filter Search -->
+            <div class="p-3 border-b border-[#1E293B]">
+              <input type="text" x-model="openApiFilterText" placeholder="Filter paths & methods..."
+                class="w-full bg-[#0B0F17] border border-[#1E293B] rounded px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-purple-500">
+            </div>
+
+            <!-- Endpoint List -->
+            <div class="flex-1 overflow-y-auto p-2 space-y-1.5 smooth-scroll">
+              <template x-for="item in getFilteredOpenApiEndpoints()" :key="item.method + ':' + item.path">
+                <button @click="selectOpenApiOperation(item.path, item.method, item.op)"
+                  class="w-full text-left p-2.5 rounded-lg border text-xs transition flex items-center justify-between"
+                  :class="openApiSelectedOp && openApiSelectedOp.path === item.path && openApiSelectedOp.method === item.method ? 'bg-purple-950/60 border-purple-500 text-purple-100 shadow' : 'bg-[#111827] border-[#1E293B]/70 text-slate-300 hover:bg-[#1E293B]'">
+                  <div class="flex items-center space-x-2 truncate">
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold"
+                      :class="item.method === 'GET' ? 'bg-sky-950 text-sky-400 border border-sky-800' : (item.method === 'POST' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : (item.method === 'DELETE' ? 'bg-rose-950 text-rose-400 border border-rose-800' : 'bg-amber-950 text-amber-400 border border-amber-800'))"
+                      x-text="item.method"></span>
+                    <span class="truncate font-mono" x-text="item.path"></span>
+                  </div>
+                  <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-500 shrink-0"></i>
+                </button>
+              </template>
+
+              <div x-show="getFilteredOpenApiEndpoints().length === 0" class="p-6 text-center text-slate-500 text-xs">
+                No endpoints match filter.
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Interactive Execution Sandbox -->
+          <div class="flex-1 flex flex-col min-h-0 bg-[#0B0F17] overflow-y-auto p-4 sm:p-6 smooth-scroll">
+            <template x-if="openApiSelectedOp">
+              <div class="space-y-5">
+                <!-- Endpoint Header -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1E293B] pb-4">
+                  <div class="flex items-center space-x-2.5">
+                    <span class="px-2 py-1 rounded text-xs font-bold"
+                      :class="openApiSelectedOp.method === 'GET' ? 'bg-sky-950 text-sky-400 border border-sky-800' : (openApiSelectedOp.method === 'POST' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-amber-950 text-amber-400 border border-amber-800')"
+                      x-text="openApiSelectedOp.method"></span>
+                    <span class="text-sm font-bold text-slate-100 font-mono" x-text="openApiSelectedOp.path"></span>
+                  </div>
+
+                  <div class="flex items-center space-x-2">
+                    <button @click="copyOpenApiAsCurl()"
+                      class="px-2.5 py-1 rounded bg-[#1E293B] hover:bg-[#334155] text-slate-300 text-[11px] flex items-center space-x-1 transition">
+                      <i data-lucide="copy" class="w-3 h-3"></i>
+                      <span>cURL</span>
+                    </button>
+                    <button @click="executeOpenApiSandbox()" :disabled="openApiSandboxRunning"
+                      class="px-4 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center space-x-1.5 shadow transition disabled:opacity-50">
+                      <i data-lucide="play" class="w-3.5 h-3.5" :class="openApiSandboxRunning ? 'animate-spin' : ''"></i>
+                      <span x-text="openApiSandboxRunning ? 'Executing...' : 'Try It Out / Send Request'"></span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Parameters Table (if parameters exist) -->
+                <div x-show="openApiSelectedOp.operation.parameters && openApiSelectedOp.operation.parameters.length > 0" class="space-y-2">
+                  <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider">Parameters</h3>
+                  <div class="border border-[#1E293B] rounded-lg overflow-hidden bg-[#111827]">
+                    <table class="w-full text-left text-xs">
+                      <thead class="bg-[#0E1526] text-slate-400 font-semibold text-[10px] uppercase border-b border-[#1E293B]">
+                        <tr>
+                          <th class="px-3 py-2">Name</th>
+                          <th class="px-3 py-2">Location</th>
+                          <th class="px-3 py-2">Type</th>
+                          <th class="px-3 py-2">Value</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-[#1E293B]">
+                        <template x-for="p in openApiSelectedOp.operation.parameters" :key="p.name">
+                          <tr class="hover:bg-[#1E293B]/40">
+                            <td class="px-3 py-2 font-bold text-slate-200" x-text="p.name"></td>
+                            <td class="px-3 py-2 text-slate-400 uppercase text-[10px]" x-text="p.in"></td>
+                            <td class="px-3 py-2 text-slate-400 text-[10px]" x-text="p.schema ? p.schema.type : 'string'"></td>
+                            <td class="px-3 py-2">
+                              <input type="text" x-model="openApiSandboxParams[p.name]" :placeholder="p.example || ''"
+                                class="w-full bg-[#0B0F17] border border-[#1E293B] rounded px-2.5 py-1 text-xs text-sky-300 font-mono focus:border-purple-500">
+                            </td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- Request Body (for POST/PUT) -->
+                <div x-show="['POST', 'PUT', 'PATCH'].includes(openApiSelectedOp.method)" class="space-y-2">
+                  <div class="flex items-center justify-between">
+                    <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider">Request Body (JSON)</h3>
+                    <button @click="formatOpenApiSandboxBody()" class="text-[10px] text-purple-400 hover:text-purple-300">Format JSON</button>
+                  </div>
+                  <textarea x-model="openApiSandboxBody" rows="6" placeholder="{}"
+                    class="w-full bg-[#111827] border border-[#1E293B] rounded-lg p-3 text-xs text-emerald-300 font-mono focus:border-purple-500"></textarea>
+                </div>
+
+                <!-- Live Response Pane -->
+                <div x-show="openApiSandboxResponse" class="space-y-3 pt-4 border-t border-[#1E293B]">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                      <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider">Live Response</h3>
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold"
+                        :class="openApiSandboxResponse && openApiSandboxResponse.status_code >= 200 && openApiSandboxResponse.status_code < 300 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'"
+                        x-text="openApiSandboxResponse ? 'HTTP ' + openApiSandboxResponse.status_code : ''"></span>
+                      <span class="text-[11px] text-slate-400 font-mono"
+                        x-text="openApiSandboxResponse ? openApiSandboxResponse.duration_ms + ' ms' : ''"></span>
+                    </div>
+
+                    <button @click="copyText(openApiSandboxResponse ? openApiSandboxResponse.body : '')"
+                      class="px-2 py-0.5 rounded bg-[#1E293B] hover:bg-[#334155] text-slate-300 text-[10px] flex items-center space-x-1">
+                      <i data-lucide="copy" class="w-3 h-3"></i>
+                      <span>Copy Body</span>
+                    </button>
+                  </div>
+
+                  <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-lg max-h-80 overflow-auto font-mono text-xs text-sky-300 whitespace-pre-wrap select-text"
+                    x-text="openApiSandboxResponse ? openApiSandboxResponse.body : ''"></div>
+                </div>
+              </div>
+            </template>
+
+            <!-- Placeholder if no op selected -->
+            <div x-show="!openApiSelectedOp" class="py-24 text-center text-slate-500 space-y-3">
+              <i data-lucide="play-circle" class="w-12 h-12 mx-auto text-slate-600"></i>
+              <div class="text-sm font-semibold text-slate-400">Select an Endpoint to Test</div>
+              <p class="text-xs text-slate-500 max-w-sm mx-auto">
+                Choose any reverse-engineered endpoint from the left explorer tree to inspect parameters and run live sandbox requests.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+      
       <!-- BOTTOM HUD STATUS BAR (PERSISTENT & CRISP) -->
       <footer class="h-7 bg-[#0B0F17] border-t border-[#1E293B] px-3 flex items-center justify-between shrink-0 font-mono text-[10px] text-slate-400 z-20 select-none">
         <!-- Left Status Items -->
@@ -4059,6 +4759,156 @@
       </footer>
 
   </div> <!-- End Main App Container -->
+
+  <!-- NUCLEI V3 EXPLOIT & REGRESSION TEMPLATE MODAL -->
+  <div x-show="showNucleiModal" x-cloak
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 font-mono">
+    <div @click.away="showNucleiModal = false"
+      class="w-full max-w-3xl bg-[#111827] border border-[#1E293B] rounded-2xl p-6 space-y-4 shadow-2xl flex flex-col max-h-[90vh]">
+      <!-- Header -->
+      <div class="flex items-center justify-between border-b border-[#1E293B] pb-3 shrink-0">
+        <div class="flex items-center space-x-2.5">
+          <div class="p-2 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-400">
+            <i data-lucide="zap" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-slate-100 flex items-center space-x-2">
+              <span>Nuclei v3 Exploit Template Generator</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
+                :class="nucleiData.severity === 'critical' ? 'bg-rose-950 text-rose-300 border border-rose-800' : (nucleiData.severity === 'high' ? 'bg-orange-950 text-orange-300 border border-orange-800' : 'bg-purple-950 text-purple-300 border border-purple-800')"
+                x-text="nucleiData.severity || 'INFO'"></span>
+            </h3>
+            <p class="text-[11px] text-slate-400" x-text="nucleiData.name || 'Automated DAST Regression Probe'"></p>
+          </div>
+        </div>
+        <button @click="showNucleiModal = false" class="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Code Preview Block -->
+      <div class="flex-1 min-h-0 bg-[#0B0F17] border border-[#1E293B] rounded-xl p-4 overflow-auto smooth-scroll">
+        <div x-show="nucleiLoading" class="py-12 text-center text-slate-500 space-y-2">
+          <i data-lucide="refresh-cw" class="w-6 h-6 animate-spin mx-auto text-purple-400"></i>
+          <div>Synthesizing Nuclei v3 YAML Probe...</div>
+        </div>
+        <pre x-show="!nucleiLoading" class="text-xs text-sky-300 font-mono whitespace-pre select-text"><code x-text="nucleiData.yaml"></code></pre>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="flex items-center justify-between pt-2 border-t border-[#1E293B] shrink-0">
+        <span class="text-[11px] text-slate-400" x-text="'File: ' + (nucleiData.filename || 'nuclei-template.yaml')"></span>
+        <div class="flex items-center space-x-2">
+          <button @click="copyNucleiYaml()"
+            class="px-3.5 py-1.5 rounded-lg bg-[#1E293B] hover:bg-[#334155] text-slate-200 text-xs font-semibold flex items-center space-x-1.5 transition">
+            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+            <span x-text="nucleiCopied ? 'Copied YAML!' : 'Copy Template'"></span>
+          </button>
+          <button @click="downloadNucleiYaml()"
+            class="px-4 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center space-x-1.5 shadow transition">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span>Download .yaml</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROOT CA CERTIFICATE & OS TRUST WIZARD MODAL -->
+  <div x-show="showCaModal" x-cloak
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 font-mono">
+    <div @click.away="showCaModal = false"
+      class="w-full max-w-2xl bg-[#111827] border border-[#1E293B] rounded-2xl p-6 space-y-4 shadow-2xl">
+      <!-- Header -->
+      <div class="flex items-center justify-between border-b border-[#1E293B] pb-3">
+        <div class="flex items-center space-x-2.5">
+          <div class="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+            <i data-lucide="shield-check" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-slate-100 flex items-center space-x-2">
+              <span>Root CA Certificate Installation Wizard</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">ACTIVE</span>
+            </h3>
+            <p class="text-[11px] text-slate-400">Trust the Proxsynth Root CA to decrypt and inspect HTTPS TLS traffic seamlessly.</p>
+          </div>
+        </div>
+        <button @click="showCaModal = false" class="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Fingerprint & Metadata Card -->
+      <div class="p-4 bg-[#0B0F17] border border-[#1E293B] rounded-xl space-y-2 text-xs">
+        <div class="flex items-center justify-between">
+          <span class="text-slate-400">Common Name (CN):</span>
+          <span class="text-slate-200 font-bold" x-text="caMetadata.common_name || 'Proxsynth Forward Proxy CA'"></span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-slate-400">SHA-256 Fingerprint:</span>
+          <span class="text-emerald-400 font-mono text-[10px] break-all select-text" x-text="caMetadata.sha256 || 'Checking...'"></span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-slate-400">Valid Until:</span>
+          <span class="text-slate-300 text-[11px]" x-text="caMetadata.not_after ? caMetadata.not_after.split('T')[0] : '2036-10-10'"></span>
+        </div>
+      </div>
+
+      <!-- Action 1: Download Cert -->
+      <div class="flex items-center justify-between p-3.5 bg-emerald-950/20 border border-emerald-500/30 rounded-xl">
+        <div>
+          <div class="text-xs font-bold text-emerald-300">Step 1: Download Certificate</div>
+          <div class="text-[11px] text-slate-400">Save proxsynth-ca.crt directly to your local file system.</div>
+        </div>
+        <a href="/api/ca/download" download="proxsynth-ca.crt"
+          class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center space-x-1.5 shadow transition">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i>
+          <span>Download CA (.crt)</span>
+        </a>
+      </div>
+
+      <!-- Action 2: Trust Store Commands -->
+      <div class="space-y-2">
+        <div class="text-xs font-bold text-slate-300">Step 2: Trust Certificate in Operating System</div>
+        
+        <!-- OS Tabs -->
+        <div class="flex border-b border-[#1E293B] text-xs">
+          <button @click="caActiveTab = 'windows'"
+            class="px-3 py-1.5 border-b-2 font-semibold transition"
+            :class="caActiveTab === 'windows' ? 'border-sky-400 text-sky-400' : 'border-transparent text-slate-400 hover:text-slate-200'">
+            Windows (PowerShell)
+          </button>
+          <button @click="caActiveTab = 'debian'"
+            class="px-3 py-1.5 border-b-2 font-semibold transition"
+            :class="caActiveTab === 'debian' ? 'border-sky-400 text-sky-400' : 'border-transparent text-slate-400 hover:text-slate-200'">
+            Linux (Debian/Ubuntu)
+          </button>
+          <button @click="caActiveTab = 'macos'"
+            class="px-3 py-1.5 border-b-2 font-semibold transition"
+            :class="caActiveTab === 'macos' ? 'border-sky-400 text-sky-400' : 'border-transparent text-slate-400 hover:text-slate-200'">
+            macOS (Keychain)
+          </button>
+          <button @click="caActiveTab = 'cli'"
+            class="px-3 py-1.5 border-b-2 font-semibold transition"
+            :class="caActiveTab === 'cli' ? 'border-sky-400 text-sky-400' : 'border-transparent text-slate-400 hover:text-slate-200'">
+            CLI / Dev Tools
+          </button>
+        </div>
+
+        <!-- Tab Content -->
+        <div class="p-3 bg-[#0B0F17] border border-[#1E293B] rounded-xl flex items-center justify-between space-x-2">
+          <code class="text-xs text-sky-300 font-mono break-all select-text"
+            x-text="caActiveTab === 'windows' ? (caScripts.windows_powershell || 'certutil -addstore -f "Root" proxsynth-ca.crt') : (caActiveTab === 'debian' ? (caScripts.linux_debian || 'sudo cp proxsynth-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates') : (caActiveTab === 'macos' ? (caScripts.macos || 'sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain proxsynth-ca.crt') : (caScripts.python_env || 'export SSL_CERT_FILE=proxsynth-ca.crt')))"></code>
+
+          <button @click="copyCaCommand(caActiveTab === 'windows' ? (caScripts.windows_powershell || 'certutil -addstore -f "Root" proxsynth-ca.crt') : (caActiveTab === 'debian' ? (caScripts.linux_debian || 'sudo cp proxsynth-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates') : (caActiveTab === 'macos' ? (caScripts.macos || 'sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain proxsynth-ca.crt') : (caScripts.python_env || 'export SSL_CERT_FILE=proxsynth-ca.crt'))))"
+            class="px-2.5 py-1 rounded bg-[#1E293B] hover:bg-[#334155] text-slate-300 text-xs shrink-0 flex items-center space-x-1 transition">
+            <i data-lucide="copy" class="w-3 h-3"></i>
+            <span x-text="caCopied ? 'Copied!' : 'Copy'"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ADD ASSET MODAL -->
   <div x-show="showAddAssetModal"
@@ -5307,6 +6157,13 @@
         <span class="text-sky-400 font-bold" x-text="contextMenuLog ? '#' + contextMenuLog.id : ''"></span>
       </div>
 
+      <button @click="openNucleiFromLog(contextMenuLog.id)" class="w-full text-left px-3 py-1.5 hover:bg-[#1E293B] flex items-center justify-between text-slate-200 hover:text-purple-300 transition">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="zap" class="w-3.5 h-3.5 text-purple-400"></i>
+          <span>Generate Nuclei Template</span>
+        </div>
+        <span class="text-[10px] text-purple-400 font-mono">YAML</span>
+      </button>
       <button @click="sendToRepeaterFromLog(contextMenuLog)" class="w-full text-left px-3 py-1.5 hover:bg-[#1E293B] flex items-center justify-between text-slate-200 hover:text-sky-300 transition">
         <span class="flex items-center space-x-2">
           <i data-lucide="repeat" class="w-3.5 h-3.5 text-amber-400"></i>
@@ -5515,7 +6372,10 @@
               attack_surface: 'Attack Surface Graph',
               oast: 'OAST Callbacks Engine',
               hypotheses: 'Hypothesis Ledger',
-              ci_audit: 'Security Audit & CI/CD'
+              ci_audit: 'Security Audit & CI/CD',
+              bola_matrix: 'BOLA / IDOR Access Matrix',
+              openapi_explorer: 'OpenAPI 3.0 Sandbox Explorer',
+              campaign: 'Autonomous Security Campaign'
             };
             return map[this.currentAppTab] || 'Dashboard';
           },
@@ -5527,9 +6387,12 @@
               fuzzer: 'CORE TRAFFIC',
               rules: 'CORE TRAFFIC',
               attack_surface: 'INTELLIGENCE & AI',
+              campaign: 'INTELLIGENCE & AI',
               ai_activity: 'INTELLIGENCE & AI',
               hypotheses: 'INTELLIGENCE & AI',
               ci_audit: 'AUDIT & VALIDATION',
+              bola_matrix: 'AUDIT & VALIDATION',
+              openapi_explorer: 'INTELLIGENCE & AI',
               oast: 'AUDIT & VALIDATION',
               scope: 'GATEWAY & GUARDRAILS'
             };
@@ -5547,6 +6410,8 @@
             if (this.currentAppTab === 'oast') return `${(this.oastEvents ? this.oastEvents.length : 0)} Out-of-Band Callbacks Logged`;
             if (this.currentAppTab === 'hypotheses') return `${(this.hypothesesList ? this.hypothesesList.length : 0)} Tracked Attack Hypotheses & Agenda`;
             if (this.currentAppTab === 'ci_audit') return `Automated Security Baseline & Compliance Evaluation`;
+            if (this.currentAppTab === 'bola_matrix') return `${(this.bolaMatrixData && this.bolaMatrixData.candidates ? this.bolaMatrixData.candidates.length : 0)} Candidate Endpoints Cross-Tabulated`;
+            if (this.currentAppTab === 'openapi_explorer') return `${(this.openApiEndpointsCount || 0)} Reverse-Engineered Endpoints Available for Testing`;
             return '';
           },
           logs: [],
@@ -8655,7 +9520,625 @@
             } finally {
               this.isTogglingTunnel = false;
             }
+          },
+          // ==========================================
+          // BOLA / IDOR INTERACTIVE ACCESS MATRIX
+          // ==========================================
+          bolaMatrixData: { project: 'default', roles: [], total_candidates: 0, vulnerabilities_detected: 0, candidates: [] },
+          bolaScanning: false,
+          bolaFilterText: '',
+          bflaScanning: false,
+          campaignTargetUrl: '',
+          campaignMaxPages: 15,
+          campaignModes: ['spider', 'js_mine', 'oast_spray', 'bfla_audit', 'mass_assignment', 'business_logic', 'verify_gate'],
+          campaignRunning: false,
+          campaignResults: null,
+          authRecipe: { login_url: '', method: 'POST', payload: '{\n  "username": "admin",\n  "password": "admin123"\n}', token_json_path: 'token', cookie_names: 'session, token' },
+          authTesting: false,
+
+          toggleCampaignMode(mode) {
+            if (this.campaignModes.includes(mode)) {
+              this.campaignModes = this.campaignModes.filter(m => m !== mode);
+            } else {
+              this.campaignModes.push(mode);
+            }
+          },
+
+          async fetchCampaignData() {
+            if (!this.campaignTargetUrl && this.selectedProject) {
+              const p = this.selectedProject;
+              if (p !== 'ALL' && p !== 'default' && p.includes('.')) {
+                this.campaignTargetUrl = (p.startsWith('http') ? '' : 'https://') + p;
+              }
+            }
+            try {
+              const res = await fetch('/api/auth/recipe?project=' + encodeURIComponent(this.selectedProject || 'default'));
+              if (res.ok) {
+                const data = await res.json();
+                if (data.recipe) {
+                  this.authRecipe.login_url = data.recipe.login_url || '';
+                  this.authRecipe.method = data.recipe.method || 'POST';
+                  this.authRecipe.token_json_path = data.recipe.token_json_path || 'token';
+                  if (data.recipe.payload && Object.keys(data.recipe.payload).length > 0) {
+                    this.authRecipe.payload = JSON.stringify(data.recipe.payload, null, 2);
+                  }
+                }
+              }
+            } catch (e) { }
+            this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+          },
+
+          async saveAuthRecipe() {
+            try {
+              let parsedPayload = {};
+              try { parsedPayload = JSON.parse(this.authRecipe.payload || '{}'); } catch(e) { }
+              const res = await fetch('/api/auth/recipe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  project: this.selectedProject || 'default',
+                  login_url: this.authRecipe.login_url,
+                  method: this.authRecipe.method,
+                  payload: parsedPayload,
+                  token_json_path: this.authRecipe.token_json_path
+                })
+              });
+              if (res.ok) {
+                this.showToast({ title: 'Auth Recipe Saved', message: 'Autonomous session keeper updated for this project.', type: 'success' });
+              }
+            } catch (e) {
+              this.showToast({ title: 'Save Failed', message: e.message, type: 'error' });
+            }
+          },
+
+          async testAuthRecipe() {
+            this.authTesting = true;
+            try {
+              await this.saveAuthRecipe();
+              const res = await fetch('/api/auth/execute?project=' + encodeURIComponent(this.selectedProject || 'default'), { method: 'POST' });
+              const data = await res.json();
+              if (res.ok && data.status === 'success') {
+                this.showToast({ title: 'Auth Test Successful', message: data.message, type: 'success' });
+              } else {
+                this.showToast({ title: 'Auth Test Notice', message: data.message || 'Execution failed', type: 'warning' });
+              }
+            } catch (e) {
+              this.showToast({ title: 'Auth Test Error', message: e.message, type: 'error' });
+            } finally {
+              this.authTesting = false;
+            }
+          },
+
+          async runAutonomousCampaign() {
+            if (!this.campaignTargetUrl) {
+              this.showToast({ title: 'Validation Error', message: 'Target entry point URL is required.', type: 'warning' });
+              return;
+            }
+            this.campaignRunning = true;
+            try {
+              const res = await fetch('/api/campaign/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  target_url: this.campaignTargetUrl,
+                  modes: this.campaignModes,
+                  project: this.selectedProject || 'default',
+                  max_pages: this.campaignMaxPages || 15,
+                  deep_verify: true
+                })
+              });
+              if (res.ok) {
+                this.campaignResults = await res.json();
+                const confirmed = this.campaignResults?.metrics?.vulnerabilities_confirmed || 0;
+                this.showToast({
+                  title: confirmed > 0 ? '🚨 Campaign Finished: Exploits Confirmed!' : '✅ Autonomous Campaign Complete',
+                  message: `Mapped ${this.campaignResults?.metrics?.endpoints_mapped || 0} endpoints. Discovered ${confirmed} verified vulnerability finding(s).`,
+                  type: confirmed > 0 ? 'error' : 'success'
+                });
+                await this.fetchLogs();
+                await this.fetchStats();
+              } else {
+                const err = await res.text();
+                this.showToast({ title: 'Campaign Error', message: 'API returned error: ' + err, type: 'error' });
+              }
+            } catch (e) {
+              this.showToast({ title: 'Campaign Error', message: e.message, type: 'error' });
+            } finally {
+              this.campaignRunning = false;
+              this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+            }
+          },
+          bflaAuditing: false,
+          massAuditing: false,
+          logicAuditing: false,
+
+          fetchLogDetail(id) {
+            return this.selectLog(id);
+          },
+
+          async runBflaAudit(url, method, logId) {
+            if (!url && this.selectedLogDetail) {
+              url = this.selectedLogDetail.url;
+              method = this.selectedLogDetail.method;
+              logId = this.selectedLogDetail.id;
+            }
+            if (!url) {
+              this.showToast({ title: 'Validation Error', message: 'Target URL is required for BFLA audit.', type: 'warning' });
+              return;
+            }
+            this.bflaAuditing = true;
+            try {
+              const res = await fetch('/api/audit/bfla', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  url: url,
+                  method: method || 'GET',
+                  project: this.selectedProject || 'default',
+                  log_id: logId || null
+                })
+              });
+              const data = await res.json();
+              if (res.ok && data.status === 'completed') {
+                const count = data.findings_count || (data.findings ? data.findings.length : 0);
+                this.showToast({
+                  title: count > 0 ? '⚠️ BFLA Flaw Detected' : '✅ BFLA Audit Clean',
+                  message: count > 0
+                    ? `Identified ${count} Broken Function Level Authorization flaw(s). Tests executed: ${data.tests_executed_count}.`
+                    : `Completed ${data.tests_executed_count} method and verb-tunneling tests with no unauthorized access.`,
+                  type: count > 0 ? 'error' : 'success'
+                });
+                if (logId) {
+                  await this.selectLog(logId);
+                }
+              } else {
+                this.showToast({ title: 'Audit Notice', message: data.message || 'BFLA probe completed.', type: 'info' });
+              }
+            } catch (e) {
+              this.showToast({ title: 'Audit Error', message: 'BFLA probe error: ' + e.message, type: 'error' });
+            } finally {
+              this.bflaAuditing = false;
+              this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+            }
+          },
+
+          async runBflaBatchScan() {
+            const candidates = (this.bolaMatrixData && this.bolaMatrixData.candidates) ? this.bolaMatrixData.candidates : [];
+            if (candidates.length === 0) {
+              this.showToast({ title: 'No Candidates', message: 'No candidate endpoints available in BOLA matrix to audit.', type: 'warning' });
+              return;
+            }
+            this.bflaScanning = true;
+            let totalFindings = 0;
+            let totalTests = 0;
+            try {
+              const targets = candidates.slice(0, 5);
+              for (const cand of targets) {
+                const res = await fetch('/api/audit/bfla', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    url: cand.url,
+                    method: cand.method,
+                    project: this.selectedProject || 'default',
+                    log_id: cand.log_id
+                  })
+                });
+                if (res.ok) {
+                  const d = await res.json();
+                  totalFindings += d.findings_count || 0;
+                  totalTests += d.tests_executed_count || 0;
+                }
+              }
+              this.showToast({
+                title: totalFindings > 0 ? '⚠️ BFLA Vulnerabilities Found' : '✅ Batch BFLA Audit Complete',
+                message: `Audited ${targets.length} endpoints (${totalTests} method probes). Discovered ${totalFindings} permission flaw(s).`,
+                type: totalFindings > 0 ? 'error' : 'success'
+              });
+              await this.fetchBolaMatrix();
+            } catch (e) {
+              this.showToast({ title: 'Batch Audit Error', message: e.message, type: 'error' });
+            } finally {
+              this.bflaScanning = false;
+              this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+            }
+          },
+
+          async runMassAssignmentAudit(logId) {
+            const id = logId || (this.selectedLogDetail ? this.selectedLogDetail.id : null);
+            if (!id) {
+              this.showToast({ title: 'Select Request', message: 'Select an HTTP request log to test for mass assignment.', type: 'warning' });
+              return;
+            }
+            this.massAuditing = true;
+            try {
+              const res = await fetch('/api/audit/mass-assignment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  log_id: id,
+                  project: this.selectedProject || 'default'
+                })
+              });
+              const data = await res.json();
+              if (res.ok && data.status === 'completed') {
+                const count = data.findings_count || 0;
+                this.showToast({
+                  title: count > 0 ? '🚨 Mass Assignment Detected!' : '✅ Mass Assignment Clean',
+                  message: count > 0
+                    ? `Injected privileged attributes accepted! Found ${count} parameter binding issue(s).`
+                    : `Tested privileged attribute injection across parameters. No over-posting accepted.`,
+                  type: count > 0 ? 'error' : 'success'
+                });
+                await this.selectLog(id);
+              } else {
+                this.showToast({ title: 'Notice', message: data.message || 'Mass assignment scan finished.', type: 'info' });
+              }
+            } catch (e) {
+              this.showToast({ title: 'Audit Error', message: 'Mass assignment error: ' + e.message, type: 'error' });
+            } finally {
+              this.massAuditing = false;
+              this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+            }
+          },
+
+          async runBusinessLogicAudit(logId, targetParam) {
+            const id = logId || (this.selectedLogDetail ? this.selectedLogDetail.id : null);
+            if (!id) {
+              this.showToast({ title: 'Select Request', message: 'Select an HTTP request log to audit business logic.', type: 'warning' });
+              return;
+            }
+            this.logicAuditing = true;
+            try {
+              const res = await fetch('/api/audit/business-logic', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  log_id: id,
+                  target_param: targetParam || null,
+                  project: this.selectedProject || 'default'
+                })
+              });
+              const data = await res.json();
+              if (res.ok && data.status === 'completed') {
+                const count = data.findings_count || 0;
+                this.showToast({
+                  title: count > 0 ? '⚠️ Business Logic Flaw Detected!' : '✅ Numeric Logic Clean',
+                  message: count > 0
+                    ? `Identified ${count} numeric boundary / zero-cost flaw(s) across tested vectors.`
+                    : `Executed ${data.vectors_tested_count || 0} numeric boundary tests without bypass.`,
+                  type: count > 0 ? 'error' : 'success'
+                });
+                await this.selectLog(id);
+              } else {
+                this.showToast({ title: 'Notice', message: data.message || 'Logic fuzzer finished.', type: 'info' });
+              }
+            } catch (e) {
+              this.showToast({ title: 'Audit Error', message: 'Business logic probe error: ' + e.message, type: 'error' });
+            } finally {
+              this.logicAuditing = false;
+              this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+            }
+          },
+
+          async fetchBolaMatrix() {
+            try {
+              const res = await fetch('/api/bola/matrix?project=' + encodeURIComponent(this.selectedProject || 'default'));
+              if (res.ok) {
+                this.bolaMatrixData = await res.json();
+                this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+              }
+            } catch (e) {
+              console.error('Failed to fetch BOLA matrix:', e);
+            }
+          },
+
+          async runBolaMatrixScan() {
+            this.bolaScanning = true;
+            try {
+              const res = await fetch('/api/bola/scan-matrix', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project: this.selectedProject || 'default' })
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (data.matrix) {
+                  this.bolaMatrixData = data.matrix;
+                } else {
+                  await this.fetchBolaMatrix();
+                }
+              }
+            } catch (e) {
+              alert('BOLA scan failed: ' + e.message);
+            } finally {
+              this.bolaScanning = false;
+              this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+            }
+          },
+
+          getFilteredBolaCandidates() {
+            if (!this.bolaMatrixData || !this.bolaMatrixData.candidates) return [];
+            if (!this.bolaFilterText) return this.bolaMatrixData.candidates;
+            const q = this.bolaFilterText.toLowerCase();
+            return this.bolaMatrixData.candidates.filter(c =>
+              (c.path && c.path.toLowerCase().includes(q)) ||
+              (c.method && c.method.toLowerCase().includes(q)) ||
+              (c.resource_id && c.resource_id.toLowerCase().includes(q)) ||
+              (c.url && c.url.toLowerCase().includes(q))
+            );
+          },
+
+          // ==========================================
+          // NUCLEI V3 EXPLOIT TEMPLATE GENERATOR
+          // ==========================================
+          showNucleiModal: false,
+          nucleiLoading: false,
+          nucleiCopied: false,
+          nucleiData: { id: '', filename: '', yaml: '', name: '', severity: '' },
+
+          async openNucleiFromFinding(findingId) {
+            this.showNucleiModal = true;
+            this.nucleiLoading = true;
+            this.nucleiCopied = false;
+            try {
+              const res = await fetch('/api/findings/' + findingId + '/nuclei');
+              if (res.ok) {
+                this.nucleiData = await res.json();
+              } else {
+                alert('Failed to generate template for finding #' + findingId);
+                this.showNucleiModal = false;
+              }
+            } catch (e) {
+              alert('Nuclei generation error: ' + e.message);
+              this.showNucleiModal = false;
+            } finally {
+              this.nucleiLoading = false;
+              this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+            }
+          },
+
+          async openNucleiFromLog(logId) {
+            if (!logId) return;
+            this.showNucleiModal = true;
+            this.nucleiLoading = true;
+            this.nucleiCopied = false;
+            try {
+              const res = await fetch('/api/nuclei/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ log_id: logId, severity: 'medium' })
+              });
+              if (res.ok) {
+                this.nucleiData = await res.json();
+              } else {
+                alert('Failed to generate template for log #' + logId);
+                this.showNucleiModal = false;
+              }
+            } catch (e) {
+              alert('Nuclei generation error: ' + e.message);
+              this.showNucleiModal = false;
+            } finally {
+              this.nucleiLoading = false;
+              this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+            }
+          },
+
+          copyNucleiYaml() {
+            if (!this.nucleiData || !this.nucleiData.yaml) return;
+            navigator.clipboard.writeText(this.nucleiData.yaml);
+            this.nucleiCopied = true;
+            setTimeout(() => { this.nucleiCopied = false; }, 2000);
+          },
+
+          downloadNucleiYaml() {
+            if (!this.nucleiData || !this.nucleiData.yaml) return;
+            const blob = new Blob([this.nucleiData.yaml], { type: 'text/yaml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = this.nucleiData.filename || 'nuclei-template.yaml';
+            a.click();
+            URL.revokeObjectURL(url);
+          },
+
+          // ==========================================
+          // ROOT CA CERTIFICATE WIZARD
+          // ==========================================
+          showCaModal: false,
+          caActiveTab: 'windows',
+          caMetadata: { exists: false, sha256: '', common_name: '', not_after: '' },
+          caScripts: {},
+          caCopied: false,
+
+          async openCaWizard() {
+            this.showCaModal = true;
+            this.caCopied = false;
+            try {
+              const res = await fetch('/api/ca/info');
+              if (res.ok) {
+                const data = await res.json();
+                this.caMetadata = data.metadata || {};
+                this.caScripts = data.scripts || {};
+              }
+            } catch (e) {
+              console.error('Failed to fetch CA info:', e);
+            }
+            this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+          },
+
+          copyCaCommand(cmd) {
+            if (!cmd) return;
+            navigator.clipboard.writeText(cmd);
+            this.caCopied = true;
+            setTimeout(() => { this.caCopied = false; }, 2000);
+          },
+
+          // ==========================================
+          // OPENAPI 3.0 INTERACTIVE SANDBOX
+          // ==========================================
+          openApiSpec: null,
+          openApiEndpointsCount: 0,
+          openApiLoading: false,
+          openApiFilterText: '',
+          openApiSelectedOp: null,
+          openApiSandboxParams: {},
+          openApiSandboxBody: '',
+          openApiSandboxRunning: false,
+          openApiSandboxResponse: null,
+
+          async fetchOpenApiExplorer() {
+            this.openApiLoading = true;
+            try {
+              const res = await fetch('/api/projects/' + encodeURIComponent(this.selectedProject || 'default') + '/openapi');
+              if (res.ok) {
+                const data = await res.json();
+                this.openApiSpec = data.spec || null;
+                this.openApiEndpointsCount = data.endpoints_count || 0;
+                // Select first op if none selected
+                if (!this.openApiSelectedOp) {
+                  const endpoints = this.getFilteredOpenApiEndpoints();
+                  if (endpoints.length > 0) {
+                    this.selectOpenApiOperation(endpoints[0].path, endpoints[0].method, endpoints[0].op);
+                  }
+                }
+              }
+            } catch (e) {
+              console.error('Failed to fetch OpenAPI spec:', e);
+            } finally {
+              this.openApiLoading = false;
+              this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+            }
+          },
+
+          getFilteredOpenApiEndpoints() {
+            if (!this.openApiSpec || !this.openApiSpec.paths) return [];
+            const result = [];
+            const q = (this.openApiFilterText || '').toLowerCase();
+            for (const [path, methods] of Object.entries(this.openApiSpec.paths)) {
+              for (const [method, op] of Object.entries(methods)) {
+                if (['get', 'post', 'put', 'delete', 'patch', 'options'].includes(method.toLowerCase())) {
+                  const methodUpper = method.toUpperCase();
+                  if (!q || path.toLowerCase().includes(q) || methodUpper.includes(q)) {
+                    result.push({ path, method: methodUpper, op });
+                  }
+                }
+              }
+            }
+            return result;
+          },
+
+          selectOpenApiOperation(path, method, op) {
+            this.openApiSelectedOp = { path, method, operation: op };
+            this.openApiSandboxParams = {};
+            this.openApiSandboxResponse = null;
+
+            if (op.parameters) {
+              for (const p of op.parameters) {
+                this.openApiSandboxParams[p.name] = p.example !== undefined ? String(p.example) : '';
+              }
+            }
+
+            // Request body prefill
+            if (op.requestBody && op.requestBody.content && op.requestBody.content['application/json']) {
+              const schema = op.requestBody.content['application/json'].schema || {};
+              this.openApiSandboxBody = JSON.stringify(schema.example || {}, null, 2);
+            } else {
+              this.openApiSandboxBody = '';
+            }
+
+            this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+          },
+
+          formatOpenApiSandboxBody() {
+            try {
+              const parsed = JSON.parse(this.openApiSandboxBody);
+              this.openApiSandboxBody = JSON.stringify(parsed, null, 2);
+            } catch (e) { }
+          },
+
+          async executeOpenApiSandbox() {
+            if (!this.openApiSelectedOp) return;
+            this.openApiSandboxRunning = true;
+            this.openApiSandboxResponse = null;
+
+            let targetUrl = this.openApiSelectedOp.path;
+            const queryParams = [];
+
+            if (this.openApiSelectedOp.operation && this.openApiSelectedOp.operation.parameters) {
+              for (const p of this.openApiSelectedOp.operation.parameters) {
+                const val = this.openApiSandboxParams[p.name] || '';
+                if (p.in === 'path') {
+                  targetUrl = targetUrl.replace(`{${p.name}}`, encodeURIComponent(val));
+                } else if (p.in === 'query' && val) {
+                  queryParams.push(`${encodeURIComponent(p.name)}=${encodeURIComponent(val)}`);
+                }
+              }
+            }
+
+            if (queryParams.length > 0) {
+              targetUrl += (targetUrl.includes('?') ? '&' : '?') + queryParams.join('&');
+            }
+
+            // Prefix host if relative
+            if (!targetUrl.startsWith('http')) {
+              let host = 'http://127.0.0.1:8996';
+              if (this.openApiSpec && this.openApiSpec.servers && this.openApiSpec.servers.length > 0) {
+                host = this.openApiSpec.servers[0].url || host;
+              }
+              targetUrl = host.replace(/\/$/, '') + (targetUrl.startsWith('/') ? '' : '/') + targetUrl;
+            }
+
+            try {
+              const res = await fetch('/api/openapi/sandbox-execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  method: this.openApiSelectedOp.method,
+                  url: targetUrl,
+                  body: this.openApiSandboxBody,
+                  project: this.selectedProject || 'default'
+                })
+              });
+              if (res.ok) {
+                this.openApiSandboxResponse = await res.json();
+              } else {
+                this.openApiSandboxResponse = {
+                  status_code: res.status,
+                  duration_ms: 0,
+                  body: await res.text(),
+                  headers: {}
+                };
+              }
+            } catch (e) {
+              this.openApiSandboxResponse = {
+                status_code: 500,
+                duration_ms: 0,
+                body: 'Request execution error: ' + e.message,
+                headers: {}
+              };
+            } finally {
+              this.openApiSandboxRunning = false;
+            }
+          },
+
+          copyOpenApiAsCurl() {
+            if (!this.openApiSelectedOp) return;
+            let cmd = `curl -X ${this.openApiSelectedOp.method} "${this.openApiSelectedOp.path}"`;
+            if (this.openApiSandboxBody && ['POST', 'PUT', 'PATCH'].includes(this.openApiSelectedOp.method)) {
+              cmd += ` -H "Content-Type: application/json" -d '${this.openApiSandboxBody.replace(/'/g, "\'")}'`;
+            }
+            this.copyText(cmd);
+          },
+
+          // ==========================================
+          // SARIF V2.1.0 COMPLIANCE EXPORT
+          // ==========================================
+          downloadSarifReport() {
+            const proj = this.selectedProject || 'all';
+            window.location.href = `/api/audit/report?project=${encodeURIComponent(proj)}&format=sarif`;
           }
+
         };
       }
 
