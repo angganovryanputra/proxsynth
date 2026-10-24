@@ -3,7 +3,7 @@
 
 > **Release Version**: `v0.1.0-beta` (Initial Beta Release)  
 > **Protocol**: Model Context Protocol (FastMCP 2.0+)  
-> **Registered Tools**: **76 Active FastMCP Security Tools**  
+> **Registered Tools**: **83 Active FastMCP Security Tools**  
 > **Default Ports**: FastAPI Dashboard & API `:8000` | Forward Interception Proxy `:8088` | DNS OAST `:5354` | LDAP OAST `:1390`  
 
 This operational document specifies how autonomous AI agents interface with the **Proxynth Security Testing Gateway**, autonomously navigate attack surfaces across Web, REST/GraphQL APIs, and Network Infrastructure, make deterministic testing decisions, and execute zero-human-intervention security campaigns.
@@ -137,9 +137,22 @@ You are connected to the Proxynth Security Testing Gateway & Interception Platfo
 
 ## 3. The Autonomous Cognitive Decision Framework: How to Select & Execute Tools
 
-A common challenge for autonomous agents is knowing **when and why** to transition from general reconnaissance to a specialized vulnerability testing tool. Proxynth resolves this through two complementary mechanisms:
+A common challenge for autonomous agents is knowing **when and why** to transition from general reconnaissance to a specialized vulnerability testing tool. Proxynth resolves this through three coordinated mechanisms:
 
-### A. Automatic Engine Feedback (`suggested_next_actions`)
+### A. Mandatory Pre-Attack Consultation Directive (`get_autonomous_attack_guidance`)
+Before arbitrarily selecting manual security tools, executing isolated scripts, or guessing attack vectors, **the autonomous agent MUST invoke `get_autonomous_attack_guidance(project="...")`**.
+
+The Cognitive Attack Advisor continuously analyzes:
+1. Discovered target assets, exposed ports, and unmapped services in the Knowledge Graph.
+2. Live HTTP traffic telemetry, response headers, and behavioral anomalies.
+3. Untested endpoints and input parameters recorded in the attack surface.
+4. Active unverified hypotheses in the stateful testing agenda.
+
+The tool returns prioritized attack vectors with exact arguments, preventing blind trial-and-error and eliminating repetitive testing loops.
+
+---
+
+### B. Automatic Engine Feedback (`suggested_next_actions`)
 Every time the agent calls `send_http_request`, the Proxynth backend analyzes the URL path, HTTP method, request headers, parameters, and response body. If suspicious patterns are observed, the JSON response includes a `suggested_next_actions` array:
 
 ```json
@@ -173,9 +186,11 @@ Every time the agent calls `send_http_request`, the Proxynth backend analyzes th
 
 ---
 
-### B. Cognitive Decision Matrix (Heuristic Rules)
+### C. Cognitive Decision Matrix (Heuristic Rules)
 
-If executing independently, the agent must evaluate the following deterministic rules against observed target resp| Observed Target Signal | Suspected Vulnerability Class | Recommended FastMCP Tool | Execution Trigger & Parameters |
+If executing independently, the agent must evaluate the following deterministic rules against observed target responses:
+
+| Observed Target Signal | Suspected Vulnerability Class | Recommended FastMCP Tool | Execution Trigger & Parameters |
 | :--- | :--- | :--- | :--- |
 | Target is a host, IP, CIDR, or domain needing port and service discovery | **Unauthenticated Services & Open Ports** | `scan_network_ports` | Call `scan_network_ports(target="...", ports_profile="top_100")` for zero-dependency TCP recon and Redis/Elastic/Docker audits. |
 | Target provides Swagger / OpenAPI spec (`/swagger.json`, `/openapi.json`) | **Unmapped API Attack Surface** | `import_api_schema` | Call `import_api_schema(spec_source="https://target/swagger.json")` to bulk-map 100+ routes, methods, and parameters. |
@@ -189,6 +204,9 @@ If executing independently, the agent must evaluate the following deterministic 
 | Parameters matching `url`, `redirect`, `dest`, `callback`, `webhook`, `feed`, `host`, `target` | **Blind SSRF & JNDI / Log4j** | `spray_oast_canaries` | Call `spray_oast_canaries(target_url="...", vuln_types=["ssrf", "dns", "log4j", "xxe"])`. |
 | Input value is reflected verbatim or unencoded in HTML response body | **Cross-Site Scripting (Reflected / DOM XSS)** | `verify_dom_execution` | Call `verify_dom_execution(url="...", payload="<script>alert(1)</script>")` in sandboxed Chromium. |
 | Search, filter, or ID parameters returning subtle differences or database errors | **Differential SQLi / SSTI Injection** | `audit_differential_injection` | Call `audit_differential_injection(endpoint_url="...", injection_param="q", vuln_type="SQLI")`. |
+| Response contains cache headers (`X-Cache: HIT`, `Age`, `CF-Cache-Status`) or unkeyed header reflections | **Web Cache Poisoning & Deception** | `audit_cache_poisoning` | Call `audit_cache_poisoning(url="...", param="...", headers={...})` to test unkeyed headers and path deception. |
+| Sensitive state-changing POST/PUT action lacking anti-CSRF token or permissive SameSite cookie | **Cross-Site Request Forgery (CSRF)** | `audit_csrf_indepth` | Call `audit_csrf_indepth(url="...", form_field="csrf_token", method="POST")` for deterministic CSRF validation. |
+| Multipart file upload form (`enctype="multipart/form-data"` or binary upload endpoints) | **Unrestricted File Upload** | `audit_file_upload` | Call `audit_file_upload(target="...", field="file", allow_exploit=False)` with non-destructive filter fingerprinting. |
 | `Authorization: Bearer ey...` header or JWT string found in response body | **JWT Cryptographic & Claim Tampering** | `audit_jwt_security` | Call `audit_jwt_security(token="...", test_url="...")` to test Alg None and weak secret brute-force. |
 | Handshake containing `Upgrade: websocket` or `Connection: Upgrade` | **WebSocket CSWSH & Protocol Flaws** | `audit_websocket_security` | Call `audit_websocket_security(url="wss://...")` to test origin spoofing and token leaks. |
 | Endpoint with sensitive rate-limited actions (coupon claim, balance withdrawal, voting) | **Concurrency & Race Conditions** | `test_race_condition` | Call `test_race_condition(url="...", concurrency=20)` to test microsecond burst synchronization. |

@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/badge/Release-v0.1.0--beta-orange.svg)](#-overview)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
 [![MCP](https://img.shields.io/badge/Model%20Context%20Protocol-FastMCP%202.0%2B-purple.svg)](https://modelcontextprotocol.io)
-[![FastMCP Tools](https://img.shields.io/badge/FastMCP%20Tools-72%20Registered-8b5cf6.svg)](#-complete-fastmcp-tools-reference-specification-72-tools)
+[![FastMCP Tools](https://img.shields.io/badge/FastMCP%20Tools-83%20Registered-8b5cf6.svg)](#-complete-fastmcp-tools-reference-specification-83-tools)
 [![FastAPI](https://img.shields.io/badge/FastAPI-High%20Performance-009688.svg)](https://fastapi.tiangolo.com)
 [![Playwright](https://img.shields.io/badge/Playwright-Chromium%20DOM%20Oracle-45ba4b.svg)](https://playwright.dev)
 [![Database](https://img.shields.io/badge/SQLite-WAL%20Engine-003B57.svg)](https://sqlite.org)
@@ -58,7 +58,7 @@
   - [Active Project Context Synchronization](#3-active-project-context-synchronization)
   - [Zero-Prompt Session & Cookie Credentials Manager](#4-zero-prompt-session--cookie-credentials-manager)
   - [Automated 1-Click System & MCP Self-Updater](#5-automated-1-click-system--mcp-self-updater)
-- [🧰 Complete FastMCP Tools Reference Specification (72 Tools)](#-complete-fastmcp-tools-reference-specification-72-tools)
+- [🧰 Complete FastMCP Tools Reference Specification (83 Tools)](#-complete-fastmcp-tools-reference-specification-83-tools)
 - [🐍 Transparent Runtime Auto-Enforcement (`sitecustomize.py`)](#-transparent-runtime-auto-enforcement-sitecustomizepy)
 - [🚀 Quick Start & Installation](#-quick-start--installation)
 - [🤖 AI Agent Integration Guide](#-ai-agent-integration-guide)
@@ -91,7 +91,7 @@ When deploying autonomous AI agents against complex web applications, single-pag
 
 | Feature / Capability | PROXSYNTH (v0.1.0-beta) | Burp Suite Pro | Caido | mitmproxy | OWASP ZAP |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Native Model Context Protocol (FastMCP)** | ✅ **Yes (76 Tools)** | ❌ No | ❌ No | ❌ No | ❌ No |
+| **Native Model Context Protocol (FastMCP)** | ✅ **Yes (83 Tools)** | ❌ No | ❌ No | ❌ No | ❌ No |
 | **Autonomous Campaign Orchestrator (1-Command)**| ✅ **Built-in** | ❌ Manual | ❌ Manual | ❌ No | ⚠️ Quick Scan |
 | **Transparent Python Script Interception (`sitecustomize.py`)** | ✅ **Automatic** | ❌ Manual config | ❌ Manual config | ❌ Manual config | ❌ Manual config |
 | **Agent Working Memory (Hypothesis Ledger P3)** | ✅ **Built-in** | ❌ No | ❌ No | ❌ No | ❌ No |
@@ -388,9 +388,96 @@ Accessible via the **AI Activity** tab:
 
 ---
 
-## 🧰 Complete FastMCP Tools Reference Specification (76 Tools)
+## 🧰 Complete FastMCP Tools Reference Specification (83 Tools)
 
-PROXSYNTH's FastMCP server ([`mcp_server.py`](file:///d:/PROJECT/01/mcp_server.py)) exposes **76 enterprise-grade security tools** categorized across core offensive operations:
+PROXSYNTH's FastMCP server ([`mcp_server.py`](file:///d:/PROJECT/01/mcp_server.py)) exposes **83 enterprise-grade security tools** categorized across core offensive operations:
+
+### 🛡️ Master FastMCP Tool Permissions & Safety Matrix (83 Tools)
+| # | Tool Name | Category | Read-Only | Destructive |
+| :---: | :--- | :---: | :---: | :---: |
+| 1 | `set_active_project` | `context` | No | No |
+| 2 | `get_active_project` | `context` | Yes | No |
+| 3 | `send_http_request` | `traffic` | No | No |
+| 4 | `get_traffic_history` | `traffic` | Yes | No |
+| 5 | `get_log_detail` | `traffic` | Yes | No |
+| 6 | `distill_http_response` | `traffic` | Yes | No |
+| 7 | `search_traffic_advanced` | `traffic` | Yes | No |
+| 8 | `analyze_traffic_patterns` | `traffic` | Yes | No |
+| 9 | `compare_http_responses` | `analysis` | Yes | No |
+| 10 | `semantic_diff_responses` | `analysis` | Yes | No |
+| 11 | `browser_navigate_and_render` | `browser` | No | No |
+| 12 | `render_webpage` | `browser` | No | No |
+| 13 | `spider_and_crawl_target` | `spider` | No | No |
+| 14 | `verify_dom_execution` | `xss` | No | No |
+| 15 | `request_manual_login` | `auth` | No | No |
+| 16 | `record_test_payload` | `vault` | No | No |
+| 17 | `get_captured_payloads` | `vault` | Yes | No |
+| 18 | `mutate_payload` | `waf` | No | No |
+| 19 | `analyze_waf_response` | `waf` | No | No |
+| 20 | `fuzz_endpoint` | `fuzzing` | No | Yes |
+| 21 | `test_race_condition` | `concurrency` | No | Yes |
+| 22 | `audit_differential_injection` | `audit` | No | No |
+| 23 | `audit_jwt_security` | `audit` | No | No |
+| 24 | `audit_bfla_permissions` | `audit` | No | No |
+| 25 | `audit_mass_assignment` | `audit` | No | No |
+| 26 | `audit_numeric_business_logic` | `audit` | No | No |
+| 27 | `test_bola_idor` | `bola` | No | Yes |
+| 28 | `get_bola_access_matrix` | `bola` | Yes | No |
+| 29 | `run_bola_matrix_scan` | `bola` | No | Yes |
+| 30 | `inspect_graphql_endpoint` | `graphql` | No | No |
+| 31 | `send_websocket_message` | `websocket` | No | No |
+| 32 | `audit_websocket_security` | `websocket` | No | No |
+| 33 | `import_api_schema` | `api_import` | No | No |
+| 34 | `infer_hidden_endpoints` | `recon` | Yes | No |
+| 35 | `audit_api_gateway_bypass` | `audit` | No | No |
+| 36 | `scan_network_ports` | `network` | No | No |
+| 37 | `get_target_health` | `recon` | Yes | No |
+| 38 | `generate_oast_token` | `oast` | No | No |
+| 39 | `poll_oast_events` | `oast` | Yes | No |
+| 40 | `spray_oast_canaries` | `oast` | No | No |
+| 41 | `setup_public_tunnel` | `tunnel` | No | No |
+| 42 | `get_tunnel_status` | `tunnel` | Yes | No |
+| 43 | `close_public_tunnel` | `tunnel` | No | No |
+| 44 | `add_interception_rule` | `intercept` | No | No |
+| 45 | `list_interception_rules` | `intercept` | Yes | No |
+| 46 | `toggle_interception_rule` | `intercept` | No | No |
+| 47 | `delete_interception_rule` | `intercept` | No | Yes |
+| 48 | `get_ca_certificate_details` | `ca` | Yes | No |
+| 49 | `record_testing_hypothesis` | `agenda` | No | No |
+| 50 | `get_testing_agenda` | `agenda` | Yes | No |
+| 51 | `update_hypothesis_status` | `agenda` | No | No |
+| 52 | `run_autonomous_security_campaign` | `orchestration` | No | Yes |
+| 53 | `get_campaign_status` | `orchestration` | Yes | No |
+| 54 | `list_campaigns` | `orchestration` | Yes | No |
+| 55 | `get_autonomous_attack_guidance` | `advisor` | Yes | No |
+| 56 | `get_tool_harness_manifest` | `meta` | Yes | No |
+| 57 | `set_identity_session` | `auth` | No | No |
+| 58 | `register_auth_recipe` | `auth` | No | No |
+| 59 | `execute_reauthentication` | `auth` | No | No |
+| 60 | `get_csrf_tokens` | `session` | Yes | No |
+| 61 | `set_csrf_token` | `session` | No | No |
+| 62 | `clear_csrf_tokens` | `session` | No | Yes |
+| 63 | `report_vulnerability` | `triage` | No | No |
+| 64 | `generate_exploit_poc` | `exploit` | Yes | No |
+| 65 | `generate_nuclei_template` | `exploit` | Yes | No |
+| 66 | `verify_vulnerability_candidate` | `verification` | No | No |
+| 67 | `generate_audit_ci_report` | `report` | Yes | No |
+| 68 | `get_attack_surface` | `recon` | Yes | No |
+| 69 | `record_target_asset` | `recon` | No | No |
+| 70 | `record_target_service` | `recon` | No | No |
+| 71 | `record_target_endpoint` | `recon` | No | No |
+| 72 | `get_attack_paths` | `killchain` | Yes | No |
+| 73 | `delete_attack_surface_node` | `recon` | No | Yes |
+| 74 | `clear_attack_surface_graph` | `recon` | No | Yes |
+| 75 | `mine_javascript_assets` | `js` | No | No |
+| 76 | `mine_cli_output` | `miner` | Yes | No |
+| 77 | `run_pentest_command` | `cli` | No | Yes |
+| 78 | `execute_workflow_sequence` | `workflow` | No | Yes |
+| 79 | `run_security_audit_suite` | `suite` | No | Yes |
+| 80 | `update_proxsynth_system` | `admin` | No | Yes |
+| 81 | `audit_cache_poisoning` | `cache` | No | No |
+| 82 | `audit_csrf_indepth` | `csrf` | No | No |
+| 83 | `audit_file_upload` | `upload` | No | No |
 
 ### Category A: Autonomous Campaign, Guidance & Discovery (Tools 1 – 7)
 | # | Tool Name | Key Arguments | Description |
@@ -521,8 +608,15 @@ PROXSYNTH's FastMCP server ([`mcp_server.py`](file:///d:/PROJECT/01/mcp_server.p
 | **76** | `update_proxsynth_system` | `confirm`, `force_check` | Performs autonomous remote Git update checks and synchronized system upgrades for Web & MCP. |
 | **77** | `get_campaign_status` | `campaign_id` | Polls real-time phase progress, metrics, circuit breaker health, and verified findings for a campaign. |
 | **78** | `list_campaigns` | `project` | Lists all registered autonomous security campaigns across the workspace or project. |
-| **79** | `get_tool_harness_manifest` | *(none)* | Returns complete 80-tool taxonomy with read_only and destructive flags for harness auto-approval. |
+| **79** | `get_tool_harness_manifest` | *(none)* | Returns complete 83-tool taxonomy with read_only and destructive flags for harness auto-approval. |
 | **80** | `get_target_health` | `url`, `timeout`, `project` | Granular latency probe (DNS, TCP, TLS, TTFB) diagnosing 5xx flapping, packet latency, and target stability. |
+
+### Category N: Advanced Automated Web Security Audits (Tools 81 – 83)
+| # | Tool Name | Key Arguments | Description |
+| :---: | :--- | :--- | :--- |
+| **81** | `audit_cache_poisoning` | `url`, `param`, `headers`, `project` | Probes for unkeyed header cache poisoning, parameter keying confusion, and path deception (`/x.css`, `/.json`). |
+| **82** | `audit_csrf_indepth` | `url`, `form_field`, `method`, `test_body`, `project` | Deterministic CSRF audit testing token omission, cross-session reuse, Origin/Referer acceptance, and SameSite flags. |
+| **83** | `audit_file_upload` | `target`, `field`, `project`, `allow_exploit`, `confirmation` | Probes multipart file upload filters (MIME confusion, magic bytes, double extensions, SVG XSS, path traversal). |
 
 ---
 
