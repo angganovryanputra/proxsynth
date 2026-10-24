@@ -157,7 +157,9 @@ async def host_and_auth_security_middleware(request: Request, call_next):
 
     # 2. API Key enforcement (if PROXSYNTH_API_KEY is configured in env)
     effective_api_key = PROXSYNTH_API_KEY or PROXSYNTH_API_KEY
-    if effective_api_key and request.url.path.startswith("/api/") and request.url.path != "/api/health":
+    clean_path = request.url.path.rstrip("/")
+    is_health_check = clean_path in ["/api/health", "/health", "/healthz", "/api/healthz", "/api/info", "/favicon.ico"]
+    if effective_api_key and request.url.path.startswith("/api/") and not is_health_check:
         provided_key = (
             request.headers.get("X-Proxsynth-Key") or
             request.headers.get("X-Proxsynth-Key") or
@@ -3497,9 +3499,31 @@ def get_campaign_detail_api(campaign_id: str):
     return status
 
 
-@app.get("/api/health")
+@app.api_route("/api/health", methods=["GET", "HEAD", "POST", "OPTIONS"])
+@app.api_route("/api/health/", methods=["GET", "HEAD", "POST", "OPTIONS"])
+@app.api_route("/health", methods=["GET", "HEAD", "POST", "OPTIONS"])
+@app.api_route("/health/", methods=["GET", "HEAD", "POST", "OPTIONS"])
+@app.api_route("/healthz", methods=["GET", "HEAD", "POST", "OPTIONS"])
+@app.api_route("/api/healthz", methods=["GET", "HEAD", "POST", "OPTIONS"])
 def health_check():
-    return {"status": "ok", "platform": "Proxsynth", "version": PROXSYNTH_VERSION}
+    proxy_up = False
+    proxy_p = 8088
+    try:
+        from backend.forward_proxy import is_proxy_running, get_proxy_port
+        proxy_up = is_proxy_running()
+        proxy_p = get_proxy_port()
+    except Exception:
+        pass
+
+    return {
+        "status": "ok",
+        "platform": "Proxsynth",
+        "version": PROXSYNTH_VERSION,
+        "mode": "autonomous",
+        "intercept_active": is_intercept_enabled(),
+        "proxy_running": proxy_up,
+        "proxy_port": proxy_p
+    }
 
 @app.get("/api/info")
 def platform_info():

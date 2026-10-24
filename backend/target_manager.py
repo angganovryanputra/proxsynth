@@ -402,3 +402,74 @@ def clear_target_graph(project: str = "default") -> int:
     finally:
         db.close()
 
+
+def discover_bola_candidates(project: str = "default", limit: int = 100) -> List[Dict[str, Any]]:
+    """
+    Scans project HTTP traffic to discover BOLA / IDOR candidate endpoints and parameter entropy.
+    Detects integer sequence IDs, UUIDs, and object keys in URL paths, query parameters, and JSON bodies.
+    """
+    import re
+    target_project = (project or "default").strip().lower()
+    db = SessionLocal()
+    candidates = []
+    seen = set()
+    try:
+        q = db.query(HttpLog)
+        if target_project != "all":
+            q = q.filter(HttpLog.project == target_project)
+        logs = q.order_by(HttpLog.id.desc()).limit(limit * 3).all()
+
+        id_path_pattern = re.compile(r"/([a-zA-Z0-9_\-]+)/([0-9]{1,10}|[0-9a-fA-F-]{36})(/|$)")
+        id_param_pattern = re.compile(r"^(id|.*_id|user|account|order|doc|invoice|profile|item|file)$", re.IGNORECASE)
+
+        for l in logs:
+            if not l.url:
+                continue
+            parsed = urllib.parse.urlparse(l.url)
+            # 1. Path-based candidates (e.g. /api/users/123)
+            for m in id_path_pattern.finditer(parsed.path):
+                resource = m.group(1)
+                ident = m.group(2)
+                key = (l.method, parsed.netloc, resource, "PATH")
+                if key not in seen:
+                    seen.add(key)
+                    is_num = ident.isdigit()
+                    candidates.append({
+                        "method": l.method,
+                        "url": l.url,
+                        "resource": resource,
+                        "parameter_type": "PATH_ID",
+                        "observed_value": ident,
+                        "id_type": "NUMERIC_SEQUENCE" if is_num else "UUID_HASH",
+                        "entropy": len(set(ident)) / float(max(1, len(ident))),
+                        "suggested_tamper": [str(int(ident) + 1), str(int(ident) - 1)] if is_num else ["00000000-0000-0000-0000-000000000000"],
+                        "source_log_id": l.id
+                    })
+
+            # 2. Query parameter candidates
+            if parsed.query:
+                params = urllib.parse.parse_qs(parsed.query)
+                for pk, pvals in params.items():
+                    if id_param_pattern.match(pk) and pvals:
+                        val = pvals[0]
+                        key = (l.method, parsed.netloc, parsed.path, pk)
+                        if key not in seen:
+                            seen.add(key)
+                            is_num = val.isdigit()
+                            candidates.append({
+                                "method": l.method,
+                                "url": l.url,
+                                "resource": pk,
+                                "parameter_type": "QUERY_PARAM",
+                                "observed_value": val,
+                                "id_type": "NUMERIC_SEQUENCE" if is_num else "UUID_HASH",
+                                "entropy": len(set(val)) / float(max(1, len(val))),
+                                "suggested_tamper": [str(int(val) + 1), str(int(val) - 1)] if is_num else ["admin", "root"],
+                                "source_log_id": l.id
+                            })
+            if len(candidates) >= limit:
+                break
+    finally:
+        db.close()
+    return candidates
+

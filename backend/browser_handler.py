@@ -41,6 +41,45 @@ def get_active_login_status() -> Optional[Dict[str, Any]]:
             return info
     return None
 
+class PlaywrightPoolManager:
+    """
+    Recycled Browser Pool for Headless Playwright Crawling.
+    Reuses Chromium instances across requests to eliminate 2-3s cold-start overhead per page,
+    drastically reducing CPU/RAM consumption during intensive SPA crawls.
+    """
+    _playwright = None
+    _browser = None
+    _lock = asyncio.Lock()
+
+    @classmethod
+    async def get_browser(cls, upstream_proxy: Optional[str] = None):
+        from playwright.async_api import async_playwright
+        async with cls._lock:
+            if cls._playwright is None:
+                cls._playwright = await async_playwright().start()
+            launch_kwargs = {"headless": True}
+            if upstream_proxy and upstream_proxy.strip():
+                launch_kwargs["proxy"] = {"server": upstream_proxy.strip()}
+            if cls._browser is None or not cls._browser.is_connected():
+                cls._browser = await cls._playwright.chromium.launch(**launch_kwargs)
+            return cls._browser
+
+    @classmethod
+    async def cleanup(cls):
+        async with cls._lock:
+            if cls._browser:
+                try:
+                    await cls._browser.close()
+                except Exception:
+                    pass
+                cls._browser = None
+            if cls._playwright:
+                try:
+                    await cls._playwright.stop()
+                except Exception:
+                    pass
+                cls._playwright = None
+
 
 async def render_page(
     url: str,
@@ -71,103 +110,101 @@ async def render_page(
 
     intercepted_requests: List[Dict[str, Any]] = []
 
-    async with async_playwright() as p:
-        launch_kwargs = {"headless": True}
-        if upstream_proxy and upstream_proxy.strip():
-            launch_kwargs["proxy"] = {"server": upstream_proxy.strip()}
+    browser = await PlaywrightPoolManager.get_browser(upstream_proxy)
+    context = await browser.new_context(
+        user_agent=get_random_user_agent(),
+        ignore_https_errors=True
+    )
 
-        browser = await p.chromium.launch(**launch_kwargs)
-        context = await browser.new_context(
-            user_agent=get_random_user_agent(),
-            ignore_https_errors=True
-        )
-
-        # Inject existing active session cookies if available
-        db = SessionLocal()
-        try:
-            sess_record = db.query(ActiveSession).filter(ActiveSession.domain == domain).first()
-            if sess_record:
-                try:
-                    state_data = sess_record.get_decrypted_state()
-                    cookies = state_data.get("cookies", [])
-                    if cookies:
-                        await context.add_cookies(cookies)
-                except Exception as ex:
-                    logger.warning("Failed injecting cookies for %s: %s", domain, ex)
-        finally:
-            db.close()
-
-        page = await context.new_page()
-
-        # Network hooks to capture AJAX / sub-requests with real status codes and latencies
-        import time as _time
-        request_timings: Dict[str, float] = {}
-
-        def on_req(req):
-            request_timings[req.url] = _time.time()
-            intercepted_requests.append({
-                "url": req.url,
-                "method": req.method,
-                "resource_type": req.resource_type,
-                "headers": dict(req.headers),
-                "status_code": None,
-                "duration_ms": 0,
-                "synthetic": False
-            })
-
-        def on_res(res):
-            start = request_timings.get(res.url)
-            duration = int((_time.time() - start) * 1000) if start else 0
-            for item in reversed(intercepted_requests):
-                if item["url"] == res.url and item["status_code"] is None:
-                    item["status_code"] = res.status
-                    item["duration_ms"] = duration
-                    break
-
-        page.on("request", on_req)
-        page.on("response", on_res)
-
-        try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-
-            # Optional fill inputs
-            if fill_inputs:
-                for selector, val in fill_inputs.items():
-                    try:
-                        await page.fill(selector, val, timeout=3000)
-                    except Exception as ex:
-                        logger.debug("Could not fill input %s: %s", selector, ex)
-
-            # Optional click action
-            if click_selector:
-                try:
-                    await page.click(click_selector, timeout=5000)
-                    await page.wait_for_load_state("networkidle", timeout=8000)
-                except Exception:
-                    await asyncio.sleep(1.0)
-            else:
-                try:
-                    await page.wait_for_load_state("networkidle", timeout=4000)
-                except Exception:
-                    await asyncio.sleep(0.5)
-
-            title = await page.title()
-            final_url = page.url
+    # Inject existing active session cookies if available
+    db = SessionLocal()
+    try:
+        sess_record = db.query(ActiveSession).filter(ActiveSession.domain == domain).first()
+        if sess_record:
             try:
-                body_text = await page.inner_text("body", timeout=5000)
-            except Exception:
-                body_text = await page.content()
+                state_data = sess_record.get_decrypted_state()
+                cookies = state_data.get("cookies", [])
+                if cookies:
+                    await context.add_cookies(cookies)
+            except Exception as ex:
+                logger.warning("Failed injecting cookies for %s: %s", domain, ex)
+    finally:
+        db.close()
 
-            return {
-                "title": title,
-                "url": final_url,
-                "domain": domain,
-                "dom_text": body_text[:10000],  # Trim to prevent overwhelming context
-                "intercepted_count": len(intercepted_requests),
-                "intercepted_requests": intercepted_requests[:30]
-            }
-        finally:
-            await browser.close()
+    page = await context.new_page()
+
+    # Network hooks to capture AJAX / sub-requests with real status codes and latencies
+    import time as _time
+    request_timings: Dict[str, float] = {}
+
+    def on_req(req):
+        request_timings[req.url] = _time.time()
+        intercepted_requests.append({
+            "url": req.url,
+            "method": req.method,
+            "resource_type": req.resource_type,
+            "headers": dict(req.headers),
+            "status_code": None,
+            "duration_ms": 0,
+            "synthetic": False
+        })
+
+    def on_res(res):
+        start = request_timings.get(res.url)
+        duration = int((_time.time() - start) * 1000) if start else 0
+        for item in reversed(intercepted_requests):
+            if item["url"] == res.url and item["status_code"] is None:
+                item["status_code"] = res.status
+                item["duration_ms"] = duration
+                break
+
+    page.on("request", on_req)
+    page.on("response", on_res)
+
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+
+        # Optional fill inputs
+        if fill_inputs:
+            for selector, val in fill_inputs.items():
+                try:
+                    await page.fill(selector, val, timeout=3000)
+                except Exception as ex:
+                    logger.debug("Could not fill input %s: %s", selector, ex)
+
+        # Optional click action
+        if click_selector:
+            try:
+                await page.click(click_selector, timeout=5000)
+                await page.wait_for_load_state("networkidle", timeout=8000)
+            except Exception:
+                await asyncio.sleep(1.0)
+        else:
+            try:
+                await page.wait_for_load_state("networkidle", timeout=4000)
+            except Exception:
+                await asyncio.sleep(0.5)
+
+        title = await page.title()
+        final_url = page.url
+        try:
+            body_text = await page.inner_text("body", timeout=5000)
+        except Exception:
+            body_text = await page.content()
+
+        return {
+            "title": title,
+            "url": final_url,
+            "domain": domain,
+            "dom_text": body_text[:10000],  # Trim to prevent overwhelming context
+            "intercepted_count": len(intercepted_requests),
+            "intercepted_requests": intercepted_requests[:30]
+        }
+    finally:
+        try:
+            await context.close()
+        except Exception:
+            pass
 
 
 def _save_session_cookies(project: str, domain: str, storage_state: dict):

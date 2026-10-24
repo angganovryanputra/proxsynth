@@ -128,6 +128,55 @@ def replace_markers(template: str, replacement: str) -> str:
     return MARKER_REGEX.sub(replacement, template)
 
 
+def generate_waf_evasion_variants(payload: str) -> List[Dict[str, Any]]:
+    """
+    Generates multi-tier WAF bypass mutation variants for a security testing payload.
+    Tiers include: Double URL encoding, Unicode overlong/full-width, SQL comment insertion,
+    case randomization, null-byte injection, and gateway authorization headers.
+    """
+    variants = []
+    # 1. Double URL encoding
+    single_enc = urllib.parse.quote(payload, safe="")
+    double_enc = urllib.parse.quote(single_enc, safe="")
+    if double_enc != payload:
+        variants.append({"type": "DOUBLE_URL_ENCODE", "payload": double_enc, "headers": {}})
+
+    # 2. Case toggling for common keywords (SELECT, UNION, SCRIPT, ALERT, etc.)
+    kw_re = re.compile(r"\b(select|union|where|from|order|by|script|alert|onload|onerror|eval|table|database)\b", re.IGNORECASE)
+    def _toggle_case(m):
+        w = m.group(1)
+        return "".join(c.upper() if i % 2 == 0 else c.lower() for i, c in enumerate(w))
+    case_swapped = kw_re.sub(_toggle_case, payload)
+    if case_swapped != payload:
+        variants.append({"type": "CASE_RANDOMIZATION", "payload": case_swapped, "headers": {}})
+
+    # 3. SQL comment splitting (e.g. UNION/**/SELECT, %20 -> /**/)
+    if " " in payload:
+        comment_split = payload.replace(" ", "/**/")
+        variants.append({"type": "COMMENT_SPLIT", "payload": comment_split, "headers": {}})
+
+    # 4. Null byte injection
+    variants.append({"type": "NULL_BYTE_PREFIX", "payload": f"%00{payload}", "headers": {}})
+
+    # 5. Unicode / Overlong normalization
+    uni_variant = payload.replace("'", "%u0027").replace('"', "%u0022").replace("<", "%u003c").replace(">", "%u003e")
+    if uni_variant != payload:
+        variants.append({"type": "UNICODE_EXPANSION", "payload": uni_variant, "headers": {}})
+
+    # 6. Gateway / Proxy Header Spoofing
+    gateway_headers = {
+        "X-Original-URL": "/admin",
+        "X-Rewrite-URL": "/admin",
+        "X-Forwarded-For": "127.0.0.1",
+        "X-Custom-IP-Authorization": "127.0.0.1",
+        "X-Originating-IP": "127.0.0.1",
+        "CF-Connecting-IP": "127.0.0.1"
+    }
+    variants.append({"type": "GATEWAY_HEADER_BYPASS", "payload": payload, "headers": gateway_headers})
+
+    return variants
+
+
 def has_markers(url: str, body: str, headers: Dict[str, str]) -> bool:
     """Checks whether URL, body, or headers contain the §marker§ delimiter."""
     if MARKER_REGEX.search(url):
@@ -151,11 +200,12 @@ async def run_fuzz_attack(
     jitter_ms: Optional[float] = None,
     upstream_proxy: Optional[str] = None,
     project: str = "default",
-    agent_id: str = "primary_agent"
+    agent_id: str = "primary_agent",
+    auto_evade_waf: bool = True
 ) -> Dict[str, Any]:
     """
     Executes a multi-threaded parameter fuzzing attack with automatic baseline comparison,
-    adaptive rate-limiting, and randomized jitter to prevent WAF / Imperva / Cloudflare bot-bans.
+    adaptive rate-limiting, randomized jitter, and smart multi-tier WAF auto-evasion.
     """
     headers = headers or {}
     body = body or ""
@@ -292,6 +342,33 @@ async def run_fuzz_attack(
                     # 6. SSTI arithmetic evaluation (e.g. 7*7 -> 49)
                     if ("7*7" in payload) and ("49" in text) and ("49" not in baseline_result.get("response_body_preview", "")):
                         anomalies.append("SSTI_EVALUATED_49")
+
+                    # 7. Adaptive WAF Auto-Evasion Engine
+                    if auto_evade_waf and (resp.status_code == 403 or any(w in lower_text for w in ["blocked by cloudflare", "access denied", "waf", "imperva", "security violation"])):
+                        anomalies.append("WAF_BLOCKED")
+                        evasion_variants = generate_waf_evasion_variants(payload)
+                        for ev in evasion_variants:
+                            ev_url = replace_markers(base_url, ev["payload"])
+                            ev_body = replace_markers(body, ev["payload"])
+                            ev_hdrs = dict(req_headers)
+                            ev_hdrs.update(ev.get("headers", {}))
+                            try:
+                                ev_resp = await client.request(
+                                    method=method,
+                                    url=ev_url,
+                                    headers=ev_hdrs,
+                                    content=ev_body.encode("utf-8") if ev_body else None
+                                )
+                                if ev_resp.status_code != 403 and ev_resp.status_code != resp.status_code and ev_resp.status_code < 400:
+                                    anomalies.append(f"WAF_BYPASS_CONFIRMED_{ev['type']}")
+                                    item["evasion_success"] = {
+                                        "technique": ev["type"],
+                                        "evasion_payload": ev["payload"],
+                                        "status_code": ev_resp.status_code
+                                    }
+                                    break
+                            except Exception:
+                                pass
 
                     item["anomalies"] = anomalies
 

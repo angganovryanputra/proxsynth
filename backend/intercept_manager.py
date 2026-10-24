@@ -137,6 +137,9 @@ def _is_self_loop(url: str) -> Tuple[bool, Optional[str]]:
     """Prevents recursive infinite proxy loops directed at Proxsynth's own service ports."""
     try:
         parsed = urllib.parse.urlparse(url)
+        clean_path = (parsed.path or "").rstrip("/")
+        if clean_path in ["/api/health", "/health", "/healthz", "/api/healthz", "/api/info"]:
+            return False, None
         hostname = (parsed.hostname or "").strip().lower()
         if hostname in ["localhost", "127.0.0.1", "0.0.0.0", "::1"]:
             port = parsed.port or (443 if parsed.scheme == "https" else 80)

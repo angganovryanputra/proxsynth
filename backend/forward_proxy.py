@@ -968,10 +968,31 @@ async def _handle_client_connection(reader: asyncio.StreamReader, writer: asynci
         target_host = parsed.netloc
         target_path = (parsed.path or "/") + (f"?{parsed.query}" if parsed.query else "")
 
-        # Loop guard for plain HTTP
+        # Loop guard for plain HTTP (with built-in proxy healthcheck responder)
         clean_target_host = target_host.split(":")[0].strip().lower()
         target_p = int(target_host.split(":")[1]) if ":" in target_host else (443 if parsed.scheme == "https" else 80)
         if (clean_target_host in ["127.0.0.1", "localhost", _proxy_host.lower()]) and target_p == _proxy_port:
+            clean_path = target_path.split("?")[0].rstrip("/")
+            if clean_path in ["/health", "/api/health", "/healthz", "/api/healthz"]:
+                health_body = json.dumps({
+                    "status": "ok",
+                    "proxy": "Proxsynth Forward Proxy",
+                    "running": True,
+                    "proxy_port": _proxy_port,
+                    "proxy_host": _proxy_host
+                })
+                health_res = (
+                    "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: application/json\r\n"
+                    f"Content-Length: {len(health_body)}\r\n"
+                    "Connection: close\r\n\r\n"
+                    f"{health_body}\r\n"
+                )
+                writer.write(health_res.encode("utf-8"))
+                await writer.drain()
+                writer.close()
+                return
+
             loop_err = (
                 "HTTP/1.1 400 Bad Request\r\n"
                 "Content-Type: text/plain\r\n"

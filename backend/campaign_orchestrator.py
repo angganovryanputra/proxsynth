@@ -309,6 +309,16 @@ async def _execute_campaign_pipeline(
                     if mine_res.get("secrets_leaked"):
                         for sec in mine_res["secrets_found"]:
                             report["high_priority_actions"].append(f"Secret detected in {script_url}: {sec.get('type')}")
+                    # Feedback loop: auto-ingest discovered endpoints into Target Knowledge Graph
+                    if mine_res.get("endpoints_found"):
+                        try:
+                            from backend.target_manager import add_or_update_endpoint
+                            for ep in mine_res["endpoints_found"]:
+                                full_ep = ep if ep.startswith("http") else f"{active_web_url.rstrip('/')}/{ep.lstrip('/')}"
+                                add_or_update_endpoint(project=project, host=resolved_host, url=full_ep, method="GET", notes="Discovered via JS Asset Mining")
+                                report["metrics"]["endpoints_mapped"] += 1
+                        except Exception:
+                            pass
                 except Exception:
                     pass
             report["phases_executed"].append("js_mine")
@@ -450,6 +460,18 @@ async def _execute_campaign_pipeline(
                     "flag_status": f.log.flag_status if f.log else "CONFIRMED",
                     "description": f.description[:150] if f.description else ""
                 })
+
+            # Automated BOLA / IDOR candidate inference feedback loop
+            try:
+                from backend.target_manager import discover_bola_candidates
+                bola_cands = discover_bola_candidates(project=project, limit=5)
+                if bola_cands:
+                    for bc in bola_cands[:3]:
+                        report["high_priority_actions"].append(
+                            f"BOLA Candidate detected: {bc['method']} {bc['resource']} (Observed: {bc['observed_value']}, suggested tamper: {bc['suggested_tamper']})"
+                        )
+            except Exception:
+                pass
 
         finally:
             db.close()

