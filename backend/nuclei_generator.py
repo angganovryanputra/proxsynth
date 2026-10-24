@@ -11,6 +11,7 @@ from typing import Dict, Any, List, Optional
 import yaml
 
 from backend.database import Finding, HttpLog
+from backend.update_manager import PROXSYNTH_VERSION
 
 
 def _sanitize_id(text: str) -> str:
@@ -99,7 +100,7 @@ def _build_raw_http_request(method: str, url: str, req_headers: Dict[str, Any], 
         lines.append(f"{k}: {v}")
         
     if not has_ua:
-        lines.append("User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) Proxsynth/0.1.0-beta")
+        lines.append(f"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) Proxsynth/{PROXSYNTH_VERSION}")
     if not has_accept:
         lines.append("Accept: */*")
         

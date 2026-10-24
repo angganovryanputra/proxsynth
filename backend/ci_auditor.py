@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Set
 
 from backend.database import SessionLocal, HttpLog, Finding, Project
+from backend.update_manager import PROXSYNTH_VERSION
 
 # Sensitive data leak regexes
 _LEAK_PATTERNS = [
@@ -307,7 +308,7 @@ def generate_sarif_report(project: Optional[str] = None) -> Dict[str, Any]:
                 "tool": {
                     "driver": {
                         "name": "Proxsynth",
-                        "version": "0.1.0-beta",
+                        "version": PROXSYNTH_VERSION,
                         "informationUri": "https://github.com/angganovryanputra/proxynth",
                         "rules": list(rules_dict.values())
                     }

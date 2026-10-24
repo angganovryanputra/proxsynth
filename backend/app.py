@@ -51,6 +51,7 @@ from backend.openapi_generator import generate_openapi_spec
 from backend.fuzzer import run_fuzz_attack, BUILTIN_PAYLOADS
 from backend.session_keeper import start_session_keeper, stop_session_keeper, get_session_keeper_status
 from backend.security_utils import sanitize_attachment_filename
+from backend.update_manager import PROXSYNTH_VERSION
 
 # Initialize SQLite database
 init_db()
@@ -58,7 +59,7 @@ init_db()
 app = FastAPI(
     title="Proxsynth Platform",
     description="Autonomous Agentic Interception Proxy & Security Telemetry Platform for AI Agents",
-    version="0.1.0-beta"
+    version=PROXSYNTH_VERSION
 )
 
 @app.on_event("startup")
@@ -1646,7 +1647,7 @@ async def test_payload_api(data: TestPayloadRequest, db: Session = Depends(get_d
 
     method = (data.http_method or "GET").upper()
     req_headers = data.headers or {}
-    req_headers["User-Agent"] = req_headers.get("User-Agent", "Proxsynth-Payload-Tester/0.1.0-beta")
+    req_headers["User-Agent"] = req_headers.get("User-Agent", f"Proxsynth-Payload-Tester/{PROXSYNTH_VERSION}")
 
     final_url = target_url
     req_body = None
@@ -3349,14 +3350,14 @@ async def run_campaign_endpoint(req: CampaignRunRequest, db: Session = Depends(g
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "platform": "Proxsynth", "version": "0.1.0-beta"}
+    return {"status": "ok", "platform": "Proxsynth", "version": PROXSYNTH_VERSION}
 
 @app.get("/api/info")
 def platform_info():
     return {
         "status": "online",
         "platform": "Proxsynth",
-        "version": "0.1.0-beta",
+        "version": PROXSYNTH_VERSION,
         "mode": "autonomous",
         "intercept_active": is_intercept_enabled()
     }

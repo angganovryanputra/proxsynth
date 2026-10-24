@@ -4,6 +4,8 @@ Enables custom scripts to route traffic through Proxsynth Proxy with automatic s
 and provides programmatic reporting back to the Proxsynth Dashboard.
 """
 
+__version__ = "0.1.0-beta"
+
 import os
 import requests
 from typing import Optional, Dict, Any

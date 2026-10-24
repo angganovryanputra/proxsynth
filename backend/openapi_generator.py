@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from backend.database import HttpLog, Project
+from backend.update_manager import PROXSYNTH_VERSION
 
 
 def _infer_type(val: Any) -> str:
@@ -170,7 +171,7 @@ def generate_openapi_spec(project_name: str, db: Session) -> Dict[str, Any]:
         "openapi": "3.0.3",
         "info": {
             "title": f"Proxsynth MCP Auto-Reverse API - {clean_project.upper()}",
-            "version": "0.1.0-beta",
+            "version": PROXSYNTH_VERSION,
             "description": proj_desc,
             "contact": {
                 "name": "Proxsynth Observability Engine",

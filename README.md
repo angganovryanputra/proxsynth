@@ -1,9 +1,10 @@
 # ⚡ PROXSYNTH: Autonomous AI Security Interception Proxy & Testing Gateway
 ### An open-source interception proxy, security testing gateway, and real-time observability platform engineered for Autonomous AI Pentesting Agents via Model Context Protocol (FastMCP)
 
+[![Release](https://img.shields.io/badge/Release-v0.1.0--beta-orange.svg)](#-overview)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
 [![MCP](https://img.shields.io/badge/Model%20Context%20Protocol-FastMCP%202.0%2B-purple.svg)](https://modelcontextprotocol.io)
-[![FastMCP Tools](https://img.shields.io/badge/FastMCP%20Tools-57%20Registered-8b5cf6.svg)](#-complete-fastmcp-tools-reference-specification-57-tools)
+[![FastMCP Tools](https://img.shields.io/badge/FastMCP%20Tools-71%20Registered-8b5cf6.svg)](#-complete-fastmcp-tools-reference-specification-71-tools)
 [![FastAPI](https://img.shields.io/badge/FastAPI-High%20Performance-009688.svg)](https://fastapi.tiangolo.com)
 [![Playwright](https://img.shields.io/badge/Playwright-Chromium%20DOM%20Oracle-45ba4b.svg)](https://playwright.dev)
 [![Database](https://img.shields.io/badge/SQLite-WAL%20Engine-003B57.svg)](https://sqlite.org)
@@ -39,13 +40,25 @@
   - [P2: Autonomous Multi-Protocol OAST Canary Sprayer](#pillar-2-p2-autonomous-multi-protocol-oast-canary-sprayer)
   - [P3: Agent Working Memory & Attack Hypothesis Ledger](#pillar-3-p3-agent-working-memory--attack-hypothesis-ledger)
   - [P4: Browser DOM Execution Oracle Sandbox](#pillar-4-p4-browser-dom-execution-oracle-sandbox)
+- [🚀 Autonomous Campaign Orchestration & Zero-Human Testing](#-autonomous-campaign-orchestration--zero-human-testing)
+  - [Autonomous Campaign Orchestrator ('God Tool')](#1-autonomous-campaign-orchestrator-god-tool)
+  - [Autonomous Web Spider & Form Discovery Engine](#2-autonomous-web-spider--form-discovery-engine)
+  - [Autonomous Re-Authentication Macro & Session Keeper](#3-autonomous-re-authentication-macro--session-keeper)
+  - [Unified Deterministic Verification Gate](#4-unified-deterministic-verification-gate)
+  - [Adaptive Rate-Limiting & Backoff Engine](#5-adaptive-rate-limiting--backoff-engine)
+- [🔬 Advanced Vulnerability Audit Engines](#-advanced-vulnerability-audit-engines)
+  - [Broken Function Level Authorization (BFLA) Matrix](#1-broken-function-level-authorization-bfla-matrix)
+  - [Mass Assignment & Object Injection Engine](#2-mass-assignment--object-injection-engine)
+  - [Numeric Business Logic & Currency Fuzzer](#3-numeric-business-logic--currency-fuzzer)
+  - [Differential Injection Oracle & Noise Normalization](#4-differential-injection-oracle--noise-normalization)
+  - [Nuclei v3 YAML Exploit Template Generator](#5-nuclei-v3-yaml-exploit-template-generator)
 - [🛡️ Key Security & Operational Modules](#️-key-security--operational-modules)
   - [OWASP API Security & CI/CD Auditor](#1-owasp-api-security--cicd-auditor)
   - [AI Activity Command & Payload Studio](#2-ai-activity-command--payload-studio)
   - [Active Project Context Synchronization](#3-active-project-context-synchronization)
   - [Zero-Prompt Session & Cookie Credentials Manager](#4-zero-prompt-session--cookie-credentials-manager)
   - [Automated 1-Click System & MCP Self-Updater](#5-automated-1-click-system--mcp-self-updater)
-- [🧰 Complete FastMCP Tools Reference (57 Tools)](#-complete-fastmcp-tools-reference-57-tools)
+- [🧰 Complete FastMCP Tools Reference Specification (71 Tools)](#-complete-fastmcp-tools-reference-specification-71-tools)
 - [🐍 Transparent Runtime Auto-Enforcement (`sitecustomize.py`)](#-transparent-runtime-auto-enforcement-sitecustomizepy)
 - [🚀 Quick Start & Installation](#-quick-start--installation)
 - [🤖 AI Agent Integration Guide](#-ai-agent-integration-guide)
@@ -58,30 +71,38 @@
 
 ## 📌 Overview
 
-**PROXSYNTH** is a high-performance interception proxy, security testing gateway, and real-time observability platform engineered specifically for **Autonomous AI Pentesting Agents** (including Claude Code, Cursor, Windsurf, OpenCode, Hermes, and Antigravity) communicating via the **Model Context Protocol (FastMCP)**.
+**PROXSYNTH** (`v0.1.0-beta`) is an open-source interception proxy, security testing gateway, and real-time observability platform engineered specifically for **Autonomous AI Pentesting Agents** (including Claude Code, Cursor, Windsurf, OpenCode, Hermes, and Antigravity) communicating via the **Model Context Protocol (FastMCP 2.0+)**.
 
-When deploying autonomous AI agents against web applications, APIs, and microservices, traditional proxies (*Burp Suite*, *Caido*, *mitmproxy*, *OWASP ZAP*) fall short because they were designed for manual human point-and-click workflows. Operators face critical challenges:
+When deploying autonomous AI agents against complex web applications, single-page apps (SPAs), microservices, and APIs, traditional penetration testing proxies (*Burp Suite*, *Caido*, *mitmproxy*, *OWASP ZAP*) fall short because they were designed for manual human point-and-click workflows. Operators face critical operational bottlenecks:
 
 1. **Subprocess Scripting & Proxy Bypass:** Scripts generated by agents (`requests`, `httpx`, `aiohttp`, `curl`, `sqlmap`, `nuclei`) bypass local proxy listeners and escape testing scope boundaries.
 2. **Context Window Token Exhaustion:** Raw HTTP responses (100KB–1MB of HTML, CSS, SVG, base64) flood LLM context windows, causing prompt degradation and severe API token costs.
 3. **Agent Amnesia & Context Drift:** LLMs lose state across iterative prompts, repeating already completed tests or losing track of confirmed exploit chains.
 4. **Blind Vulnerability Invisibility:** Exploiting Blind SSRF, Out-of-Band SQLi, or JNDI/LDAP injections requires an integrated multi-protocol listener correlated directly with request tokens.
 5. **Hallucinated XSS Findings:** LLMs often mistake harmless reflected strings for valid XSS without verifying browser DOM script execution.
+6. **Session Expiry Blockers:** Long-running security campaigns fail silently when auth cookies expire, requiring repeated human intervention to log back in.
+7. **Rate Limit Bans (HTTP 429):** Aggressive fuzzing triggers WAF blocks and IP bans unless rate limiting is dynamically adapted.
 
-**PROXSYNTH resolves these challenges out of the box.** It provides transparent runtime process interception, TLS MITM decryption with on-the-fly CA generation, semantic token compression, multi-protocol out-of-band canary listening, an agent working memory ledger, deterministic Playwright DOM verification, an automated OWASP API security auditor, and an interactive cyberpunk SOC dashboard.
+**PROXSYNTH resolves these challenges out of the box.** It provides transparent runtime process interception, TLS MITM decryption with on-the-fly CA generation, semantic token compression, multi-protocol out-of-band canary listening, an agent working memory ledger, deterministic Playwright DOM verification, an automated OWASP API security auditor, a fire-and-forget autonomous campaign orchestrator, and an interactive cyberpunk SOC dashboard.
 
 ---
 
 ## 🥊 Comparison with Traditional Proxies
 
-| Feature / Capability | PROXSYNTH | Burp Suite Pro | Caido | mitmproxy | OWASP ZAP |
+| Feature / Capability | PROXSYNTH (v0.1.0-beta) | Burp Suite Pro | Caido | mitmproxy | OWASP ZAP |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Native Model Context Protocol (FastMCP)** | ✅ **Yes (57 Tools)** | ❌ No | ❌ No | ❌ No | ❌ No |
+| **Native Model Context Protocol (FastMCP)** | ✅ **Yes (71 Tools)** | ❌ No | ❌ No | ❌ No | ❌ No |
+| **Autonomous Campaign Orchestrator (1-Command)**| ✅ **Built-in** | ❌ Manual | ❌ Manual | ❌ No | ⚠️ Quick Scan |
 | **Transparent Python Script Interception (`sitecustomize.py`)** | ✅ **Automatic** | ❌ Manual config | ❌ Manual config | ❌ Manual config | ❌ Manual config |
 | **Agent Working Memory (Hypothesis Ledger P3)** | ✅ **Built-in** | ❌ No | ❌ No | ❌ No | ❌ No |
 | **LLM Semantic Response Distiller (P1: 90% Token Savings)** | ✅ **Built-in** | ❌ No | ❌ No | ❌ No | ❌ No |
 | **Autonomous Multi-Protocol OAST Sprayer (P2)** | ✅ **HTTP/DNS/LDAP** | ⚠️ Collaborator | ❌ No | ❌ No | ⚠️ Addon |
 | **Headless DOM Execution Oracle Sandbox (P4)** | ✅ **Playwright Hook** | ❌ No | ❌ No | ❌ No | ❌ No |
+| **Autonomous Re-Authentication Macro & Session Keeper** | ✅ **Built-in** | ⚠️ Session Rules | ❌ No | ❌ No | ⚠️ ZAP Scripts |
+| **Broken Function Level Auth (BFLA) Matrix Engine** | ✅ **Built-in** | ⚠️ AuthMatrix ext | ❌ No | ❌ No | ❌ No |
+| **Deterministic Verification Gate (Zero False Positive)** | ✅ **Built-in** | ❌ Manual | ❌ No | ❌ No | ❌ No |
+| **Adaptive Rate-Limit Backoff & SOCKS5 Pool Rotation** | ✅ **Built-in** | ⚠️ Match/Replace | ❌ No | ❌ No | ❌ No |
+| **Nuclei v3 YAML Exploit Template Generator** | ✅ **Built-in** | ⚠️ Extension | ❌ No | ❌ No | ❌ No |
 | **OWASP API Security Top 10 CI/CD Auditor** | ✅ **Built-in** | ⚠️ Scanner Tab | ❌ No | ❌ No | ⚠️ Alert Tree |
 | **AI Activity CLI Repeater & Payload Studio** | ✅ **Built-in** | ❌ No | ❌ No | ❌ No | ❌ No |
 | **Human-in-the-Loop Intercept Trap via WebSockets** | ✅ **Yes** | ✅ Yes (GUI) | ✅ Yes (GUI) | ✅ Yes (CLI/Web) | ✅ Yes (GUI) |
@@ -99,7 +120,7 @@ When deploying autonomous AI agents against web applications, APIs, and microser
                                   └───────────────┬────────────────────────┬───────────────┘
                                                   │                        │
                     Direct FastMCP Tools (JSON-RPC)│                        │ Subprocess / CLI Script Execution
-              (send_http_request, render_webpage) │                        │ (run_pentest_command OR host terminal)
+               (send_http_request, render_webpage) │                        │ (run_pentest_command OR host terminal)
                                                   │                        │
                                                   │                        ▼
                                                   │         ┌──────────────────────────────────────────────┐
@@ -111,51 +132,56 @@ When deploying autonomous AI agents against web applications, APIs, and microser
                                                   │         └──────────────────────┬───────────────────────┘
                                                   │                                │
                                                   ▼                                ▼
-       ┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
-       │                                  PROXSYNTH GATEWAY ENGINE                                         │
-       │                                                                                                   │
-       │   ┌───────────────────────────────────┐               ┌───────────────────────────────────────┐   │
-       │   │     FastAPI Core & Dashboard      │               │   Built-in Forward Interception Proxy │   │
-       │   │        (Port 8000 / HTTP / WS)    │               │         (Port 8088 / HTTP & TLS MITM) │   │
-       │   └─────────────────┬─────────────────┘               └───────────────────┬───────────────────┘   │
-       │                     │                                                     │                       │
-       │                     └───────────────────────┬─────────────────────────────┘                       │
-       │                                             ▼                                                     │
-       │                        ┌────────────────────────────────────────┐                                 │
-       │                        │   Traffic Interception & Evaluation    │                                 │
-       │                        │ - Interactive Breakpoint Trap (WS)     │                                 │
-       │                        │ - Zero-Prompt Cookie Auto-Injection    │                                 │
-       │                        │ - Dynamic Project Scope Guardrails     │                                 │
-       │                        │ - Rotating Legitimate Browser Headers  │                                 │
-       │                        └────────────────────┬───────────────────┘                                 │
-       │                                             │                                                     │
-       │         ┌───────────────────┬───────────────┴───────────────┬───────────────────┐                 │
-       │         ▼                   ▼                               ▼                   ▼                 │
-       │   ┌───────────────┐   ┌───────────────┐               ┌───────────────┐   ┌───────────────┐       │
-       │   │  P1: Semantic │   │  P2: OAST     │               │  P3: Working  │   │  P4: Headless │       │
-       │   │ Body Distiller│   │ Canary Sprayer│               │ Memory Ledger │   │  DOM Oracle   │       │
-       │   └───────┬───────┘   └───────┬───────┘               └───────┬───────┘   └───────┬───────┘       │
-       │           │                   │                               │                   │               │
-       │           ▼                   ▼                               ▼                   ▼               │
-       │   ┌──────────────────────────────────────────────────────────────────────────────────────┐        │
-       │   │                   Persistent SQLite WAL Storage (proxsynth.db)                       │        │
-       │   │   - HttpLog (Raw & Distilled)              - CapturedPayload (Vault)                 │        │
-       │   │   - Target Assets & Endpoints Graph        - TestingHypothesis (Working Memory)      │        │
-       │   │   - OastEvent Callbacks                    - Finding (Confirmed & Potential)         │        │
-       │   │   - AgentCommandLog (CLI Audits)           - ActiveSession (Auth Cookies)            │        │
-       │   └──────────────────────────────────────────┬───────────────────────────────────────────┘        │
-       └──────────────────────────────────────────────┼────────────────────────────────────────────────────┘
-                                                      │
-                       ┌──────────────────────────────┼──────────────────────────────┐
-                       │                              │                              │
-                       ▼                              ▼                              ▼
-        ┌─────────────────────────────┐┌─────────────────────────────┐┌─────────────────────────────┐
-        │   Multi-Protocol OAST Engine││ Cyberpunk SOC Web Dashboard ││  CI/CD Security Auditor     │
-        │ - HTTP Callback (:8000/oast)││ - Virtualized Traffic Table ││ - OWASP API Security Top 10 │
-        │ - UDP DNS Listener (:5354)  ││ - Live Intercept Modal      ││ - Automated Scorecard (A-F) │
-        │ - TCP LDAP Listener (:1390) ││ - Attack Surface Topology   ││ - Markdown & JSON Exports   │
-        │ - Canary Sprayer (P2)       ││ - Working Memory Kanban     ││ - Remediation Advisories    │
-        └─────────────────────────────┘└─────────────────────────────┘└─────────────────────────────┘
+        ┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+        │                                  PROXSYNTH GATEWAY ENGINE                                         │
+        │                                                                                                   │
+        │   ┌───────────────────────────────────┐               ┌───────────────────────────────────────┐   │
+        │   │     FastAPI Core & Dashboard      │               │   Built-in Forward Interception Proxy │   │
+        │   │        (Port 8000 / HTTP / WS)    │               │         (Port 8088 / HTTP & TLS MITM) │   │
+        │   └─────────────────┬─────────────────┘               └───────────────────┬───────────────────┘   │
+        │                     │                                                     │                       │
+        │                     └───────────────────────┬─────────────────────────────┘                       │
+        │                                             ▼                                                     │
+        │                        ┌────────────────────────────────────────┐                                 │
+        │                        │   Traffic Interception & Evaluation    │                                 │
+        │                        │ - Interactive Breakpoint Trap (WS)     │                                 │
+        │                        │ - Zero-Prompt Cookie Auto-Injection    │                                 │
+        │                        │ - Dynamic Project Scope Guardrails     │                                 │
+        │                        │ - Rotating Legitimate Browser Headers  │                                 │
+        │                        │ - Adaptive Rate-Limiter Backoff (:429) │                                 │
+        │                        └────────────────────┬───────────────────┘                                 │
+        │                                             │                                                     │
+        │   ┌─────────────────────────────────────────┴─────────────────────────────────────────┐           │
+        │   ▼                                         ▼                                         ▼           │
+        │ ┌─────────────────────────────┐ ┌─────────────────────────────┐ ┌─────────────────────────────┐   │
+        │ │   AUTONOMOUS WORKBENCH      │ │     AUDIT & FUZZING ENGINES │ │     CORE AGENTIC PILLARS    │   │
+        │ │ - Campaign Orchestrator     │ │ - BFLA & BOLA Matrix        │ │ - P1: Semantic Distiller    │   │
+        │ │ - Web Spider & Form Finder  │ │ - Mass Assignment Engine    │ │ - P2: Multi-Protocol OAST   │   │
+        │ │ - Re-Auth Macro Keeper      │ │ - Numeric Logic Fuzzer      │ │ - P3: Hypothesis Memory     │   │
+        │ │ - Verification Gate         │ │ - Differential Injection    │ │ - P4: Browser DOM Oracle    │   │
+        │ └──────────────┬──────────────┘ └──────────────┬──────────────┘ └──────────────┬──────────────┘   │
+        │                │                               │                               │                  │
+        │                └───────────────────────┬───────┴───────────────────────────────┘                  │
+        │                                        ▼                                                          │
+        │   ┌──────────────────────────────────────────────────────────────────────────────────────┐        │
+        │   │                   Persistent SQLite WAL Storage (proxsynth.db)                       │        │
+        │   │   - HttpLog (Raw & Distilled)              - CapturedPayload (Vault)                 │        │
+        │   │   - Target Assets & Endpoints Graph        - TestingHypothesis (Working Memory)      │        │
+        │   │   - OastEvent Callbacks                    - Finding (Confirmed & Potential)         │        │
+        │   │   - AgentCommandLog (CLI Audits)           - ActiveSession (Auth Cookies & Macros)   │        │
+        │   └──────────────────────────────────────────┬───────────────────────────────────────────┘        │
+        └──────────────────────────────────────────────┼────────────────────────────────────────────────────┘
+                                                       │
+                        ┌──────────────────────────────┼──────────────────────────────┐
+                        │                              │                              │
+                        ▼                              ▼                              ▼
+         ┌─────────────────────────────┐┌─────────────────────────────┐┌─────────────────────────────┐
+         │   Multi-Protocol OAST Engine││ Cyberpunk SOC Web Dashboard ││  CI/CD Security Auditor     │
+         │ - HTTP Callback (:8000/oast)││ - Autonomous Campaign Studio││ - OWASP API Security Top 10 │
+         │ - UDP DNS Listener (:5354)  ││ - Live Traffic Intercept    ││ - Automated Scorecard (A-F) │
+         │ - TCP LDAP Listener (:1390) ││ - Attack Surface Topology   ││ - SARIF 2.1.0 & Markdown    │
+         │ - Canary Sprayer (P2)       ││ - Working Memory Kanban     ││ - Nuclei v3 YAML Generator  │
+         └─────────────────────────────┘└─────────────────────────────┘└─────────────────────────────┘
 ```
 
 ---
@@ -187,7 +213,7 @@ PROXSYNTH introduces four architectural pillars specifically engineered to eleva
   - Local HTTP Callback Router (Port `8000/oast/{token}`).
   - Cloud Interactsh integration (`oast.fun`, `interact.sh`).
 * **Canary Sprayer:** Ingests any target URL and automatically sprays context-aware canaries across all discovered query parameters, body parameters, and HTTP headers.
-* **MCP Integration:** Tool `spray_oast_canaries(target_url="https://target/api", vuln_type="ALL")`.
+* **MCP Integration:** Tool `spray_oast_canaries(target_url="https://target/api", vuln_types=["ssrf", "dns", "log4j", "xxe"])`.
 
 ---
 
@@ -212,6 +238,103 @@ PROXSYNTH introduces four architectural pillars specifically engineered to eleva
 
 ---
 
+## 🚀 Autonomous Campaign Orchestration & Zero-Human Testing
+
+PROXSYNTH enables end-to-end autonomous penetration testing designed to run without micro-management or step-by-step instructions.
+
+---
+
+### 1. Autonomous Campaign Orchestrator ('God Tool')
+Located in [`backend/campaign_orchestrator.py`](file:///d:/PROJECT/01/backend/campaign_orchestrator.py) and exposed via FastMCP `run_autonomous_security_campaign` and `POST /api/campaign/run`:
+- **Single-Command Execution:** Takes a target URL and project name, then coordinates every subsystem asynchronously in the background.
+- **Full Pentest Lifecycle:**
+  1. *Discovery & Spidering:* Crawls internal routes and extracts HTML form schemas.
+  2. *JavaScript Recon:* Mines scripts for leaked tokens and hidden endpoints.
+  3. *OAST Spraying:* Sprays multi-protocol canaries across observed parameters.
+  4. *Access Matrix Audit:* Tests Broken Function Level Authorization (BFLA) and BOLA/IDOR.
+  5. *Business Logic & Injection:* Fuzzes numeric logic, mass assignment, and differential SQLi/SSTI.
+  6. *Deterministic Verification:* Passes candidates through verification gates to discard false positives.
+- **Executive Summary:** Returns a token-efficient executive breakdown of attack surface, testing statistics, and verified critical findings.
+
+---
+
+### 2. Autonomous Web Spider & Form Discovery Engine
+Located in [`backend/spider_engine.py`](file:///d:/PROJECT/01/backend/spider_engine.py):
+- Recursively traverses same-origin links up to configurable depth (`max_depth=2`, `max_pages=25`).
+- Parses HTML documents to identify `<form action="..." method="...">` tags, form field names, parameter types, default values, and buttons.
+- Automatically stores newly discovered endpoints in the **Target Knowledge Graph** and schedules them for vulnerability auditing.
+
+---
+
+### 3. Autonomous Re-Authentication Macro & Session Keeper
+Located in [`backend/auth_macro.py`](file:///d:/PROJECT/01/backend/auth_macro.py):
+- Solves "login amnesia" during long multi-hour test campaigns.
+- Operators or agents register an authentication recipe: login URL, HTTP method, JSON payload, and JSONPath to extract bearer tokens or cookies.
+- When an ongoing test receives an `HTTP 401 Unauthorized` or `HTTP 403 Forbidden` response, Proxynth's session keeper transparently executes the re-authentication recipe in the background, updates the credential vault, and retries the request seamlessly.
+
+---
+
+### 4. Unified Deterministic Verification Gate
+Located in [`backend/verification_gate.py`](file:///d:/PROJECT/01/backend/verification_gate.py):
+- Discards unprovable exploit attempts before they clutter reports or mislead the operator.
+- Routes candidate findings through modality-specific verification oracles:
+  - **Reflected & DOM XSS:** Headless Playwright Chromium executes the payload and checks for real DOM dialog triggers.
+  - **Time-Based Injection:** Compares baseline response times with delayed payloads using statistical Z-score analysis.
+  - **Out-of-Band SSRF/RCE:** Checks for actual HTTP/DNS/LDAP callback events recorded in the SQLite database.
+
+---
+
+### 5. Adaptive Rate-Limiting & Backoff Engine
+Located in [`backend/adaptive_limiter.py`](file:///d:/PROJECT/01/backend/adaptive_limiter.py):
+- Automatically intercepts `HTTP 429 Too Many Requests` responses across the forward proxy and `send_http_request`.
+- Honors target `Retry-After` headers and calculates exponential backoff with jitter.
+- Coordinates transparent upstream proxy pool rotation (e.g., rotating SOCKS5 proxies) to preserve operational stealth and avoid IP bans.
+
+---
+
+## 🔬 Advanced Vulnerability Audit Engines
+
+---
+
+### 1. Broken Function Level Authorization (BFLA) Matrix
+Located in [`backend/bfla_engine.py`](file:///d:/PROJECT/01/backend/bfla_engine.py):
+- Audits OWASP API5:2023 vulnerabilities where administrative or sensitive functionality is improperly exposed.
+- Tests endpoints against high-privilege (`admin`), unprivileged (`user`), and unauthenticated (`anonymous`) roles.
+- Employs HTTP method tampering (`GET` vs `POST` vs `DELETE` vs `PATCH`) to discover hidden administrative actions.
+
+---
+
+### 2. Mass Assignment & Object Injection Engine
+Located in [`backend/mass_assignment_engine.py`](file:///d:/PROJECT/01/backend/mass_assignment_engine.py):
+- Audits OWASP API3:2023 by testing whether target endpoints inadvertently bind client-provided parameters to internal data models.
+- Injects sensitive properties (`is_admin`, `role`, `verified`, `balance`, `credits`, `permissions`) into JSON request bodies.
+- Compares response mutations and persistent account state changes to flag exploitable parameter binding.
+
+---
+
+### 3. Numeric Business Logic & Currency Fuzzer
+Located in [`backend/logic_fuzzer.py`](file:///d:/PROJECT/01/backend/logic_fuzzer.py):
+- Audits financial, quantity, and workflow business logic flaws.
+- Tests negative quantities (`-1`, `-9999`), integer overflow boundaries (`2147483648`, `9223372036854775808`), zero-price tampering (`0.00`, `0.0001`), and floating-point precision flaws.
+- Injects currency switching mismatches (`USD` vs `IDR` vs `JPY`) between checkout steps to detect unit-conversion arbitrage.
+
+---
+
+### 4. Differential Injection Oracle & Noise Normalization
+Located in [`backend/differential_oracle.py`](file:///d:/PROJECT/01/backend/differential_oracle.py):
+- Validates SQL injection, Server-Side Template Injection (SSTI), and Command Injection through automated differential analysis.
+- Strips dynamic nonces, session IDs, timestamps, and anti-CSRF tokens to eliminate false variances.
+- Compares Boolean true/false pair responses and calculates statistical response size/status deltas.
+
+---
+
+### 5. Nuclei v3 YAML Exploit Template Generator
+Located in [`backend/nuclei_generator.py`](file:///d:/PROJECT/01/backend/nuclei_generator.py):
+- Automatically converts confirmed vulnerability findings from Proxynth into standardized **Nuclei v3 YAML templates**.
+- Generates reproducible HTTP requests, path variables, and deterministic matchers (status codes, regex words, DSL expressions) ready for CI/CD regression testing.
+
+---
+
 ## 🛡️ Key Security & Operational Modules
 
 ### 1. OWASP API Security & CI/CD Auditor
@@ -224,7 +347,7 @@ Located in [`backend/ci_auditor.py`](file:///d:/PROJECT/01/backend/ci_auditor.py
   4. *Query Parameter Credential Exposure:* Alerts on sensitive tokens (`password`, `apikey`, `secret`, `bearer`) exposed in URL query parameters.
   5. *Information & Secret Disclosure:* Regex scanner for exposed AWS keys, GitHub tokens, Stripe secrets, JWTs, stack traces, and internal RFC1918 IP addresses in response bodies.
 * **Scorecards & Grades:** Calculates an objective security score (0–100) with letter grades (**A+** to **F**) and remediation guidance.
-* **Publication-Grade Reports:** Generates Markdown or JSON reports ready for pentest deliverables or CI/CD pipelines.
+* **Publication-Grade Reports:** Generates Markdown, JSON, and SARIF 2.1.0 reports ready for pentest deliverables or CI/CD pipelines.
 
 ---
 
@@ -257,69 +380,132 @@ Accessible via the **AI Activity** tab:
 
 ---
 
-## 🧰 Complete FastMCP Tools Reference (57 Tools)
+## 🧰 Complete FastMCP Tools Reference Specification (71 Tools)
 
-PROXSYNTH's FastMCP server ([`mcp_server.py`](file:///d:/PROJECT/01/mcp_server.py)) exposes **57 enterprise-grade security tools**:
+PROXSYNTH's FastMCP server ([`mcp_server.py`](file:///d:/PROJECT/01/mcp_server.py)) exposes **71 enterprise-grade security tools** categorized across core offensive operations:
 
-| # | Tool Name | Subsystem | Description |
+### Category A: Autonomous Campaign & Discovery (Tools 1 – 6)
+| # | Tool Name | Key Arguments | Description |
 | :---: | :--- | :--- | :--- |
-| **1** | `set_active_project` | Workspace Scope | Dynamically sets the active project scope for the agent session. |
-| **2** | `get_active_project` | Workspace Scope | Retrieves the currently active project name and isolation directory. |
-| **3** | `send_http_request` | Core Network | HTTP/HTTPS dispatcher with auto-auth injection, scope checks, intercept trap, and response body distillation. |
-| **4** | `browser_navigate_and_render` | Browser Automation | Headless Playwright engine capturing dynamic DOM and network Fetch/XHR calls. |
-| **5** | `render_webpage` | Browser Automation | Visual capture and DOM snapshot utility for single-page apps. |
-| **6** | `request_manual_login` | Authentication | Spawns visible browser for human operator to solve CAPTCHA/2FA; auto-imports session cookies. |
-| **7** | `run_pentest_command` | Subprocess Execution | Executes terminal commands (`curl`, `sqlmap`, `nuclei`) with auto-proxy routing to `:8088` and audit logging. |
-| **8** | `record_test_payload` | Payload Vault | Stores exploit strings into the Payload Vault with categorization and tags. |
-| **9** | `get_captured_payloads` | Payload Vault | Queries stored payloads with filtering by vulnerability type, outcome, and keyword. |
-| **10** | `get_log_detail` | Telemetry & History | Retrieves full un-truncated HTTP request/response headers and bodies by Log ID. |
-| **11** | `get_traffic_history` | Telemetry & History | Lists recent HTTP transactions with status codes, latency, and triage tags. |
-| **12** | `report_vulnerability` | Findings & Audit | Flags an HTTP log entry as a confirmed vulnerability finding in the operator ledger. |
-| **13** | `get_attack_surface` | Attack Surface | Returns hierarchical topology graph of assets, open ports, and endpoints. |
-| **14** | `record_target_asset` | Reconnaissance | Catalogs a host/machine, IP address, OS, and status in the knowledge graph. |
-| **15** | `record_target_service` | Reconnaissance | Records open ports, protocols (TCP/UDP), and service banners for a target asset. |
-| **16** | `record_target_endpoint` | Reconnaissance | Catalogs target URL routes, parameters, auth requirements, and testing status. |
-| **17** | `generate_oast_token` | OAST Engine | Generates unique correlation token and callback URLs for Out-of-Band testing. |
-| **18** | `poll_oast_events` | OAST Engine | Queries captured callbacks (HTTP, DNS, LDAP) for a specific OAST token. |
-| **19** | `set_identity_session` | BOLA / IDOR Matrix | Registers secondary user identity cookies (e.g., attacker/victim) for shadow replay testing. |
-| **20** | `test_bola_idor` | BOLA / IDOR Matrix | Executes dual-track BOLA replay against an endpoint using registered identity roles. |
-| **21** | `mutate_payload` | WAF Evasion | Generates obfuscated payload variations (URL, hex, comment injection, Unicode bypass). |
-| **22** | `analyze_waf_response` | WAF Evasion | Fingerprints target WAF vendor (Cloudflare, AWS WAF, Akamai) and recommends bypass tactics. |
-| **23** | `infer_hidden_endpoints` | API Reconstructor | Predicts unmapped REST endpoints (admin, actuator, docs, CRUD variants) from observed paths. |
-| **24** | `get_attack_paths` | Attack Chains | Synthesizes Kill Chain attack paths from initial recon to Crown Jewels (RCE, DB dump). |
-| **25** | `generate_exploit_poc` | PoC Generator | Generates standalone Python PoC scripts, cURL commands, and CVSS/CWE dossiers for findings. |
-| **26** | `send_websocket_message` | WebSocket Audit | Transmits and logs WebSocket frames to target socket endpoints for real-time protocol testing. |
-| **27** | `fuzz_endpoint` | Parameter Fuzzer | High-speed dictionary fuzzing against marker positions (`§...§`) with delta analysis. |
-| **28** | `execute_workflow_sequence` | Business Logic | Executes multi-step stateful workflows with dynamic variable extraction and step-skipping bypass checks. |
-| **29** | `test_race_condition` | Concurrency Burst | Executes microsecond-synchronized request bursts using `asyncio.Barrier` to detect race conditions. |
-| **30** | `mine_javascript_assets` | JS Recon | Scrapes frontend `.js` bundles for hidden API routes, query params, source maps, and leaked secrets. |
-| **31** | `compare_http_responses` | Diff Engine | Normalizes dynamic noise (timestamps, UUIDs, nonces) to detect Soft-403/404 anomalies. |
-| **32** | `audit_jwt_security` | JWT Security | Audits JWT tokens for Algorithm None bypass, weak HMAC offline brute-forcing, and claim tampering. |
-| **33** | `delete_attack_surface_node` | Attack Surface | Prunes stale or false-positive assets, services, or endpoints from the knowledge graph. |
-| **34** | `clear_attack_surface_graph` | Attack Surface | Wipes all attack surface records for a project workspace to reset reconnaissance. |
-| **35** | `distill_http_response` | **P1: Distiller** | Compresses HTML/JSON bodies into semantic security structures (85–95% token savings). |
-| **36** | `spray_oast_canaries` | **P2: OAST Sprayer** | Discovers input parameters and sprays multi-protocol canaries (HTTP, DNS, LDAP/JNDI) across a target URL. |
-| **37** | `record_testing_hypothesis` | **P3: Memory** | Logs an attack hypothesis into the stateful ledger (`target`, `vuln_type`, `hypothesis`, `parameters`). |
-| **38** | `get_testing_agenda` | **P3: Memory** | Synthesizes an actionable testing agenda of unverified hypotheses to eliminate agent loops. |
-| **39** | `update_hypothesis_status` | **P3: Memory** | Transitions hypothesis lifecycle state (`PLANNED` ➔ `TESTING` ➔ `CONFIRMED` / `DISPROVEN` / `BLOCKED`). |
-| **40** | `verify_dom_execution` | **P4: DOM Oracle** | Executes payload in sandboxed Playwright Chromium to deterministically verify XSS/DOM sinks. |
-| **41** | `setup_public_tunnel` | Tunnel Manager | Spins up Cloudflare Quick Tunnel / ngrok and binds public URL to OAST listener. |
-| **42** | `get_tunnel_status` | Tunnel Manager | Returns operational status, public URL, provider, and uptime of active ingress tunnel. |
-| **43** | `close_public_tunnel` | Tunnel Manager | Terminates active public tunnel and restores local callback base URL. |
-| **44** | `add_interception_rule` | Interception Rules | Adds rule to tamper with headers, rewrite bodies, or return synthetic mock responses. |
-| **45** | `list_interception_rules` | Interception Rules | Lists all configured match & replace and response mocking rules. |
-| **46** | `toggle_interception_rule` | Interception Rules | Toggles or updates the enabled state of an interception rule. |
-| **47** | `delete_interception_rule` | Interception Rules | Deletes an interception rule by ID. |
-| **48** | `get_csrf_tokens` | Anti-CSRF Tracker | Retrieves all auto-tracked and manual anti-CSRF tokens extracted from HTTP responses. |
-| **49** | `set_csrf_token` | Anti-CSRF Tracker | Sets an anti-CSRF token for target domain to be auto-injected in state-changing calls. |
-| **50** | `clear_csrf_tokens` | Anti-CSRF Tracker | Clears cached anti-CSRF tokens. |
-| **51** | `search_traffic_advanced` | Traffic Search | Multi-dimensional traffic search filtering by status range, latency, and full-text bodies. |
-| **52** | `analyze_traffic_patterns` | Traffic Patterns | Analyzes captured traffic, aggregating unique routes and discovered parameter inventory. |
-| **53** | `inspect_graphql_endpoint` | Protocol Inspector | Audits GraphQL for introspection disclosure, field suggestion leaks, and query batching. |
-| **54** | `audit_websocket_security` | Protocol Inspector | Audits WebSocket handshake for CSWSH, plaintext transport, and token leaks in queries. |
-| **55** | `run_security_audit_suite` | CI/CD Auditor | Runs automated OWASP API security audit across traffic, returning 0–100 score and letter grade. |
-| **56** | `generate_audit_ci_report` | CI/CD Auditor | Generates publication-grade Markdown or JSON security report for CI/CD pipelines. |
-| **57** | `update_proxsynth_system` | Auto-Updater | Performs autonomous remote Git update checks and synchronized system upgrades for Web & MCP. |
+| **1** | `run_autonomous_security_campaign` | `target_url`, `project`, `max_depth`, `deep_verify` | Executes the complete autonomous end-to-end security campaign in a single command. |
+| **2** | `spider_and_crawl_target` | `root_url`, `project`, `max_depth`, `max_pages` | Recursively crawls target web application, extracts HTML forms, and logs endpoints. |
+| **3** | `register_auth_recipe` | `domain`, `login_url`, `payload`, `token_json_path` | Registers automated login recipe for transparent re-authentication when sessions expire. |
+| **4** | `execute_reauthentication` | `domain` | Manually triggers execution of the registered authentication recipe to refresh tokens. |
+| **5** | `verify_vulnerability_candidate` | `finding_id`, `log_id`, `verification_type` | Validates vulnerability candidates through deterministic DOM, timing, or OAST oracles. |
+| **6** | `mine_javascript_assets` | `content_or_url`, `project` | Mines JS bundles for hidden endpoints, query parameters, source maps, and leaked secrets. |
+
+### Category B: Core Network, Browser & Proxy Trap (Tools 7 – 13)
+| # | Tool Name | Key Arguments | Description |
+| :---: | :--- | :--- | :--- |
+| **7** | `send_http_request` | `url`, `method`, `headers`, `body`, `distill_response` | HTTP/HTTPS dispatcher with auto-auth injection, scope checks, intercept trap, and distillation. |
+| **8** | `browser_navigate_and_render` | `url`, `wait_for_selector`, `timeout_ms` | Headless Playwright engine capturing dynamic DOM and network Fetch/XHR calls. |
+| **9** | `render_webpage` | `url`, `render_type` | Visual screenshot capture and DOM snapshot utility for single-page applications. |
+| **10** | `request_manual_login` | `target_url`, `instruction` | Spawns visible browser for human operator to solve CAPTCHA/2FA; auto-imports cookies. |
+| **11** | `run_pentest_command` | `command`, `cwd`, `timeout_seconds` | Executes terminal commands (`curl`, `sqlmap`, `nuclei`) with auto-proxy routing to `:8088`. |
+| **12** | `get_log_detail` | `log_id` | Retrieves full un-truncated HTTP request/response headers and bodies by Log ID. |
+| **13** | `get_traffic_history` | `project`, `limit`, `filter_status` | Lists recent HTTP transactions with status codes, latency, and triage tags. |
+
+### Category C: Agent Working Memory & Hypotheses (Tools 14 – 16)
+| # | Tool Name | Key Arguments | Description |
+| :---: | :--- | :--- | :--- |
+| **14** | `record_testing_hypothesis` | `target`, `vuln_type`, `hypothesis`, `parameters` | Logs an attack hypothesis into the stateful ledger tracking agent testing state. |
+| **15** | `get_testing_agenda` | `project` | Synthesizes an actionable testing agenda of unverified hypotheses to eliminate agent loops. |
+| **16** | `update_hypothesis_status` | `hypothesis_id`, `status`, `evidence_notes` | Transitions hypothesis lifecycle state (`PLANNED` -> `TESTING` -> `CONFIRMED` / `DISPROVEN` / `BLOCKED`). |
+
+### Category D: Advanced Vulnerability Audit Engines (Tools 17 – 23)
+| # | Tool Name | Key Arguments | Description |
+| :---: | :--- | :--- | :--- |
+| **17** | `audit_bfla_permissions` | `endpoint_url`, `privileged_role`, `unprivileged_role` | Audits Broken Function Level Authorization against high vs low privilege accounts. |
+| **18** | `audit_mass_assignment` | `endpoint_url`, `base_payload`, `method` | Injects sensitive attributes (`is_admin`, `role`) into bodies to detect mass assignment. |
+| **19** | `audit_numeric_business_logic` | `endpoint_url`, `target_param`, `base_payload` | Fuzzes numeric parameters with negative numbers, overflow boundaries, and zero prices. |
+| **20** | `audit_differential_injection` | `endpoint_url`, `injection_param`, `vuln_type` | Validates injection vulnerabilities via noise normalization and statistical delta analysis. |
+| **21** | `audit_jwt_security` | `token`, `test_url` | Audits JWT tokens for Algorithm None bypass, weak HMAC brute-forcing, and tampering. |
+| **22** | `audit_websocket_security` | `url` | Audits WebSocket handshake for CSWSH, plaintext transport, and token leaks. |
+| **23** | `inspect_graphql_endpoint` | `url` | Audits GraphQL for introspection disclosure, field suggestion leaks, and batching attacks. |
+
+### Category E: Multi-Protocol OAST & Canary Sprayer (Tools 24 – 26)
+| # | Tool Name | Key Arguments | Description |
+| :---: | :--- | :--- | :--- |
+| **24** | `generate_oast_token` | `vuln_type`, `description` | Generates unique correlation token and callback URLs for Out-of-Band testing. |
+| **25** | `poll_oast_events` | `token` | Queries captured callbacks (HTTP, DNS UDP 5354, LDAP TCP 1390) for an OAST token. |
+| **26** | `spray_oast_canaries` | `target_url`, `vuln_types` | Ingests target URL and sprays context-aware canaries across all discovered inputs. |
+
+### Category F: Access Control & BOLA / IDOR Testing (Tools 27 – 30)
+| # | Tool Name | Key Arguments | Description |
+| :---: | :--- | :--- | :--- |
+| **27** | `set_identity_session` | `domain`, `identity_role`, `raw_cookies` | Registers secondary user identity cookies (attacker vs victim) for shadow replay. |
+| **28** | `test_bola_idor` | `log_id`, `role_a`, `role_b` | Executes dual-track BOLA replay against an endpoint using registered identity roles. |
+| **29** | `run_bola_matrix_scan` | `project` | Executes comprehensive automated BOLA matrix replay across all logged endpoints. |
+| **30** | `get_bola_access_matrix` | `project` | Retrieves compiled cross-role authorization matrix results for active project endpoints. |
+
+### Category G: Response Distillation, Diffing & DOM Oracle (Tools 31 – 34)
+| # | Tool Name | Key Arguments | Description |
+| :---: | :--- | :--- | :--- |
+| **31** | `distill_http_response` | `raw_body`, `content_type` | Compresses HTML/JSON bodies into semantic security structures (85–95% token savings). |
+| **32** | `compare_http_responses` | `response_a`, `response_b` | Normalizes dynamic noise (timestamps, nonces) to detect subtle response anomalies. |
+| **33** | `semantic_diff_responses` | `log_id_a`, `log_id_b` | Generates structured semantic difference between two historical proxy transactions. |
+| **34** | `verify_dom_execution` | `url`, `payload` | Executes payload in sandboxed Playwright Chromium to deterministically verify DOM sinks. |
+
+### Category H: Parameter Fuzzing & Workflow Testing (Tools 35 – 38)
+| # | Tool Name | Key Arguments | Description |
+| :---: | :--- | :--- | :--- |
+| **35** | `fuzz_endpoint` | `url`, `payload_type`, `custom_payloads` | High-speed dictionary fuzzing against marker positions (`§...§`) with delta analysis. |
+| **36** | `execute_workflow_sequence` | `sequence`, `test_step_skipping` | Executes stateful multi-step workflows with dynamic variable extraction and step-skipping. |
+| **37** | `test_race_condition` | `url`, `concurrency`, `method` | Executes microsecond-synchronized request bursts using `asyncio.Barrier` for race testing. |
+| **38** | `send_websocket_message` | `url`, `message` | Transmits and logs WebSocket frames to target socket endpoints for real-time protocol testing. |
+
+### Category I: Reconnaissance & Target Knowledge Graph (Tools 39 – 45)
+| # | Tool Name | Key Arguments | Description |
+| :---: | :--- | :--- | :--- |
+| **39** | `get_attack_surface` | `project` | Returns hierarchical topology graph of assets, open ports, and endpoints. |
+| **40** | `record_target_asset` | `host`, `ip_address`, `os` | Catalogs a host/machine, IP address, OS, and status in the knowledge graph. |
+| **41** | `record_target_service` | `asset_id`, `port`, `service_name` | Records open ports, protocols (TCP/UDP), and service banners for a target asset. |
+| **42** | `record_target_endpoint` | `asset_id`, `url_path`, `http_method` | Catalogs target URL routes, parameters, auth requirements, and testing status. |
+| **43** | `delete_attack_surface_node` | `node_type`, `node_id`, `project` | Prunes stale or false-positive assets, services, or endpoints from the knowledge graph. |
+| **44** | `clear_attack_surface_graph` | `project` | Wipes all attack surface records for a project workspace to reset reconnaissance. |
+| **45** | `infer_hidden_endpoints` | `host`, `project` | Predicts unmapped REST endpoints (admin, actuator, docs, CRUD variants) from observed paths. |
+
+### Category J: Payload Vault & WAF Evasion (Tools 46 – 49)
+| # | Tool Name | Key Arguments | Description |
+| :---: | :--- | :--- | :--- |
+| **46** | `record_test_payload` | `payload`, `vuln_type`, `outcome` | Stores exploit strings into the Payload Vault with categorization and tags. |
+| **47** | `get_captured_payloads` | `vuln_type`, `outcome`, `keyword` | Queries stored payloads with filtering by vulnerability type, outcome, and keyword. |
+| **48** | `mutate_payload` | `raw_payload`, `vuln_type` | Generates obfuscated payload variations (URL, hex, comment injection, Unicode bypass). |
+| **49** | `analyze_waf_response` | `status_code`, `headers`, `body` | Fingerprints target WAF vendor (Cloudflare, AWS WAF, Akamai) and recommends bypass tactics. |
+
+### Category K: Reporting, PoC & Findings (Tools 50 – 54)
+| # | Tool Name | Key Arguments | Description |
+| :---: | :--- | :--- | :--- |
+| **50** | `report_vulnerability` | `log_id`, `title`, `severity` | Flags an HTTP log entry as a confirmed vulnerability finding in the operator ledger. |
+| **51** | `generate_exploit_poc` | `finding_id` | Generates standalone Python PoC scripts, cURL commands, and CVSS/CWE dossiers. |
+| **52** | `generate_nuclei_template` | `finding_id` | Generates standardized Nuclei v3 YAML exploit templates for regression scanning. |
+| **53** | `run_security_audit_suite` | `project`, `min_severity` | Runs automated OWASP API security audit across traffic, returning 0–100 score and grade. |
+| **54** | `generate_audit_ci_report` | `project`, `format` | Generates publication-grade Markdown, JSON, or SARIF 2.1.0 security compliance reports. |
+
+### Category L: Interception Rules, CSRF & Scope (Tools 55 – 63)
+| # | Tool Name | Key Arguments | Description |
+| :---: | :--- | :--- | :--- |
+| **55** | `add_interception_rule` | `rule_type`, `match_pattern`, `actions` | Adds rule to tamper with headers, rewrite bodies, or return synthetic mock responses. |
+| **56** | `list_interception_rules` | *(none)* | Lists all configured match & replace and response mocking rules. |
+| **57** | `toggle_interception_rule` | `rule_id`, `enabled` | Toggles or updates the enabled state of an interception rule. |
+| **58** | `delete_interception_rule` | `rule_id` | Deletes an interception rule by ID. |
+| **59** | `get_csrf_tokens` | `domain` | Retrieves all auto-tracked and manual anti-CSRF tokens extracted from HTTP responses. |
+| **60** | `set_csrf_token` | `domain`, `token_value` | Sets an anti-CSRF token for target domain to be auto-injected in state-changing calls. |
+| **61** | `clear_csrf_tokens` | *(none)* | Clears cached anti-CSRF tokens. |
+| **62** | `set_active_project` | `project_name` | Dynamically sets the active project scope for the agent session. |
+| **63** | `get_active_project` | *(none)* | Retrieves the currently active project name and isolation directory. |
+
+### Category M: Tunnels, Traffic Analysis & System Upgrades (Tools 64 – 71)
+| # | Tool Name | Key Arguments | Description |
+| :---: | :--- | :--- | :--- |
+| **64** | `setup_public_tunnel` | `provider` | Spins up Cloudflare Quick Tunnel / ngrok and binds public URL to OAST listener. |
+| **65** | `get_tunnel_status` | *(none)* | Returns operational status, public URL, provider, and uptime of active ingress tunnel. |
+| **66** | `close_public_tunnel` | *(none)* | Terminates active public tunnel and restores local callback base URL. |
+| **67** | `search_traffic_advanced` | `query`, `min_status`, `max_status` | Multi-dimensional traffic search filtering by status range, latency, and full-text bodies. |
+| **68** | `analyze_traffic_patterns` | `project` | Analyzes captured traffic, aggregating unique routes and discovered parameter inventory. |
+| **69** | `get_attack_paths` | `project` | Synthesizes Kill Chain attack paths from initial recon to Crown Jewels (RCE, DB dump). |
+| **70** | `get_ca_certificate_details` | *(none)* | Returns root CA certificate paths, thumbprint, and installation status for TLS MITM. |
+| **71** | `update_proxsynth_system` | `confirm`, `force_check` | Performs autonomous remote Git update checks and synchronized system upgrades for Web & MCP. |
 
 ---
 
@@ -448,15 +634,17 @@ Add to your Antigravity configuration `mcp_config.json`:
 
 The web console (`http://127.0.0.1:8000`) provides a high-density, cyberpunk-styled security operations center:
 
-1. **Proxy Traffic Ledger:** Live table with virtual scrolling for 100,000+ records, resizable columns, text/regex filters, and split-pane request/response inspector with "Distill (P1)" toggle.
-2. **Interactive Intercept Trap:** Pause high-risk agent requests before they reach the target. Inspect and modify headers or body payloads, and choose to **Forward** or **Drop**.
-3. **Target Attack Surface Knowledge Graph:** Relational asset inventory (`Host -> Port -> Route`) with live state tags (`UNTESTED`, `IN_PROGRESS`, `TESTED_CLEAN`, `TESTED_VULNERABLE`).
-4. **OAST Interaction Console:** Real-time event log capturing out-of-band HTTP callbacks, DNS resolutions, and JNDI queries with the "Spray Canaries (P2)" modal.
-5. **Attack Hypothesis Ledger (P3):** Kanban and list view tracking agent working memory with live WebSocket state transitions (`PLANNED`, `TESTING`, `CONFIRMED`, `DISPROVEN`, `BLOCKED`).
-6. **OWASP API Security Auditor:** Automated compliance scanner with 0–100 scorecards, letter grades (A+ to F), and 1-click Markdown/JSON exports.
-7. **AI Activity Command & Payload Studio:** CLI Repeater workbench for command reproduction alongside a Payload Sandbox for reflection and WAF evasion checks.
-8. **Repeater & Parameter Fuzzer:** Manual replay workbench with baseline diff analyzer, "Distill Response (P1)" toggle, and "Verify DOM (P4)" execution oracle.
-9. **Settings & Scope Guardrails:** Scope enforcement, authorized host wildcards, sensitive regex filters, and upstream proxy chaining (e.g., chaining to Burp Suite at `:8080`).
+1. **Autonomous Campaign Studio:** Launch 1-click fire-and-forget pentest campaigns with live stage telemetry, discovered form inventories, and real-time execution logs.
+2. **Proxy Traffic Ledger:** Live table with virtual scrolling for 100,000+ records, resizable columns, text/regex filters, and split-pane request/response inspector with "Distill (P1)" toggle.
+3. **Interactive Intercept Trap:** Pause high-risk agent requests before they reach the target. Inspect and modify headers or body payloads, and choose to **Forward** or **Drop**.
+4. **Target Attack Surface Knowledge Graph:** Relational asset inventory (`Host -> Port -> Route`) with live state tags (`UNTESTED`, `IN_PROGRESS`, `TESTED_CLEAN`, `TESTED_VULNERABLE`).
+5. **OAST Interaction Console:** Real-time event log capturing out-of-band HTTP callbacks, DNS resolutions, and JNDI queries with the "Spray Canaries (P2)" modal.
+6. **Attack Hypothesis Ledger (P3):** Kanban and list view tracking agent working memory with live WebSocket state transitions (`PLANNED`, `TESTING`, `CONFIRMED`, `DISPROVEN`, `BLOCKED`).
+7. **OWASP API Security Auditor:** Automated compliance scanner with 0–100 scorecards, letter grades (A+ to F), and 1-click Markdown/JSON/SARIF exports.
+8. **AI Activity Command & Payload Studio:** CLI Repeater workbench for command reproduction alongside a Payload Sandbox for reflection and WAF evasion checks.
+9. **Repeater & Parameter Fuzzer:** Manual replay workbench with baseline diff analyzer, "Distill Response (P1)" toggle, and "Verify DOM (P4)" execution oracle.
+10. **BFLA & BOLA Matrix Inspector:** Cross-role authorization matrix evaluating endpoint access boundaries between privileged and unprivileged identities.
+11. **Settings & Scope Guardrails:** Scope enforcement, authorized host wildcards, sensitive regex filters, and upstream proxy chaining (e.g., chaining to Burp Suite at `:8080`).
 
 ---
 
