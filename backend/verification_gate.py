@@ -16,6 +16,49 @@ from backend.database import SessionLocal, Finding, HttpLog
 logger = logging.getLogger("proxynth.verification_gate")
 
 
+def interpret_dom_oracle_result(res: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Pure mapping from a browser_oracle.verify_dom_execution() result dict to a
+    gate verdict. Returns {verdict, confidence, verification_evidence}.
+    """
+    res = res or {}
+    oracle_verdict = res.get("verdict")
+
+    if res.get("execution_confirmed") or oracle_verdict == "CONFIRMED_VULNERABLE_DOM_EXECUTION":
+        detail = res.get("evidence")
+        if not detail:
+            events = res.get("dialog_events") or []
+            detail = f"dialog events: {events}" if events else "execution signal observed"
+        return {
+            "verdict": "VERIFIED_EXPLOITABLE",
+            "confidence": 1.0,
+            "verification_evidence": f"Deterministic DOM execution confirmed in Chromium sandbox. {detail}",
+        }
+
+    if oracle_verdict == "NO_DOM_EXECUTION":
+        return {
+            "verdict": "FALSE_POSITIVE",
+            "confidence": 0.1,
+            "verification_evidence": "Payload reflected as benign text without executing in Chromium DOM sandbox.",
+        }
+
+    if oracle_verdict == "EXECUTION_BLOCKED_BY_CSP":
+        return {
+            "verdict": "MITIGATED_BY_CSP",
+            "confidence": 0.4,
+            "verification_evidence": res.get("evidence")
+            or "Payload reached the DOM but execution was blocked by Content Security Policy.",
+        }
+
+    # Error verdicts (NAVIGATION_ERROR / SANDBOX_ERROR) or anything unrecognised
+    err = res.get("error") or res.get("evidence") or f"Unrecognised oracle verdict: {oracle_verdict!r}"
+    return {
+        "verdict": "UNCONFIRMED",
+        "confidence": 0.5,
+        "verification_evidence": f"Browser oracle could not conclude: {err}",
+    }
+
+
 async def verify_vulnerability_candidate(
     finding_id: Optional[int] = None,
     log_id: Optional[int] = None,
@@ -67,14 +110,10 @@ async def verify_vulnerability_candidate(
                     payload = finding.evidence.strip()[:100]
 
                 res = await verify_dom_execution(target_url, payload=payload)
-                if res.get("status") == "success" and (res.get("dialog_detected") or res.get("sink_triggered")):
-                    verdict = "VERIFIED_EXPLOITABLE"
-                    confidence = 1.0
-                    verification_evidence = f"Deterministic DOM execution confirmed in Chromium sandbox. Dialog message: {res.get('dialog_message', 'Triggered')}"
-                else:
-                    verdict = "FALSE_POSITIVE"
-                    confidence = 0.1
-                    verification_evidence = "Payload reflected as benign text without executing in Chromium DOM sandbox."
+                interp = interpret_dom_oracle_result(res)
+                verdict = interp["verdict"]
+                confidence = interp["confidence"]
+                verification_evidence = interp["verification_evidence"]
             except Exception as e:
                 verdict = "UNCONFIRMED"
                 verification_evidence = f"Browser oracle execution failed: {str(e)}"

@@ -13,12 +13,43 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 from backend.user_agents import get_random_user_agent
 
 
+_CANARY_NAME = "__pxs_canary__"
+_CANARY_MARKER = "__PXS_CANARY_HIT__"
+_COOKIE_MARKER = "__PXS_COOKIE_READ__"
+
+# Defines a global canary function payloads can call, and wraps document.cookie reads.
+_INIT_SCRIPT = """
+(() => {
+  try {
+    window.%s = function () {
+      try { console.debug("%s " + Array.prototype.join.call(arguments, ",")); } catch (e) {}
+    };
+  } catch (e) {}
+  try {
+    const desc = Object.getOwnPropertyDescriptor(Document.prototype, "cookie");
+    if (desc && desc.get && desc.configurable) {
+      Object.defineProperty(Document.prototype, "cookie", {
+        configurable: true,
+        enumerable: desc.enumerable,
+        get: function () {
+          try { console.debug("%s"); } catch (e) {}
+          return desc.get.call(this);
+        },
+        set: function (v) { return desc.set.call(this, v); }
+      });
+    }
+  } catch (e) {}
+})();
+""" % (_CANARY_NAME, _CANARY_MARKER, _COOKIE_MARKER)
+
+
 async def verify_dom_execution(
     url: str,
     payload: Optional[str] = None,
     param_name: Optional[str] = None,
     trigger_event: str = "load",
-    wait_timeout_ms: int = 4000
+    wait_timeout_ms: int = 4000,
+    oast_token: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Spawns headless Chromium sandbox to prove if an exploit payload executed in the DOM.
@@ -40,6 +71,10 @@ async def verify_dom_execution(
     console_logs: List[str] = []
     page_errors: List[str] = []
     csp_violations: List[str] = []
+
+    network_beacons: List[str] = []
+    canary_hits: List[str] = []
+    cookie_hits: List[str] = []
 
     user_agent = get_random_user_agent()
 
@@ -79,6 +114,13 @@ async def verify_dom_execution(
             # 2. Listen for Console Logs & CSP Violations
             def handle_console(msg):
                 txt = msg.text
+                # Internal canary / cookie-probe markers: record, do not pollute logs
+                if txt.startswith(_CANARY_MARKER):
+                    canary_hits.append(txt)
+                    return
+                if txt.startswith(_COOKIE_MARKER):
+                    cookie_hits.append(txt)
+                    return
                 console_logs.append(f"[{msg.type.upper()}] {txt}")
                 if "content security policy" in txt.lower() or "csp" in txt.lower():
                     csp_violations.append(txt)
@@ -90,6 +132,25 @@ async def verify_dom_execution(
                 page_errors.append(str(err))
 
             page.on("pageerror", handle_pageerror)
+
+            # 3b. Best-effort canary / cookie probes and OAST beacon hook (never fatal)
+            try:
+                await page.add_init_script(_INIT_SCRIPT)
+            except Exception:
+                pass
+
+            if oast_token:
+                try:
+                    def handle_request(req):
+                        try:
+                            if oast_token in req.url:
+                                network_beacons.append(req.url)
+                        except Exception:
+                            pass
+
+                    page.on("request", handle_request)
+                except Exception:
+                    pass
 
             # 4. Navigate and observe
             try:
@@ -131,11 +192,21 @@ async def verify_dom_execution(
     # Evaluate execution verdict
     dialog_fired = len(dialog_events) > 0
     csp_blocked = len(csp_violations) > 0 and not dialog_fired
-    execution_confirmed = dialog_fired
+    canary_fired = len(canary_hits) > 0
+    cookie_access = len(cookie_hits) > 0
+    beacon_fired = len(network_beacons) > 0
+    csp_blocked = csp_blocked and not (canary_fired or beacon_fired)
+    execution_confirmed = dialog_fired or canary_fired or beacon_fired
 
-    if execution_confirmed:
+    if dialog_fired:
         verdict = "CONFIRMED_VULNERABLE_DOM_EXECUTION"
         evidence = f"Client-side DOM execution verified! Dialog of type '{dialog_events[0]['type']}' triggered with message: '{dialog_events[0]['message']}'."
+    elif canary_fired:
+        verdict = "CONFIRMED_VULNERABLE_DOM_EXECUTION"
+        evidence = f"Client-side DOM execution verified! Canary function {_CANARY_NAME} was invoked by the payload."
+    elif beacon_fired:
+        verdict = "CONFIRMED_VULNERABLE_DOM_EXECUTION"
+        evidence = f"Client-side execution verified via OAST beacon: browser requested {network_beacons[0]}"
     elif csp_blocked:
         verdict = "EXECUTION_BLOCKED_BY_CSP"
         evidence = f"Payload parsed into DOM but script execution was prevented by Content Security Policy (CSP): {csp_violations[0]}"
@@ -152,5 +223,9 @@ async def verify_dom_execution(
         "dialog_events": dialog_events,
         "csp_violations": csp_violations,
         "console_logs": console_logs[:10],
-        "page_errors": page_errors[:5]
+        "page_errors": page_errors[:5],
+        "network_beacons": network_beacons[:10],
+        "beacon_fired": beacon_fired,
+        "canary_fired": canary_fired,
+        "cookie_access": cookie_access
     }
