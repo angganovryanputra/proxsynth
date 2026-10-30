@@ -33,6 +33,16 @@ _SSRF_PARAM_PATTERN = re.compile(
 _JWT_PATTERN = re.compile(
     r"\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*\b"
 )
+_OPEN_REDIRECT_PARAM_PATTERN = re.compile(
+    r"^(?:url|redirect|next|return|callback|dest|continue|image|fetch|proxy)$",
+    re.IGNORECASE
+)
+_GRAPHQL_PATH_PATTERN = re.compile(r"/graphql/?$", re.IGNORECASE)
+_GRAPHQL_BODY_PATTERN = re.compile(r"\b(?:query|mutation)\s*\{", re.IGNORECASE)
+_DEBUG_PARAM_PATTERN = re.compile(
+    r"^(?:debug|test|admin|verbose)$",
+    re.IGNORECASE
+)
 
 
 def suggest_attack_actions(
@@ -42,7 +52,8 @@ def suggest_attack_actions(
     body: Optional[str] = None,
     response_status: Optional[int] = None,
     response_body: Optional[str] = None,
-    log_id: Optional[int] = None
+    log_id: Optional[int] = None,
+    response_headers: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
     Examines an individual HTTP transaction and returns actionable next-step tool recommendations.
@@ -195,7 +206,143 @@ def suggest_attack_actions(
             }
         })
 
-    return suggestions
+    # 8. Open-Redirect / Parameter-Based SSRF Check
+    redirect_params = [k for k in query_params.keys() if _OPEN_REDIRECT_PARAM_PATTERN.match(k)]
+    body_json_for_redirect = None
+    if body:
+        try:
+            body_json_for_redirect = json.loads(body)
+        except Exception:
+            body_json_for_redirect = None
+    if isinstance(body_json_for_redirect, dict):
+        redirect_params.extend(
+            [k for k in body_json_for_redirect.keys() if _OPEN_REDIRECT_PARAM_PATTERN.match(k)]
+        )
+
+    if redirect_params:
+        suggestions.append({
+            "vulnerability_focus": "Open Redirect & Parameter-Based SSRF",
+            "severity_potential": "HIGH",
+            "confidence": "MEDIUM",
+            "trigger_reason": f"Observed redirect/fetch-style parameter susceptible to open redirect or SSRF: {redirect_params[0]}",
+            "recommended_mcp_tool": "spray_oast_canaries",
+            "tool_arguments": {
+                "target_url": url,
+                "vuln_types": ["ssrf", "dns"]
+            }
+        })
+        suggestions.append({
+            "vulnerability_focus": "Open Redirect & Parameter-Based SSRF",
+            "severity_potential": "MEDIUM",
+            "confidence": "MEDIUM",
+            "trigger_reason": f"Redirect-style parameter '{redirect_params[0]}' should be probed for unvalidated external redirection.",
+            "recommended_mcp_tool": "send_http_request",
+            "tool_arguments": {
+                "url": url,
+                "method": "GET",
+                "params": {redirect_params[0]: "https://attacker-canary.example.com/"}
+            }
+        })
+
+    # 9. GraphQL Endpoint Discovery Check
+    is_graphql_path = bool(_GRAPHQL_PATH_PATTERN.search(path))
+    is_graphql_body = bool(body and _GRAPHQL_BODY_PATTERN.search(body))
+    if is_graphql_path or is_graphql_body:
+        suggestions.append({
+            "vulnerability_focus": "GraphQL Attack Surface (Introspection / Batching / Depth)",
+            "severity_potential": "HIGH",
+            "confidence": "HIGH" if is_graphql_path else "MEDIUM",
+            "trigger_reason": "GraphQL endpoint path or query/mutation operation detected.",
+            "recommended_mcp_tool": "inspect_graphql_endpoint",
+            "tool_arguments": {
+                "endpoint_url": url
+            }
+        })
+
+    # 10. File Upload Surface Check
+    content_type_header = (headers or {}).get("Content-Type", "") or (headers or {}).get("content-type", "")
+    is_multipart = "multipart/form-data" in (content_type_header or "").lower()
+    has_filename_in_body = bool(body and "filename=" in body)
+    if is_multipart or has_filename_in_body:
+        suggestions.append({
+            "vulnerability_focus": "Unrestricted File Upload",
+            "severity_potential": "HIGH",
+            "confidence": "HIGH" if is_multipart else "MEDIUM",
+            "trigger_reason": "Multipart file-upload request detected (Content-Type or filename= field in body).",
+            "recommended_mcp_tool": "audit_file_upload",
+            "tool_arguments": {
+                "endpoint_url": url,
+                "method": clean_method
+            }
+        })
+
+    # 11. CORS Misconfiguration Check (wildcard origin + credentials allowed)
+    resp_hdrs = response_headers or {}
+    acao = resp_hdrs.get("Access-Control-Allow-Origin") or resp_hdrs.get("access-control-allow-origin")
+    acac = resp_hdrs.get("Access-Control-Allow-Credentials") or resp_hdrs.get("access-control-allow-credentials")
+    origin_req = (headers or {}).get("Origin", "") or (headers or {}).get("origin", "")
+    acac_true = str(acac).strip().lower() == "true"
+    cors_wildcard = acao == "*" or (bool(origin_req) and acao == origin_req)
+    if cors_wildcard and acac_true:
+        suggestions.append({
+            "vulnerability_focus": "CORS Misconfiguration (Wildcard/Reflected Origin + Credentials)",
+            "severity_potential": "HIGH",
+            "confidence": "HIGH",
+            "trigger_reason": f"Access-Control-Allow-Origin='{acao}' combined with Access-Control-Allow-Credentials=true permits cross-origin credentialed requests.",
+            "recommended_mcp_tool": "send_http_request",
+            "tool_arguments": {
+                "url": url,
+                "method": clean_method,
+                "headers": {"Origin": "https://attacker-canary.example.com"}
+            }
+        })
+
+    # 12. Debug/Verbose Parameter -> Mass Assignment Exposure Check
+    debug_params = [k for k in query_params.keys() if _DEBUG_PARAM_PATTERN.match(k)]
+    body_json_for_debug = None
+    if body:
+        try:
+            body_json_for_debug = json.loads(body)
+        except Exception:
+            body_json_for_debug = None
+    if isinstance(body_json_for_debug, dict):
+        debug_params.extend(
+            [k for k in body_json_for_debug.keys() if _DEBUG_PARAM_PATTERN.match(k)]
+        )
+
+    if debug_params:
+        suggestions.append({
+            "vulnerability_focus": "Mass Assignment & Property Tampering",
+            "severity_potential": "MEDIUM",
+            "confidence": "MEDIUM",
+            "trigger_reason": f"Debug/verbose flag parameter observed ({', '.join(debug_params[:3])}); may expose hidden mutable fields for mass assignment.",
+            "recommended_mcp_tool": "audit_mass_assignment",
+            "tool_arguments": {
+                "endpoint_url": url,
+                "base_payload": body_json_for_debug if isinstance(body_json_for_debug, dict) else {},
+                "method": clean_method
+            }
+        })
+
+    # Dedupe: do not recommend the same tool against the same target twice.
+    deduped: List[Dict[str, Any]] = []
+    seen_tool_targets = set()
+    for s in suggestions:
+        tool_args = s.get("tool_arguments") or {}
+        target = (
+            tool_args.get("endpoint_url")
+            or tool_args.get("target_url")
+            or tool_args.get("test_url")
+            or tool_args.get("url")
+            or url
+        )
+        sig = (s.get("recommended_mcp_tool"), target)
+        if sig in seen_tool_targets:
+            continue
+        seen_tool_targets.add(sig)
+        deduped.append(s)
+
+    return deduped
 
 
 def get_project_attack_guidance(project: str = "default", limit: int = 15) -> Dict[str, Any]:
