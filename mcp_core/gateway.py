@@ -13,6 +13,7 @@ from typing import Optional, Dict, Any, List
 import httpx
 from sqlalchemy import func
 
+from mcp_core import diag
 from backend.database import (
     init_db,
     SessionLocal,
@@ -63,7 +64,7 @@ def _resolve_project(project: Optional[str] = None, allow_all: bool = True, targ
             if asset and asset.project and asset.project.lower() not in ("all", "*", "any", "global"):
                 return asset.project.lower()
         except Exception:
-            pass
+            diag.exc("gateway#1")
         finally:
             db.close()
 
@@ -90,11 +91,13 @@ async def _get_dashboard_client() -> httpx.AsyncClient:
             try:
                 await _dashboard_client.aclose()
             except Exception:
-                pass
+                diag.exc("gateway#2")
         hdrs = {}
         api_key = os.getenv("PROXSYNTH_API_KEY", "").strip()
         if api_key:
-            hdrs["X-Proxynth-Key"] = api_key
+            # Must match the dashboard REST middleware header (backend/app.py). The WS
+            # handler also accepts the legacy "X-Proxynth-Key"; we send the current spelling.
+            hdrs["X-Proxsynth-Key"] = api_key
         _dashboard_client = httpx.AsyncClient(
             headers=hdrs,
             timeout=2.0,
@@ -151,7 +154,7 @@ async def _persist_and_stream_log(
                     "findings": data.get("findings", findings or [])
                 }
     except Exception:
-        pass
+        diag.exc("persist_and_stream_log: dashboard POST failed, using SQLite fallback")
 
     db = SessionLocal()
     try:
@@ -265,22 +268,23 @@ async def _persist_and_stream_log(
                 payload_hint=log_payload.get("payload_hint")
             )
         except Exception:
-            pass
+            diag.exc("gateway#3")
 
         try:
             from backend.target_manager import auto_ingest_url_to_target_graph
             auto_ingest_url_to_target_graph(proj, entry.url, entry.method)
         except Exception:
-            pass
+            diag.exc("gateway#4")
 
         try:
             from backend.js_miner import passive_mine_js_background
             passive_mine_js_background(entry.url, entry.response_body, proj)
         except Exception:
-            pass
+            diag.exc("gateway#5")
 
         return {"id": entry.id, "flag_status": effective_flag, "findings": effective_findings}
     except Exception:
+        diag.exc("persist_and_stream_log: SQLite write failed — log/findings dropped")
         db.rollback()
         return {"id": None, "flag_status": "CLEAN", "findings": []}
     finally:
@@ -297,7 +301,7 @@ async def _persist_and_stream_command(cmd_payload: Dict[str, Any]) -> Optional[i
             if isinstance(data, dict) and "id" in data:
                 return data["id"]
     except Exception:
-        pass
+        diag.exc("gateway#6")
 
     db = SessionLocal()
     try:
@@ -332,7 +336,7 @@ async def _persist_and_stream_command(cmd_payload: Dict[str, Any]) -> Optional[i
                     cmd_log_id=entry.id
                 )
             except Exception:
-                pass
+                diag.exc("gateway#7")
 
         return entry.id
     except Exception:
@@ -352,7 +356,7 @@ async def _persist_and_stream_payload(payload_data: Dict[str, Any]) -> Optional[
             if isinstance(data, dict) and "id" in data:
                 return data["id"]
     except Exception:
-        pass
+        diag.exc("gateway#8")
 
     db = SessionLocal()
     try:
@@ -402,11 +406,14 @@ def _extract_domain_cookies(url: str, project: Optional[str] = None) -> Dict[str
                     stored_dom = urllib.parse.urlparse(stored_dom).netloc
                 stored_dom = stored_dom.split(":")[0].strip("/")
 
-                is_match = (
+                # Match only on domain boundaries, never bare substring: a stored
+                # domain "acme.io" must not inject its session cookies into
+                # "acme.io.evil.com" or "notacme.io". Cookies are scoped to the
+                # exact host or a parent domain (RFC 6265 domain-match semantics).
+                is_match = bool(stored_dom) and (
                     target_host == stored_dom or
                     target_host.endswith("." + stored_dom) or
-                    stored_dom.endswith("." + target_host) or
-                    (stored_dom in target_host and len(stored_dom) > 3)
+                    stored_dom.endswith("." + target_host)
                 )
 
                 if is_match:
@@ -418,9 +425,9 @@ def _extract_domain_cookies(url: str, project: Optional[str] = None) -> Dict[str
                             if c_name and c_val:
                                 cookies[c_name] = c_val
                     except Exception:
-                        pass
+                        diag.exc("gateway#9")
         finally:
             db.close()
     except Exception:
-        pass
+        diag.exc("extract_domain_cookies")
     return cookies

@@ -58,6 +58,7 @@ from backend.user_agents import apply_rotating_user_agent, get_random_user_agent
 from backend.fuzzer import run_fuzz_attack, BUILTIN_PAYLOADS, MARKER_REGEX
 
 from mcp_core.server import proxsynth_tool
+from mcp_core import diag
 from mcp_core.gateway import (
     DEFAULT_PROJECT,
     BACKEND_URL,
@@ -180,7 +181,7 @@ async def get_autonomous_attack_guidance(
                 try:
                     hdrs = json.loads(entry.request_headers) if isinstance(entry.request_headers, str) else entry.request_headers
                 except Exception:
-                    pass
+                    diag.exc("autonomous#1")
                 actions = suggest_attack_actions(
                     url=entry.url,
                     method=entry.method,

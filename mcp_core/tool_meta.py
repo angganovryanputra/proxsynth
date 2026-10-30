@@ -146,7 +146,9 @@ def meta(name: str) -> ToolAnnotations:
     )
 
 
-# 8 Structured Read-Only Tools (TASK 2)
+# Structured read-only tools: these publish an outputSchema and return a JSON object as
+# structuredContent (with a <=400-char text fallback) so MCP clients can parse results
+# deterministically instead of scraping prose. The count is derived, not hard-coded.
 STRUCTURED_READ_ONLY_TOOLS = {
     "get_traffic_history",
     "get_log_detail",
@@ -155,7 +157,26 @@ STRUCTURED_READ_ONLY_TOOLS = {
     "get_captured_payloads",
     "search_traffic_advanced",
     "get_bola_access_matrix",
-    "get_csrf_tokens"
+    "get_csrf_tokens",
+    # Expanded coverage — all return JSON objects already:
+    "distill_http_response",
+    "analyze_traffic_patterns",
+    "compare_http_responses",
+    "semantic_diff_responses",
+    "poll_oast_events",
+    "get_tunnel_status",
+    # Full read-surface rollout — every read-only data tool is machine-parseable:
+    "get_active_project",
+    "get_target_health",
+    "infer_hidden_endpoints",
+    "list_interception_rules",
+    "get_ca_certificate_details",
+    "get_campaign_status",
+    "list_campaigns",
+    "get_autonomous_attack_guidance",
+    "get_tool_harness_manifest",
+    "get_attack_paths",
+    "mine_cli_output",
 }
 
 STRUCTURED_OUTPUT_SCHEMAS: Dict[str, Dict[str, Any]] = {
@@ -258,5 +279,159 @@ STRUCTURED_OUTPUT_SCHEMAS: Dict[str, Dict[str, Any]] = {
             "tokens": {"type": "object"},
             "token_count": {"type": "integer"}
         }
-    }
+    },
+    "distill_http_response": {
+        "type": "object",
+        "properties": {
+            "compact_summary": {"type": "string"},
+            "original_size": {"type": "integer"},
+            "distilled_size": {"type": "integer"},
+            "token_reduction_percent": {"type": "number"},
+            "forms": {"type": "array"},
+            "endpoints": {"type": "array"},
+            "reflected_params": {"type": "array"}
+        }
+    },
+    "analyze_traffic_patterns": {
+        "type": "object",
+        "properties": {
+            "project": {"type": "string"},
+            "total_requests": {"type": "integer"},
+            "status_distribution": {"type": "object"},
+            "method_distribution": {"type": "object"},
+            "top_hosts": {"type": "array"},
+            "unique_endpoint_count": {"type": "integer"},
+            "unique_endpoints": {"type": "array"},
+            "parameter_inventory": {"type": "object"},
+            "performance_metrics": {"type": "object"},
+            "security_summary": {"type": "object"}
+        }
+    },
+    # compare_http_responses and semantic_diff_responses share compute_semantic_diff output.
+    "compare_http_responses": {
+        "type": "object",
+        "properties": {
+            "status_a": {"type": ["integer", "null"]},
+            "status_b": {"type": ["integer", "null"]},
+            "status_changed": {"type": "boolean"},
+            "raw_length_delta": {"type": "integer"},
+            "normalized_similarity_ratio": {"type": "number"},
+            "is_substantively_different": {"type": "boolean"},
+            "soft_error_a": {"type": "object"},
+            "soft_error_b": {"type": "object"},
+            "header_differences": {"type": "object"},
+            "structural_diff_lines": {"type": "array"},
+            "summary": {"type": "string"}
+        }
+    },
+    "semantic_diff_responses": {
+        "type": "object",
+        "properties": {
+            "status_a": {"type": ["integer", "null"]},
+            "status_b": {"type": ["integer", "null"]},
+            "status_changed": {"type": "boolean"},
+            "raw_length_delta": {"type": "integer"},
+            "normalized_similarity_ratio": {"type": "number"},
+            "is_substantively_different": {"type": "boolean"},
+            "soft_error_a": {"type": "object"},
+            "soft_error_b": {"type": "object"},
+            "header_differences": {"type": "object"},
+            "structural_diff_lines": {"type": "array"},
+            "summary": {"type": "string"}
+        }
+    },
+    "poll_oast_events": {
+        "type": "object",
+        "properties": {
+            "status": {"type": "string"},
+            "token": {"type": "string"},
+            "callback_received": {"type": "boolean"},
+            "callbacks_count": {"type": "integer"},
+            "events": {"type": "array"}
+        }
+    },
+    "get_tunnel_status": {
+        "type": "object",
+        "properties": {
+            "active": {"type": "boolean"},
+            "provider": {"type": ["string", "null"]},
+            "public_url": {"type": ["string", "null"]},
+            "oast_base_url": {"type": ["string", "null"]},
+            "local_port": {"type": ["integer", "null"]},
+            "started_at": {"type": ["string", "null"]},
+            "uptime_seconds": {"type": ["number", "null"]},
+            "pid": {"type": ["integer", "null"]},
+            "project": {"type": ["string", "null"]},
+            "error": {"type": ["string", "null"]}
+        }
+    },
+    "get_active_project": {
+        "type": "object",
+        "properties": {
+            "active_project": {"type": ["string", "null"]},
+            "view_mode": {"type": "string"},
+            "write_project": {"type": ["string", "null"]},
+            "session_active_project": {"type": ["string", "null"]},
+            "default_project": {"type": "string"},
+            "is_global_stream": {"type": "boolean"}
+        }
+    },
+    "get_tool_harness_manifest": {
+        "type": "object",
+        "properties": {
+            "status": {"type": "string"},
+            "total_tools": {"type": "integer"},
+            "manifest": {"type": "object"}
+        }
+    },
+    "list_campaigns": {
+        "type": "object",
+        "properties": {
+            "status": {"type": "string"},
+            "campaigns": {"type": "array"}
+        }
+    },
+    "list_interception_rules": {
+        "type": "object",
+        "properties": {
+            "items": {"type": "array"}
+        }
+    },
+    "get_ca_certificate_details": {
+        "type": "object",
+        "properties": {
+            "metadata": {"type": "object"},
+            "trust_scripts": {"type": ["object", "array"]}
+        }
+    },
+    "get_attack_paths": {
+        "type": "object",
+        "properties": {
+            "project": {"type": "string"},
+            "total_nodes": {"type": "integer"},
+            "total_edges": {"type": "integer"},
+            "total_chains": {"type": "integer"},
+            "critical_chains": {"type": "integer"},
+            "mermaid": {"type": "string"},
+            "nodes": {"type": "array"},
+            "edges": {"type": "array"},
+            "chains": {"type": "array"}
+        }
+    },
+    "get_autonomous_attack_guidance": {
+        "type": "object",
+        "properties": {
+            "status": {"type": "string"},
+            "project": {"type": "string"},
+            "total_recommended_actions": {"type": "integer"},
+            "focus_distribution": {"type": "object"},
+            "recommended_actions": {"type": "array"},
+            "summary": {"type": "string"}
+        }
+    },
+    # These take args / probe live targets; schema kept generic (extra keys allowed).
+    "get_target_health": {"type": "object"},
+    "infer_hidden_endpoints": {"type": "object"},
+    "get_campaign_status": {"type": "object"},
+    "mine_cli_output": {"type": "object"}
 }

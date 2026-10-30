@@ -58,6 +58,8 @@ from backend.user_agents import apply_rotating_user_agent, get_random_user_agent
 from backend.fuzzer import run_fuzz_attack, BUILTIN_PAYLOADS, MARKER_REGEX
 
 from mcp_core.server import proxsynth_tool
+from mcp_core import diag
+from mcp_core.envelope import set_structured
 from mcp_core.gateway import (
     DEFAULT_PROJECT,
     BACKEND_URL,
@@ -232,7 +234,7 @@ async def send_http_request(
                     "reasoning": f"[INTERCEPT #{intercept_id}] {reasoning or ''}"
                 })
         except Exception:
-            pass
+            diag.exc("traffic#1")
 
         # Wait for human pentester decision (or 180s timeout)
         try:
@@ -330,7 +332,7 @@ async def send_http_request(
                         status_code = response.status_code
                         res_headers = dict(response.headers)
             except Exception:
-                pass
+                diag.exc("traffic#2")
 
         # Autonomous Adaptive Rate-Limit Backoff (Anti-429 & Anti-Ban)
         if status_code == 429:
@@ -338,13 +340,13 @@ async def send_http_request(
                 from backend.adaptive_limiter import handle_rate_limit
                 await handle_rate_limit(status_code, res_headers, domain=host)
             except Exception:
-                pass
+                diag.exc("traffic#3")
 
         try:
             if hasattr(response, "request") and hasattr(response.request, "headers"):
                 final_req_headers = dict(response.request.headers)
         except Exception:
-            pass
+            diag.exc("traffic#4")
         try:
             res_body = response.text
         except Exception:
@@ -403,7 +405,7 @@ async def send_http_request(
                 try:
                     base_hdrs = json.loads(base_entry.response_headers) if base_entry.response_headers else {}
                 except Exception:
-                    pass
+                    diag.exc("traffic#5")
                 diff_result = compute_semantic_diff(
                     response_a={
                         "status_code": base_entry.status_code,
@@ -485,7 +487,7 @@ async def send_http_request(
             if advisor_suggestions:
                 res_dict["suggested_next_actions"] = advisor_suggestions
         except Exception:
-            pass
+            diag.exc("traffic#6")
 
         return json.dumps(res_dict, indent=2)
 
@@ -545,7 +547,7 @@ async def get_traffic_history(
                 data = resp.json()
                 logs_list = data.get("logs", [])
     except Exception:
-        pass
+        diag.exc("traffic#7")
 
     # 2. Fallback to local SQLite database
     if logs_list is None:
@@ -586,11 +588,11 @@ async def get_traffic_history(
     else:
         text_summary = f"No traffic logs recorded for project [{target_project}] ({source_info})."
 
-    get_traffic_history._last_structured = {
+    set_structured({
         "project": target_project,
         "total_count": len(structured_logs),
         "logs": structured_logs
-    }
+    })
     return text_summary
 
 
@@ -625,7 +627,7 @@ async def get_log_detail(
             if resp.status_code == 200:
                 log_data = resp.json()
     except Exception:
-        pass
+        diag.exc("traffic#8")
 
     # 2. Fallback to local SQLite database if Dashboard API is unreachable or returned 404
     if not log_data:
@@ -640,7 +642,7 @@ async def get_log_detail(
 
     if not log_data:
         err_msg = f"[!] Log ID #{log_id} was not found in the Proxynth Dashboard ({get_backend_url()}) or local database."
-        get_log_detail._last_structured = {"log_id": log_id, "found": False, "error": err_msg}
+        set_structured({"log_id": log_id, "found": False, "error": err_msg})
         return err_msg
 
     findings = log_data.get("findings", [])
@@ -732,7 +734,7 @@ async def get_log_detail(
         "findings": findings
     }
 
-    get_log_detail._last_structured = structured_data
+    set_structured(structured_data)
     return full_text
 
 
@@ -851,7 +853,7 @@ async def compare_http_responses(
                     try:
                         hdrs = json.loads(log_entry.response_headers) if log_entry.response_headers else {}
                     except Exception:
-                        pass
+                        diag.exc("traffic#9")
                     return {
                         "status_code": log_entry.status_code or 0,
                         "body": log_entry.response_body or "",
@@ -866,7 +868,7 @@ async def compare_http_responses(
                 if isinstance(parsed, dict):
                     return parsed
             except Exception:
-                pass
+                diag.exc("traffic#10")
             return {"status_code": 200, "body": resp_input, "headers": {}}
         elif isinstance(resp_input, dict):
             return resp_input

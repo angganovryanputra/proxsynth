@@ -156,13 +156,13 @@ async def host_and_auth_security_middleware(request: Request, call_next):
             )
 
     # 2. API Key enforcement (if PROXSYNTH_API_KEY is configured in env)
-    effective_api_key = PROXSYNTH_API_KEY or PROXSYNTH_API_KEY
+    effective_api_key = PROXSYNTH_API_KEY
     clean_path = request.url.path.rstrip("/")
     is_health_check = clean_path in ["/api/health", "/health", "/healthz", "/api/healthz", "/api/info", "/favicon.ico"]
     if effective_api_key and request.url.path.startswith("/api/") and not is_health_check:
         provided_key = (
             request.headers.get("X-Proxsynth-Key") or
-            request.headers.get("X-Proxsynth-Key") or
+            request.headers.get("X-Proxynth-Key") or
             request.query_params.get("api_key") or
             ""
         )
@@ -172,7 +172,7 @@ async def host_and_auth_security_middleware(request: Request, call_next):
         
         if not secrets.compare_digest(provided_key, effective_api_key):
             return JSONResponse(
-                {"detail": "Unauthorized: Invalid or missing API Key (X-Proxsynth-Key / X-Proxsynth-Key header)."},
+                {"detail": "Unauthorized: Invalid or missing API Key (X-Proxsynth-Key header, or Authorization: Bearer / ?api_key=)."},
                 status_code=401
             )
 
@@ -583,7 +583,7 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.close(code=1008)  # Policy violation
             return
 
-    effective_api_key = PROXSYNTH_API_KEY or PROXSYNTH_API_KEY
+    effective_api_key = PROXSYNTH_API_KEY
     if effective_api_key:
         api_key = (
             websocket.query_params.get("api_key") or

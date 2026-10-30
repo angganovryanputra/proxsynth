@@ -58,6 +58,7 @@ from backend.user_agents import apply_rotating_user_agent, get_random_user_agent
 from backend.fuzzer import run_fuzz_attack, BUILTIN_PAYLOADS, MARKER_REGEX
 
 from mcp_core.server import proxsynth_tool
+from mcp_core import diag
 from mcp_core.gateway import (
     DEFAULT_PROJECT,
     BACKEND_URL,
@@ -163,7 +164,7 @@ async def get_captured_payloads(
         if resp.status_code == 200:
             payload_results = resp.json()
     except Exception:
-        pass
+        diag.exc("vault#1")
 
     # 2. Local database fallback
     if payload_results is None:

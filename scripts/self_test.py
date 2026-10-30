@@ -76,9 +76,9 @@ def test_tool_count_and_annotations():
 
 
 def test_structured_schemas():
-    print("[3/5] Testing outputSchema on 8 read-only tools...")
     import mcp_core.server as s
     from mcp_core.tool_meta import STRUCTURED_READ_ONLY_TOOLS
+    print(f"[3/5] Testing outputSchema on {len(STRUCTURED_READ_ONLY_TOOLS)} read-only tools...")
 
     tools = {t.name: t for t in s.mcp._tool_manager.list_tools()}
     missing_schema = []
@@ -91,7 +91,7 @@ def test_structured_schemas():
         print(f"  -> FAILED: Structured read-only tools missing output_schema: {missing_schema}")
         return False
 
-    print(f"  -> Passed: All 8 structured tools publish outputSchema ({len(STRUCTURED_READ_ONLY_TOOLS)} verified).")
+    print(f"  -> Passed: All structured read-only tools publish outputSchema ({len(STRUCTURED_READ_ONLY_TOOLS)} verified).")
     return True
 
 

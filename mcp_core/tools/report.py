@@ -60,6 +60,7 @@ from backend.user_agents import apply_rotating_user_agent, get_random_user_agent
 from backend.fuzzer import run_fuzz_attack, BUILTIN_PAYLOADS, MARKER_REGEX
 
 from mcp_core.server import proxsynth_tool
+from mcp_core import diag
 from mcp_core.gateway import (
     DEFAULT_PROJECT,
     BACKEND_URL,
@@ -131,7 +132,7 @@ async def report_vulnerability(
                 finding_id = data.get("id")
                 log_flag = data.get("flag_status", log_flag)
     except Exception:
-        pass
+        diag.exc("report#1")
 
     # 2. Fallback to local SQLite database if dashboard is unreachable
     if finding_id is None:
@@ -196,7 +197,7 @@ async def report_vulnerability(
             evidence=evidence or ""
         )
     except Exception:
-        pass
+        diag.exc("report#2")
 
     finding_str = f"#{finding_id}" if finding_id else "#recorded"
     return (
@@ -708,7 +709,7 @@ async def run_pentest_command(
                         with open(resolved_path, "r", encoding="utf-8", errors="replace") as sf:
                             effective_script_content = sf.read()
                 except Exception:
-                    pass
+                    diag.exc("report#3")
 
     start_time = time.time()
     stdout_text = ""
@@ -723,7 +724,7 @@ async def run_pentest_command(
         from backend.forward_proxy import ensure_forward_proxy_running
         await ensure_forward_proxy_running(port=proxy_port)
     except Exception:
-        pass
+        diag.exc("report#4")
 
     proxy_url_auth = f"http://{target_project}:{target_agent}@127.0.0.1:{proxy_port}"
     proxy_url_plain = f"http://127.0.0.1:{proxy_port}"
@@ -797,7 +798,7 @@ async def run_pentest_command(
             try:
                 proc.kill()
             except Exception:
-                pass
+                diag.exc("report#5")
             exit_code = -1
             status = "TIMEOUT"
             stderr_text = f"Execution timed out after {timeout} seconds."
@@ -840,7 +841,7 @@ async def run_pentest_command(
             if mined_res.get("services_ingested") or mined_res.get("endpoints_ingested") or mined_res.get("findings_recorded"):
                 mined_summary = mined_res
         except Exception:
-            pass
+            diag.exc("report#6")
 
     stdout_snippet = stdout_text[:5000] if stdout_text else "[No standard output]"
     stderr_snippet = f"\nSTDERR:\n{stderr_text[:2000]}" if stderr_text else ""

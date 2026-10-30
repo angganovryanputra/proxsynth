@@ -58,6 +58,7 @@ from backend.user_agents import apply_rotating_user_agent, get_random_user_agent
 from backend.fuzzer import run_fuzz_attack, BUILTIN_PAYLOADS, MARKER_REGEX
 
 from mcp_core.server import proxsynth_tool
+from mcp_core import diag
 from mcp_core.gateway import (
     DEFAULT_PROJECT,
     BACKEND_URL,
@@ -120,7 +121,7 @@ async def record_testing_hypothesis(
             json={"type": "HYPOTHESIS_CREATED", "hypothesis": res, "project": target_project}
         )
     except Exception:
-        pass
+        diag.exc("agenda#1")
 
     return json.dumps({
         "status": "recorded",
@@ -190,7 +191,7 @@ async def update_hypothesis_status(
             json={"type": "HYPOTHESIS_UPDATED", "hypothesis": res, "project": target_project}
         )
     except Exception:
-        pass
+        diag.exc("agenda#2")
 
     return json.dumps({
         "status": "updated",
