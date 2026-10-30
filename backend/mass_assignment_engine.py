@@ -1,7 +1,8 @@
 """
 Proxsynth - Autonomous Mass Assignment & Privilege Parameter Injection Engine
 Audits mutation endpoints (POST, PUT, PATCH) by injecting administrative attributes
-into JSON and Form payloads to detect over-posting and unauthorized privilege escalation.
+into JSON, Form, and query-string payloads to detect over-posting and unauthorized
+privilege escalation.
 """
 
 import json
@@ -23,12 +24,235 @@ ADMIN_ATTRIBUTES = {
     "permissions": ["*"],
     "verified": True,
     "is_verified": True,
+    "email_verified": True,
+    "account_type": "admin",
     "tier": "enterprise",
     "balance": 999999,
+    "credit": 999999,
     "discount": 100,
     "org_id": 1,
+    "tenant_id": 1,
+    "owner_id": 1,
+    "status": "active",
+    "approved": True,
+    "active": True,
     "plan": "unlimited"
 }
+
+# Minimum absolute byte-length difference considered "meaningful" when no
+# baseline-relative percentage threshold is larger.
+_MIN_MEANINGFUL_LENGTH_DELTA = 20
+_MEANINGFUL_LENGTH_DELTA_RATIO = 0.05
+
+
+def build_mass_assignment_payloads(
+    base_body: str,
+    content_type: str,
+    attributes: Optional[Dict[str, Any]] = None
+) -> List[Dict[str, Any]]:
+    """
+    Pure helper: builds the set of mass-assignment injection attempts for a
+    given base request body (or query string) and content type.
+
+    content_type is one of:
+      - "application/json"                  -> base_body is a JSON object; produces
+                                                 a top-level injection and, if a nested
+                                                 object field exists, one nested-level
+                                                 injection.
+      - "application/x-www-form-urlencoded" -> base_body is a form-encoded string.
+      - "query"                              -> base_body is a raw query string (no
+                                                 leading '?'); produces a query-string
+                                                 injection.
+
+    Returns a list of dicts, each describing one injection attempt:
+      {
+        "kind": "json_top" | "json_nested" | "form" | "query",
+        "body": <mutated body / query string as str>,
+        "content_type": <effective content-type label>,
+        "injected_fields": [<field names actually injected>],
+        "injected_map": {<field>: <injected value>},
+        "label": <human-readable description>,
+      }
+    Only fields not already present in the base body are injected (so this is
+    purely additive / over-posting, never overwriting an existing value).
+    """
+    attrs = dict(attributes) if attributes else dict(ADMIN_ATTRIBUTES)
+    payloads: List[Dict[str, Any]] = []
+    ct = (content_type or "").strip().lower()
+
+    if ct == "application/json":
+        parsed: Optional[Any] = None
+        try:
+            parsed = json.loads(base_body) if base_body else {}
+        except Exception:
+            parsed = None
+
+        if isinstance(parsed, dict):
+            # Top-level injection
+            mutated = dict(parsed)
+            injected_fields: List[str] = []
+            for k, v in attrs.items():
+                if k not in mutated:
+                    mutated[k] = v
+                    injected_fields.append(k)
+            if injected_fields:
+                payloads.append({
+                    "kind": "json_top",
+                    "body": json.dumps(mutated),
+                    "content_type": "application/json",
+                    "injected_fields": injected_fields,
+                    "injected_map": {k: attrs[k] for k in injected_fields},
+                    "label": "JSON top-level mass-assignment injection",
+                })
+
+            # Nested (one level deep) injection: use the first nested object found.
+            for nested_key, nested_val in parsed.items():
+                if isinstance(nested_val, dict):
+                    nested_inner = dict(nested_val)
+                    nested_injected_fields: List[str] = []
+                    for k, v in attrs.items():
+                        if k not in nested_inner:
+                            nested_inner[k] = v
+                            nested_injected_fields.append(k)
+                    if nested_injected_fields:
+                        mutated_nested = dict(parsed)
+                        mutated_nested[nested_key] = nested_inner
+                        payloads.append({
+                            "kind": "json_nested",
+                            "body": json.dumps(mutated_nested),
+                            "content_type": "application/json",
+                            "injected_fields": nested_injected_fields,
+                            "injected_map": {k: attrs[k] for k in nested_injected_fields},
+                            "label": f"JSON nested-level mass-assignment injection (field '{nested_key}')",
+                        })
+                    break  # only one nested level per spec
+
+    elif ct == "application/x-www-form-urlencoded":
+        try:
+            params = urllib.parse.parse_qs(base_body or "", keep_blank_values=True)
+        except Exception:
+            params = {}
+        flat = {k: v[0] for k, v in params.items()}
+        injected_fields = []
+        for k, v in attrs.items():
+            if k not in flat:
+                flat[k] = str(v)
+                injected_fields.append(k)
+        if injected_fields:
+            payloads.append({
+                "kind": "form",
+                "body": urllib.parse.urlencode(flat),
+                "content_type": "application/x-www-form-urlencoded",
+                "injected_fields": injected_fields,
+                "injected_map": {k: attrs[k] for k in injected_fields},
+                "label": "Form-urlencoded mass-assignment injection",
+            })
+
+    elif ct == "query":
+        try:
+            params = urllib.parse.parse_qs(base_body or "", keep_blank_values=True)
+        except Exception:
+            params = {}
+        flat = {k: v[0] for k, v in params.items()}
+        injected_fields = []
+        for k, v in attrs.items():
+            if k not in flat:
+                flat[k] = str(v)
+                injected_fields.append(k)
+        if injected_fields:
+            payloads.append({
+                "kind": "query",
+                "body": urllib.parse.urlencode(flat),
+                "content_type": "query",
+                "injected_fields": injected_fields,
+                "injected_map": {k: attrs[k] for k in injected_fields},
+                "label": "Query-string mass-assignment injection",
+            })
+
+    return payloads
+
+
+def evaluate_mass_assignment(
+    injected_field: str,
+    injected_value: Any,
+    baseline: Optional[Dict[str, Any]],
+    injected: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Pure helper: decides whether a single injected privilege field likely took
+    effect, given the injected-request response and (optionally) the baseline
+    (un-injected) response.
+
+    `injected` and `baseline` (when provided) are dicts shaped like:
+      {"status": <int>, "text": <str>}
+
+    Confirmation signal (either qualifies as a hit):
+      1. The injected field is reflected back in the response body with a
+         matching value (JSON key match, or substring match for non-JSON
+         bodies).
+      2. The injected response is a 2xx, is not a soft-403/soft-404, AND
+         shows a meaningful delta vs. the baseline (became successful where
+         baseline was not, a meaningful response-length delta, or a change
+         in soft-error classification).
+
+    Returns:
+      {
+        "hit": bool,
+        "reflected": bool,
+        "delta_hit": bool,
+        "status": int,
+        "is_soft_403": bool,
+        "is_soft_404": bool,
+      }
+    """
+    status = int(injected.get("status") or 0)
+    text = injected.get("text") or ""
+    soft = detect_soft_errors(status, text)
+
+    reflected = False
+    try:
+        resp_json = json.loads(text)
+        if isinstance(resp_json, dict) and injected_field in resp_json:
+            if str(resp_json[injected_field]).lower() == str(injected_value).lower():
+                reflected = True
+    except Exception:
+        pattern = f'"{injected_field}":'
+        if pattern in text:
+            reflected = True
+
+    delta_hit = False
+    is_nominal_success = 200 <= status < 300
+    if not reflected and is_nominal_success and not soft["is_soft_403"] and not soft["is_soft_404"]:
+        if baseline is not None:
+            baseline_status = int(baseline.get("status") or 0)
+            baseline_text = baseline.get("text") or ""
+            baseline_soft = detect_soft_errors(baseline_status, baseline_text)
+
+            baseline_was_success = 200 <= baseline_status < 300
+            length_delta = abs(len(text) - len(baseline_text))
+            meaningful_len_delta = length_delta >= max(
+                _MIN_MEANINGFUL_LENGTH_DELTA,
+                int(_MEANINGFUL_LENGTH_DELTA_RATIO * max(len(baseline_text), 1))
+            )
+            soft_delta = (
+                soft["is_soft_403"] != baseline_soft["is_soft_403"]
+                or soft["is_soft_404"] != baseline_soft["is_soft_404"]
+            )
+
+            if not baseline_was_success:
+                delta_hit = True
+            elif meaningful_len_delta or soft_delta:
+                delta_hit = True
+        # No baseline available: only the reflection signal applies.
+
+    return {
+        "hit": bool(reflected or delta_hit),
+        "reflected": reflected,
+        "delta_hit": delta_hit,
+        "status": status,
+        "is_soft_403": soft["is_soft_403"],
+        "is_soft_404": soft["is_soft_404"],
+    }
 
 
 async def audit_mass_assignment(
@@ -39,8 +263,9 @@ async def audit_mass_assignment(
 ) -> Dict[str, Any]:
     """
     Scans a captured mutation request for Mass Assignment (Over-Posting) vulnerabilities.
-    Injects elevated privilege attributes into the payload and evaluates whether
-    the server persists or reflects the elevated properties in its response.
+    Injects elevated privilege attributes into the payload (JSON top-level and one
+    nested level, form-urlencoded body, and query-string) and evaluates whether the
+    server persists or reflects the elevated properties in its response.
     """
     clean_project = (project or "default").strip().lower()
     db = SessionLocal()
@@ -82,77 +307,83 @@ async def audit_mass_assignment(
             except Exception:
                 pass
 
-        injected_probes = []
+        # Build injection attempts via the pure helper, chosen by content type.
+        injected_probes: List[Dict[str, Any]] = []
 
         if is_json and parsed_json is not None:
-            # Inject keys into existing JSON dictionary
-            mutated_dict = dict(parsed_json)
-            injected_keys = []
-            for k, v in test_attributes.items():
-                if k not in mutated_dict:
-                    mutated_dict[k] = v
-                    injected_keys.append(k)
-
-            if injected_keys:
-                injected_probes.append((
-                    json.dumps(mutated_dict),
-                    "application/json",
-                    injected_keys,
-                    mutated_dict
-                ))
+            injected_probes.extend(
+                build_mass_assignment_payloads(req_body, "application/json", test_attributes)
+            )
         elif "=" in req_body:
-            # Form URL-Encoded
-            params = urllib.parse.parse_qs(req_body)
-            injected_keys = []
-            for k, v in test_attributes.items():
-                if k not in params:
-                    params[k] = [str(v)]
-                    injected_keys.append(k)
-            if injected_keys:
-                flat_params = {k: v[0] for k, v in params.items()}
-                injected_probes.append((
-                    urllib.parse.urlencode(flat_params),
-                    "application/x-www-form-urlencoded",
-                    injected_keys,
-                    flat_params
-                ))
+            injected_probes.extend(
+                build_mass_assignment_payloads(req_body, "application/x-www-form-urlencoded", test_attributes)
+            )
 
-        for mutated_body, content_type, keys_tested, injected_map in injected_probes:
+        # Query-string injection is independent of body shape (and applies even
+        # when the body itself is JSON/form), chosen by whether the endpoint's
+        # URL already carries a query string.
+        split_url = urllib.parse.urlsplit(log.url)
+        if split_url.query:
+            injected_probes.extend(
+                build_mass_assignment_payloads(split_url.query, "query", test_attributes)
+            )
+
+        baseline: Optional[Dict[str, Any]] = None
+        if injected_probes:
+            baseline_headers = dict(req_headers)
+            baseline_headers, _ = apply_rotating_user_agent(baseline_headers)
+            try:
+                async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=httpx.Timeout(3.0, connect=0.8), **proxy_kwargs) as client:
+                    baseline_resp = await client.request(
+                        method=clean_method,
+                        url=log.url,
+                        headers=baseline_headers,
+                        content=(req_body or "").encode("utf-8")
+                    )
+                    baseline = {"status": baseline_resp.status_code, "text": baseline_resp.text or ""}
+            except Exception:
+                baseline = None
+
+        for probe in injected_probes:
+            kind = probe["kind"]
+            keys_tested = probe["injected_fields"]
+            injected_map = probe["injected_map"]
+
             probe_headers = dict(req_headers)
-            probe_headers["Content-Type"] = content_type
+            if kind == "query":
+                request_url = urllib.parse.urlunsplit((
+                    split_url.scheme, split_url.netloc, split_url.path, probe["body"], split_url.fragment
+                ))
+                request_body_bytes = (req_body or "").encode("utf-8")
+                # Leave Content-Type as the original request's; the mutation is in the URL.
+            else:
+                request_url = log.url
+                request_body_bytes = probe["body"].encode("utf-8")
+                probe_headers["Content-Type"] = probe["content_type"]
+
             probe_headers, _ = apply_rotating_user_agent(probe_headers)
 
             try:
                 async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=httpx.Timeout(3.0, connect=0.8), **proxy_kwargs) as client:
                     resp = await client.request(
                         method=clean_method,
-                        url=log.url,
+                        url=request_url,
                         headers=probe_headers,
-                        content=mutated_body.encode("utf-8")
+                        content=request_body_bytes
                     )
 
                     resp_text = resp.text or ""
                     resp_status = resp.status_code
-                    soft = detect_soft_errors(resp_status, resp_text)
+                    injected_resp = {"status": resp_status, "text": resp_text}
 
-                    # Evaluation:
-                    # 1. Server returned 200/201 (success)
-                    # 2. Not a soft error
-                    # 3. Response body reflects one or more injected privilege keys with corresponding value
                     accepted_keys = []
-                    if resp_status in [200, 201] and not soft["is_soft_403"]:
-                        try:
-                            resp_json = json.loads(resp_text)
-                            if isinstance(resp_json, dict):
-                                for k in keys_tested:
-                                    if k in resp_json and str(resp_json[k]).lower() == str(injected_map[k]).lower():
-                                        accepted_keys.append(f"{k}={resp_json[k]}")
-                        except Exception:
-                            # Substring check for form/text responses
-                            for k in keys_tested:
-                                pattern = f'"{k}":'
-                                if pattern in resp_text:
-                                    accepted_keys.append(k)
+                    for k in keys_tested:
+                        evaluation = evaluate_mass_assignment(k, injected_map[k], baseline, injected_resp)
+                        if evaluation["hit"]:
+                            if evaluation["reflected"]:
+                                accepted_keys.append(f"{k}={injected_map[k]}")
+                            else:
+                                accepted_keys.append(f"{k} (response delta)")
 
                     if accepted_keys:
                         title = f"Mass Assignment / Over-Posting on {log.path} ({', '.join(accepted_keys[:3])})"
@@ -162,6 +393,7 @@ async def audit_mass_assignment(
                             f"the following injected privilege attributes: {', '.join(accepted_keys)}."
                         )
                         evidence = (
+                            f"Injection Vector: {probe['label']}\n"
                             f"Injected Payload Keys: {', '.join(keys_tested)}\n"
                             f"Confirmed Bound Properties: {', '.join(accepted_keys)}\n"
                             f"Response Status: {resp_status}\n"
