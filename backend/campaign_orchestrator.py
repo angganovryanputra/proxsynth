@@ -10,6 +10,7 @@ Features:
 """
 
 import asyncio
+import json
 import ipaddress
 import logging
 import time
@@ -28,7 +29,7 @@ from backend.bfla_engine import audit_bfla_endpoint
 from backend.mass_assignment_engine import audit_mass_assignment
 from backend.logic_fuzzer import audit_numeric_business_logic
 from backend.verification_gate import verify_vulnerability_candidate
-from backend.database import SessionLocal, Finding, HttpLog
+from backend.database import SessionLocal, Finding, HttpLog, CampaignRecord
 
 logger = logging.getLogger("proxynth.campaign_orchestrator")
 
@@ -95,6 +96,39 @@ class CircuitBreaker:
 
 # In-memory storage for autonomous campaigns
 CAMPAIGN_REGISTRY: Dict[str, Dict[str, Any]] = {}
+
+def _persist_campaign_to_db(campaign: Dict[str, Any]) -> None:
+    """Persists or updates campaign state in SQLite database."""
+    cid = campaign.get("campaign_id")
+    if not cid:
+        return
+    db = SessionLocal()
+    try:
+        record = db.query(CampaignRecord).filter(CampaignRecord.campaign_id == cid).first()
+        if not record:
+            record = CampaignRecord(
+                campaign_id=cid,
+                project=campaign.get("project", "default"),
+                status=campaign.get("status", "RUNNING"),
+                current_phase=campaign.get("current_phase", "INITIALIZING"),
+                target_input=campaign.get("target_input", ""),
+                started_at=campaign.get("started_at", ""),
+                completed_at=campaign.get("completed_at"),
+                report_json=json.dumps(campaign, default=str)
+            )
+            db.add(record)
+        else:
+            record.status = campaign.get("status", record.status)
+            record.current_phase = campaign.get("current_phase", record.current_phase)
+            record.completed_at = campaign.get("completed_at", record.completed_at)
+            record.report_json = json.dumps(campaign, default=str)
+        db.commit()
+    except Exception as ex:
+        db.rollback()
+        logger.warning(f"Failed to persist campaign {cid} to database: {ex}")
+    finally:
+        db.close()
+
 
 
 def classify_target_input(target_input: str) -> Dict[str, Any]:
@@ -165,22 +199,64 @@ def classify_target_input(target_input: str) -> Dict[str, Any]:
 def get_campaign_status(campaign_id: str) -> Dict[str, Any]:
     """Retrieves current execution state, metrics, and findings for a campaign."""
     campaign = CAMPAIGN_REGISTRY.get(campaign_id)
-    if not campaign:
-        return {
-            "campaign_id": campaign_id,
-            "status": "NOT_FOUND",
-            "error": f"Campaign '{campaign_id}' was not found in active registry."
-        }
-    return campaign
+    if campaign:
+        return campaign
+
+    # Fallback to persistent database storage
+    db = SessionLocal()
+    try:
+        record = db.query(CampaignRecord).filter(CampaignRecord.campaign_id == campaign_id).first()
+        if record:
+            data = record.to_dict()
+            CAMPAIGN_REGISTRY[campaign_id] = data
+            return data
+    except Exception as ex:
+        logger.warning(f"Error querying CampaignRecord for {campaign_id}: {ex}")
+    finally:
+        db.close()
+
+    return {
+        "campaign_id": campaign_id,
+        "status": "NOT_FOUND",
+        "error": f"Campaign '{campaign_id}' was not found in active registry or database history."
+    }
 
 
 def list_campaigns(project: Optional[str] = None) -> List[Dict[str, Any]]:
     """Lists all registered security campaigns, optionally filtered by project workspace."""
-    results = []
+    results: Dict[str, Dict[str, Any]] = {}
     proj_filter = (project or "").strip().lower()
+
+    # 1. Load from DB first (survives process restart)
+    db = SessionLocal()
+    try:
+        query = db.query(CampaignRecord)
+        if proj_filter and proj_filter not in ("all", "*", "any", "global"):
+            query = query.filter(CampaignRecord.project == proj_filter)
+        records = query.order_by(CampaignRecord.id.desc()).all()
+        for rec in records:
+            data = rec.to_dict()
+            results[rec.campaign_id] = {
+                "campaign_id": rec.campaign_id,
+                "status": rec.status,
+                "current_phase": rec.current_phase,
+                "target_input": rec.target_input,
+                "project": rec.project,
+                "started_at": rec.started_at,
+                "completed_at": rec.completed_at,
+                "circuit_breaker_tripped": data.get("circuit_breaker", {}).get("is_tripped", False),
+                "metrics": data.get("metrics", {})
+            }
+    except Exception as ex:
+        logger.warning(f"Error listing campaigns from DB: {ex}")
+    finally:
+        db.close()
+
+    # 2. Overlay live in-memory registry (has latest metrics/status during execution)
     for cid, camp in CAMPAIGN_REGISTRY.items():
-        if not proj_filter or proj_filter in ("all", "*", "any", "global") or camp.get("project", "").lower() == proj_filter:
-            results.append({
+        c_proj = camp.get("project", "").lower()
+        if not proj_filter or proj_filter in ("all", "*", "any", "global") or c_proj == proj_filter:
+            results[cid] = {
                 "campaign_id": cid,
                 "status": camp.get("status"),
                 "current_phase": camp.get("current_phase"),
@@ -190,8 +266,9 @@ def list_campaigns(project: Optional[str] = None) -> List[Dict[str, Any]]:
                 "completed_at": camp.get("completed_at"),
                 "circuit_breaker_tripped": camp.get("circuit_breaker", {}).get("is_tripped", False),
                 "metrics": camp.get("metrics", {})
-            })
-    return sorted(results, key=lambda x: x.get("started_at", ""), reverse=True)
+            }
+
+    return sorted(results.values(), key=lambda x: x.get("started_at", ""), reverse=True)
 
 
 async def _execute_campaign_pipeline(
@@ -225,6 +302,7 @@ async def _execute_campaign_pipeline(
         # ==========================================
         if "network_scan" in selected_modes or primary_category == "NETWORK_INFRA":
             report["current_phase"] = "TRACK_1_NETWORK_SCAN"
+            _persist_campaign_to_db(report)
             logger.info(f"[Campaign {campaign_id}] Track 1: Scanning ports & exposed services on {resolved_host}...")
             try:
                 network_results = await scan_target_ports(
@@ -252,6 +330,7 @@ async def _execute_campaign_pipeline(
         if circuit_breaker.is_tripped:
             report["status"] = "PAUSED_CIRCUIT_BREAKER"
             report["current_phase"] = "CIRCUIT_BREAKER_HALTED"
+            _persist_campaign_to_db(report)
             report["high_priority_actions"].append(f"CIRCUIT BREAKER: {circuit_breaker.trip_reason}")
             report["circuit_breaker"] = {
                 "is_tripped": True,
@@ -268,6 +347,7 @@ async def _execute_campaign_pipeline(
         spider_results = {}
         if "spider" in selected_modes and (primary_category in ("WEB_SPA", "API") or report["metrics"].get("open_ports", 0) > 0):
             report["current_phase"] = "TRACK_2_WEB_SPIDER"
+            _persist_campaign_to_db(report)
             logger.info(f"[Campaign {campaign_id}] Track 2: Hybrid Spider on {active_web_url} (SPA: {enable_spa})...")
             try:
                 spider_results = await crawl_and_map_target(
@@ -289,6 +369,7 @@ async def _execute_campaign_pipeline(
         if circuit_breaker.is_tripped:
             report["status"] = "PAUSED_CIRCUIT_BREAKER"
             report["current_phase"] = "CIRCUIT_BREAKER_HALTED"
+            _persist_campaign_to_db(report)
             report["high_priority_actions"].append(f"CIRCUIT BREAKER: {circuit_breaker.trip_reason}")
             report["circuit_breaker"] = {
                 "is_tripped": True,
@@ -302,6 +383,7 @@ async def _execute_campaign_pipeline(
         # ==========================================
         if "js_mine" in selected_modes and spider_results.get("scripts"):
             report["current_phase"] = "TRACK_3_JS_MINE"
+            _persist_campaign_to_db(report)
             logger.info(f"[Campaign {campaign_id}] Track 3: Mining JavaScript assets for secrets...")
             for script_url in spider_results["scripts"][:5]:
                 try:
@@ -328,6 +410,7 @@ async def _execute_campaign_pipeline(
         # ==========================================
         if "api_infer" in selected_modes and (primary_category == "API" or spider_results.get("sample_endpoints")):
             report["current_phase"] = "TRACK_4_API_INFER"
+            _persist_campaign_to_db(report)
             try:
                 infer_endpoints_from_observed(project=project)
                 report["phases_executed"].append("api_infer")
@@ -353,6 +436,7 @@ async def _execute_campaign_pipeline(
         if circuit_breaker.is_tripped or not circuit_breaker.check_recent_db_logs(project):
             report["status"] = "PAUSED_CIRCUIT_BREAKER"
             report["current_phase"] = "CIRCUIT_BREAKER_HALTED"
+            _persist_campaign_to_db(report)
             report["high_priority_actions"].append(f"CIRCUIT BREAKER: {circuit_breaker.trip_reason}")
             report["circuit_breaker"] = {
                 "is_tripped": True,
@@ -479,12 +563,14 @@ async def _execute_campaign_pipeline(
         report["status"] = "COMPLETED"
         report["current_phase"] = "COMPLETED"
         report["completed_at"] = datetime.now().isoformat()
+        _persist_campaign_to_db(report)
         logger.info(f"[Campaign {campaign_id}] Campaign finished successfully.")
 
     except Exception as ex:
         report["status"] = "FAILED"
         report["current_phase"] = "ERROR"
         report["error"] = str(ex)
+        _persist_campaign_to_db(report)
         logger.error(f"[Campaign {campaign_id}] Fatal pipeline error: {ex}", exc_info=True)
 
     return report
@@ -541,6 +627,7 @@ async def run_autonomous_security_campaign(
     }
 
     CAMPAIGN_REGISTRY[campaign_id] = report_entry
+    _persist_campaign_to_db(report_entry)
 
     if wait_for_completion:
         return await _execute_campaign_pipeline(

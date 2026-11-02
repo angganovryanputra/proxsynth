@@ -478,11 +478,12 @@ async def send_http_request(
             advisor_suggestions = suggest_attack_actions(
                 url=url,
                 method=method,
-                headers=res_headers,
+                headers=final_req_headers,
                 body=body,
                 response_status=status_code,
                 response_body=res_body,
-                log_id=logged_id
+                log_id=logged_id,
+                response_headers=res_headers
             )
             if advisor_suggestions:
                 res_dict["suggested_next_actions"] = advisor_suggestions

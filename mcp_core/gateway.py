@@ -58,15 +58,17 @@ def _resolve_project(project: Optional[str] = None, allow_all: bool = True, targ
 
     # If writing with target_host known, resolve from TargetAsset
     if not allow_all and target_host:
+        db = None
         try:
             db = SessionLocal()
             asset = db.query(TargetAsset).filter(TargetAsset.host.ilike(f"%{target_host.strip()}%")).first()
             if asset and asset.project and asset.project.lower() not in ("all", "*", "any", "global"):
                 return asset.project.lower()
         except Exception:
-            diag.exc("gateway#1")
+            diag.exc("_resolve_project: TargetAsset host->project lookup")
         finally:
-            db.close()
+            if db is not None:
+                db.close()
 
     if _active_project:
         if not allow_all and _active_project in ("all", "*", "any", "global"):
@@ -268,19 +270,19 @@ async def _persist_and_stream_log(
                 payload_hint=log_payload.get("payload_hint")
             )
         except Exception:
-            diag.exc("gateway#3")
+            diag.exc("persist_and_stream_log: WS broadcast/store dispatch failed")
 
         try:
             from backend.target_manager import auto_ingest_url_to_target_graph
             auto_ingest_url_to_target_graph(proj, entry.url, entry.method)
         except Exception:
-            diag.exc("gateway#4")
+            diag.exc("persist_and_stream_log: auto_ingest_url_to_target_graph failed")
 
         try:
             from backend.js_miner import passive_mine_js_background
             passive_mine_js_background(entry.url, entry.response_body, proj)
         except Exception:
-            diag.exc("gateway#5")
+            diag.exc("persist_and_stream_log: passive_mine_js_background failed")
 
         return {"id": entry.id, "flag_status": effective_flag, "findings": effective_findings}
     except Exception:
@@ -301,7 +303,7 @@ async def _persist_and_stream_command(cmd_payload: Dict[str, Any]) -> Optional[i
             if isinstance(data, dict) and "id" in data:
                 return data["id"]
     except Exception:
-        diag.exc("gateway#6")
+        diag.exc("persist_and_stream_command: dashboard POST failed, using SQLite fallback")
 
     db = SessionLocal()
     try:
@@ -336,7 +338,7 @@ async def _persist_and_stream_command(cmd_payload: Dict[str, Any]) -> Optional[i
                     cmd_log_id=entry.id
                 )
             except Exception:
-                diag.exc("gateway#7")
+                diag.exc("persist_and_stream_command: auto_vault_script_payloads failed")
 
         return entry.id
     except Exception:
@@ -356,7 +358,7 @@ async def _persist_and_stream_payload(payload_data: Dict[str, Any]) -> Optional[
             if isinstance(data, dict) and "id" in data:
                 return data["id"]
     except Exception:
-        diag.exc("gateway#8")
+        diag.exc("persist_and_stream_payload: dashboard POST failed, using SQLite fallback")
 
     db = SessionLocal()
     try:
@@ -425,7 +427,7 @@ def _extract_domain_cookies(url: str, project: Optional[str] = None) -> Dict[str
                             if c_name and c_val:
                                 cookies[c_name] = c_val
                     except Exception:
-                        diag.exc("gateway#9")
+                        diag.exc("extract_domain_cookies: decrypt/parse session cookies")
         finally:
             db.close()
     except Exception:

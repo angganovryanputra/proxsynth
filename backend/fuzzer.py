@@ -338,7 +338,19 @@ def detect_anomalies(
     for probe_syntax, product in SSTI_ARITHMETIC_PROBES:
         if probe_syntax in payload:
             product_str = str(product)
-            if product_str in text and product_str not in baseline:
+            expr_match = re.search(r"\d+\s*\*\s*\d+", probe_syntax)
+            raw_expr = expr_match.group(0) if expr_match else None
+            # Confirm the server *evaluated* the template expression: the product
+            # appears where the baseline lacked it AND the raw expression (e.g.
+            # '7*7') is absent from the response. The expression-absent check
+            # prevents a bare numeric substring (an id, price, or reflected
+            # payload) from escalating to a CONFIRMED/HIGH SSTI finding.
+            evaluated = (
+                product_str in text
+                and product_str not in baseline
+                and (raw_expr is None or raw_expr not in text)
+            )
+            if evaluated:
                 if product == 49:
                     if "SSTI_EVALUATED_49" not in anomalies:
                         anomalies.append("SSTI_EVALUATED_49")

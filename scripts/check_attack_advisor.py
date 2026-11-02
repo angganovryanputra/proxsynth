@@ -52,8 +52,13 @@ def test_open_redirect_ssrf_param():
     probe = find_tool(suggestions, "send_http_request")
     check("send_http_request CORS/redirect probe recommended for 'next' param", len(probe) >= 1)
     if probe:
-        check("send_http_request probe carries a 'params' payload for the redirect param",
-              "next" in (probe[0]["tool_arguments"].get("params") or {}))
+        # send_http_request has no 'params' arg: the redirect value must be folded
+        # into the url instead, so an agent can call the tool verbatim.
+        probe_args = probe[0]["tool_arguments"]
+        check("send_http_request probe does NOT emit an invalid 'params' arg",
+              "params" not in probe_args)
+        check("send_http_request probe folds the redirect param into the url",
+              "next=" in probe_args.get("url", ""))
 
 
 def test_open_redirect_body_param():
@@ -72,7 +77,7 @@ def test_graphql_path():
     gql = find_tool(suggestions, "inspect_graphql_endpoint")
     check("inspect_graphql_endpoint recommended for /graphql path", len(gql) == 1)
     if gql:
-        check("inspect_graphql_endpoint targets the endpoint url", gql[0]["tool_arguments"].get("endpoint_url") == url)
+        check("inspect_graphql_endpoint targets the endpoint via 'url'", gql[0]["tool_arguments"].get("url") == url)
 
 
 def test_graphql_body_only():
@@ -93,7 +98,7 @@ def test_file_upload_multipart():
     upload = find_tool(suggestions, "audit_file_upload")
     check("audit_file_upload recommended for multipart upload", len(upload) == 1)
     if upload:
-        check("audit_file_upload targets the endpoint url", upload[0]["tool_arguments"].get("endpoint_url") == url)
+        check("audit_file_upload targets via 'target' (log_id when known, else url)", upload[0]["tool_arguments"].get("target") == url)
 
 
 def test_file_upload_filename_in_body():

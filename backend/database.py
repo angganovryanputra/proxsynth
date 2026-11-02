@@ -589,6 +589,41 @@ class InterceptionRule(Base):
         }
 
 
+
+class CampaignRecord(Base):
+    __tablename__ = "campaign_records"
+    __table_args__ = (
+        Index("ix_campaign_proj_id", "project", "id"),
+        Index("ix_campaign_cid", "campaign_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    campaign_id = Column(String(64), unique=True, index=True, nullable=False)
+    project = Column(String(100), default="default", index=True)
+    status = Column(String(32), default="RUNNING", index=True)
+    current_phase = Column(String(64), default="INITIALIZING")
+    target_input = Column(Text, default="")
+    started_at = Column(String(64), default="")
+    completed_at = Column(String(64), nullable=True)
+    report_json = Column(Text, default="{}")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def to_dict(self):
+        try:
+            rep = json.loads(self.report_json) if self.report_json else {}
+        except Exception:
+            rep = {}
+        rep["campaign_id"] = self.campaign_id
+        rep["project"] = self.project or "default"
+        rep["status"] = self.status or "RUNNING"
+        rep["current_phase"] = self.current_phase or "INITIALIZING"
+        rep["target_input"] = self.target_input or ""
+        rep["started_at"] = self.started_at or ""
+        rep["completed_at"] = self.completed_at
+        return rep
+
+
 def _run_migrations():
     """Safely adds newly introduced columns and high-performance indexes to existing SQLite tables."""
     import sqlite3
@@ -648,6 +683,8 @@ def _run_migrations():
         cur.execute("CREATE INDEX IF NOT EXISTS ix_ws_frames_proj_id ON ws_frame_logs(project, id DESC)")
         cur.execute("CREATE INDEX IF NOT EXISTS ix_hypotheses_proj_status ON testing_hypotheses(project, status)")
         cur.execute("CREATE INDEX IF NOT EXISTS ix_rules_proj_enabled ON interception_rules(project, enabled)")
+        cur.execute("CREATE INDEX IF NOT EXISTS ix_campaign_proj_id ON campaign_records(project, id DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS ix_campaign_cid ON campaign_records(campaign_id)")
         con.commit()
         con.close()
     except Exception as ex:

@@ -113,6 +113,17 @@ async def shutdown_event():
     except Exception:
         pass
 
+    # Cleanly cancel and gather all lingering background tasks to prevent loop destruction warnings
+    try:
+        current_task = asyncio.current_task()
+        pending_tasks = [t for t in asyncio.all_tasks() if t is not current_task and not t.done()]
+        if pending_tasks:
+            for t in pending_tasks:
+                t.cancel()
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
+    except Exception:
+        pass
+
 # Security Configuration from Environment
 ALLOWED_ORIGINS_ENV = os.getenv(
     "PROXSYNTH_ALLOWED_ORIGINS",
@@ -971,7 +982,8 @@ async def run_fuzzer_attack_endpoint(req: RunFuzzRequest, db: Session = Depends(
         body=req.body,
         payloads=payloads,
         concurrency=req_concurrency,
-        upstream_proxy=proxy
+        upstream_proxy=proxy,
+        payload_type=(req.category if not req.custom_payloads else None)
     )
 
     await ws_manager.broadcast({

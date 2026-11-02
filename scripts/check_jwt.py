@@ -275,6 +275,54 @@ check(
     any(v["vector"] == "forged_with_cracked_secret" for v in variants_with_secret),
 )
 
+# --- OAST domain substitution for jku/x5u canary variants ---
+# When a live OAST host is resolved, the jku/x5u canary URLs must target it (so
+# a server fetching the key produces a recordable out-of-band interaction),
+# replacing the literal OAST_CANARY placeholder used in the offline/no-domain run.
+OAST_HOST = "abc123deadbeef.oast.example.net"
+variants_oast = generate_jwt_attack_variants(token=base_token, known_secret=None, oast_domain=OAST_HOST)
+by_vector_oast = {}
+for v in variants_oast:
+    by_vector_oast.setdefault(v["vector"], []).append(v)
+
+if "jku_canary_injection" in by_vector_oast:
+    d = decode_variant(by_vector_oast["jku_canary_injection"][0])
+    check("jku_canary_injection targets the live OAST host when oast_domain supplied",
+          d["header"].get("jku", "") == f"https://{OAST_HOST}/jwks.json", d["header"])
+if "x5u_canary_injection" in by_vector_oast:
+    d = decode_variant(by_vector_oast["x5u_canary_injection"][0])
+    check("x5u_canary_injection targets the live OAST host when oast_domain supplied",
+          d["header"].get("x5u", "") == f"https://{OAST_HOST}/jwks.json", d["header"])
+
+canary_leftover = any(
+    "OAST_CANARY" in str(decode_variant(v)["header"].get("jku", ""))
+    or "OAST_CANARY" in str(decode_variant(v)["header"].get("x5u", ""))
+    for v in variants_oast
+)
+check("OAST_CANARY placeholder is fully substituted once a live domain is supplied", not canary_leftover)
+
+# --- stdlib JWK (RSA n/e) -> PEM derivation feeds the RS256->HS256 alg-confusion attack ---
+from backend.jwt_tester import jwk_rsa_to_pem
+jwk_n = b64url_encode(b"\x80" + b"\x00" * 255)  # 256-byte modulus, high bit set
+jwk_e = b64url_encode(bytes([0x01, 0x00, 0x01]))  # 65537
+derived_pem = jwk_rsa_to_pem(jwk_n, jwk_e)
+check("jwk_rsa_to_pem emits a PEM public key block",
+      derived_pem.startswith("-----BEGIN PUBLIC KEY-----")
+      and derived_pem.strip().endswith("-----END PUBLIC KEY-----"))
+
+import base64 as _b64
+pem_body = "".join(derived_pem.strip().splitlines()[1:-1])
+try:
+    der = _b64.b64decode(pem_body)
+    der_ok = len(der) > 0 and der[0] == 0x30  # DER SEQUENCE
+except Exception:
+    der_ok = False
+check("JWK-derived PEM body is valid base64 DER beginning with a SEQUENCE tag", der_ok)
+
+variants_from_jwk = generate_jwt_attack_variants(token=base_token, known_secret=None, public_key_pem=derived_pem)
+check("alg-confusion variant is generated from a JWK-derived PEM key",
+      any(v["vector"] == "alg_confusion_rs256_to_hs256" for v in variants_from_jwk))
+
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------

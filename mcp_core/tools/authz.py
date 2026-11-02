@@ -153,14 +153,17 @@ async def audit_jwt_security(
     method: str = "GET",
     headers: Optional[Dict[str, str]] = None,
     claims_override: Optional[Dict[str, Any]] = None,
-    project: Optional[str] = None
+    project: Optional[str] = None,
+    public_key_pem: Optional[str] = None,
+    jwks_url: Optional[str] = None
 ) -> str:
     """
     Audits JSON Web Tokens (JWT) for critical session vulnerabilities:
     - Algorithm None bypasses ('none', 'None', 'NONE')
+    - Algorithm confusion RS256 -> HS256 (server's public key reused as HMAC secret)
     - Weak secret dictionary brute-force cracking (HS256/HS384/HS512)
     - Privilege escalation / claim tampering (role: admin, is_admin: True)
-    - Key ID (kid) parameter manipulation
+    - Key ID (kid) manipulation and jku/x5u out-of-band remote key-fetch (SSRF)
     - Automated live replay against target endpoint with Soft-403 heuristic detection.
 
     Parameters:
@@ -170,6 +173,11 @@ async def audit_jwt_security(
       - headers: Optional baseline request headers.
       - claims_override: Optional key-value dictionary to inject into token payload.
       - project: Project workspace name.
+      - public_key_pem: Optional server RSA public key (PEM). Enables the RS256->HS256
+        algorithm-confusion variant, which forges an HS256 token using this key as the
+        HMAC secret. Without it (and without jwks_url) that attack class is skipped.
+      - jwks_url: Optional JWKS or PEM/certificate URL. When public_key_pem is not given,
+        the key is fetched and derived from here (e.g. '.well-known/jwks.json').
     """
     from backend.jwt_tester import audit_jwt_security as run_jwt_audit
 
@@ -197,7 +205,9 @@ async def audit_jwt_security(
         headers=headers,
         claims_override=claims_override,
         upstream_proxy=upstream_proxy or None,
-        project=target_project
+        project=target_project,
+        public_key_pem=public_key_pem,
+        jwks_url=jwks_url
     )
     return json.dumps(result, indent=2)
 

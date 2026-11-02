@@ -101,7 +101,9 @@ async def fuzz_endpoint(
       - method: HTTP method ('GET', 'POST', etc.)
       - headers: Optional custom HTTP headers
       - body: Request body with optional §marker§ (e.g. '{"user":"§admin§","pass":"test"}')
-      - payload_type: Built-in payload preset ('sqli', 'xss', 'traversal', 'cmd_injection', 'ssti', 'auth_bypass')
+      - payload_type: Built-in payload preset. One of: 'sqli', 'xss', 'traversal',
+        'cmd_injection', 'ssti', 'auth_bypass', 'business_logic', 'mass_assignment',
+        'nosqli', 'xxe', 'ssrf', 'crlf', 'open_redirect'.
       - custom_payloads: Optional list of custom string payloads to inject
       - concurrency: Concurrent worker threads (default: 5)
       - delay_ms: Milliseconds delay between requests to avoid WAF / bot protection bans (default: 50.0)
@@ -141,7 +143,8 @@ async def fuzz_endpoint(
         jitter_ms=jitter_ms,
         upstream_proxy=upstream_proxy or None,
         project=target_project,
-        agent_id=agent_id
+        agent_id=agent_id,
+        payload_type=(payload_type if not custom_payloads else None)
     )
     return json.dumps(result, indent=2)
 

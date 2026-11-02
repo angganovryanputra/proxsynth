@@ -182,6 +182,11 @@ async def get_autonomous_attack_guidance(
                     hdrs = json.loads(entry.request_headers) if isinstance(entry.request_headers, str) else entry.request_headers
                 except Exception:
                     diag.exc("autonomous#1")
+                resp_hdrs = {}
+                try:
+                    resp_hdrs = json.loads(entry.response_headers) if isinstance(entry.response_headers, str) else (entry.response_headers or {})
+                except Exception:
+                    diag.exc("autonomous#1b response_headers parse")
                 actions = suggest_attack_actions(
                     url=entry.url,
                     method=entry.method,
@@ -189,7 +194,8 @@ async def get_autonomous_attack_guidance(
                     body=entry.request_body,
                     response_status=entry.status_code,
                     response_body=entry.response_body,
-                    log_id=entry.id
+                    log_id=entry.id,
+                    response_headers=resp_hdrs
                 )
                 return json.dumps({
                     "status": "success",

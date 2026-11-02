@@ -50,13 +50,13 @@ EXPECTED_PRIVILEGED_FIELDS = [
 
 
 def test_admin_attributes_broadened():
-    print("\n[1/5] ADMIN_ATTRIBUTES broadened with expected privileged fields...")
+    print("\n[1/6] ADMIN_ATTRIBUTES broadened with expected privileged fields...")
     for field in EXPECTED_PRIVILEGED_FIELDS:
         check(f"ADMIN_ATTRIBUTES contains '{field}'", field in mae.ADMIN_ATTRIBUTES)
 
 
 def test_build_payloads_json_top_and_nested():
-    print("\n[2/5] build_mass_assignment_payloads: JSON top-level + one nested level...")
+    print("\n[2/6] build_mass_assignment_payloads: JSON top-level + one nested level...")
     base_body = json.dumps({"username": "bob", "profile": {"display_name": "Bob"}})
     payloads = mae.build_mass_assignment_payloads(base_body, "application/json")
 
@@ -95,7 +95,7 @@ def test_build_payloads_json_top_and_nested():
 
 
 def test_build_payloads_form():
-    print("\n[3/5] build_mass_assignment_payloads: form-urlencoded body...")
+    print("\n[3/6] build_mass_assignment_payloads: form-urlencoded body...")
     base_body = "username=bob&email=bob%40example.com"
     payloads = mae.build_mass_assignment_payloads(base_body, "application/x-www-form-urlencoded")
 
@@ -110,7 +110,7 @@ def test_build_payloads_form():
 
 
 def test_build_payloads_query():
-    print("\n[4/5] build_mass_assignment_payloads: query-string injection...")
+    print("\n[4/6] build_mass_assignment_payloads: query-string injection...")
     base_qs = "page=1&limit=10"
     payloads = mae.build_mass_assignment_payloads(base_qs, "query")
     query = next((p for p in payloads if p["kind"] == "query"), None)
@@ -131,7 +131,7 @@ def test_build_payloads_query():
 
 
 def test_evaluate_mass_assignment():
-    print("\n[5/5] evaluate_mass_assignment: reflection, delta, and clean-baseline cases...")
+    print("\n[5/6] evaluate_mass_assignment: reflection, delta, and clean-baseline cases...")
 
     # Case 1: reflected injected field in a JSON response -> hit.
     baseline = {"status": 200, "text": json.dumps({"id": 1, "username": "bob"})}
@@ -174,6 +174,47 @@ def test_evaluate_mass_assignment():
     check("without a baseline, a non-reflected response is NOT flagged as a hit", result6["hit"] is False)
 
 
+def test_evaluate_false_positive_vectors():
+    print("\n[6/6] evaluate_mass_assignment: false-positive amplification guards...")
+
+    nominal = json.dumps({"id": 1, "username": "bob"})
+
+    # FP Vector A: a transient / non-rejection baseline failure (503, 429, a
+    # 5xx) must NOT, on its own, flip a non-reflected 2xx injected response to a
+    # hit. Previously "any non-2xx baseline" was treated as a success delta,
+    # which marked every injected field on every probe as a confirmed bind.
+    for transient_status in (500, 502, 503, 429):
+        baseline = {"status": transient_status, "text": "Service Unavailable"}
+        injected = {"status": 200, "text": nominal}
+        res = mae.evaluate_mass_assignment("role", "admin", baseline, injected)
+        check(f"transient {transient_status} baseline does NOT manufacture a hit", res["hit"] is False)
+        check(f"transient {transient_status} baseline -> delta_hit False", res["delta_hit"] is False)
+
+    # A genuine authorization rejection (401/403/422) that flips to 2xx IS still
+    # a trusted signal (regression guard for the legitimate case).
+    for rejected_status in (401, 403, 422):
+        baseline = {"status": rejected_status, "text": "Forbidden"}
+        injected = {"status": 200, "text": nominal}
+        res = mae.evaluate_mass_assignment("role", "admin", baseline, injected)
+        check(f"rejected {rejected_status} baseline -> 2xx IS a delta hit", res["delta_hit"] is True)
+
+    # FP Vector B: both responses succeed (2xx) and differ only by small dynamic
+    # noise (a CSRF token / timestamp / nonce) below the meaningful-length floor.
+    # This must NOT be a hit.
+    base_obj = {"id": 1, "username": "bob", "csrf": "a" * 32}
+    inj_obj = {"id": 1, "username": "bob", "csrf": "b" * 40, "ts": "2026-11-02T00:00:00Z"}
+    baseline_b = {"status": 200, "text": json.dumps(base_obj)}
+    injected_b = {"status": 200, "text": json.dumps(inj_obj)}
+    res_b = mae.evaluate_mass_assignment("role", "admin", baseline_b, injected_b)
+    check("small dynamic-token delta between two 2xx responses is NOT a hit", res_b["hit"] is False)
+
+    # But a large, genuinely meaningful length delta between two 2xx responses
+    # still registers (regression guard — the signal is only tightened, not removed).
+    injected_big = {"status": 200, "text": json.dumps(base_obj) + ("X" * 400)}
+    res_big = mae.evaluate_mass_assignment("role", "admin", baseline_b, injected_big)
+    check("large meaningful length delta between two 2xx responses IS a hit", res_big["delta_hit"] is True)
+
+
 def main():
     print("=" * 70)
     print("Proxsynth Mass Assignment Engine - Offline Acceptance Check (Task 3)")
@@ -184,6 +225,7 @@ def main():
     test_build_payloads_form()
     test_build_payloads_query()
     test_evaluate_mass_assignment()
+    test_evaluate_false_positive_vectors()
 
     print("\n" + "=" * 70)
     print(f"Result: {PASSES} passed, {len(FAILURES)} failed")

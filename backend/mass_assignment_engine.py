@@ -40,8 +40,10 @@ ADMIN_ATTRIBUTES = {
 }
 
 # Minimum absolute byte-length difference considered "meaningful" when no
-# baseline-relative percentage threshold is larger.
-_MIN_MEANINGFUL_LENGTH_DELTA = 20
+# baseline-relative percentage threshold is larger. Set high enough that common
+# dynamic response noise (CSRF tokens, timestamps, nonces, request ids) does not
+# on its own cross the threshold and manufacture a false "response delta" hit.
+_MIN_MEANINGFUL_LENGTH_DELTA = 96
 _MEANINGFUL_LENGTH_DELTA_RATIO = 0.05
 
 
@@ -229,6 +231,15 @@ def evaluate_mass_assignment(
             baseline_soft = detect_soft_errors(baseline_status, baseline_text)
 
             baseline_was_success = 200 <= baseline_status < 300
+            # A clear authorization/validation rejection on the un-injected
+            # baseline is the only non-2xx state we trust: if the baseline is
+            # explicitly denied but the injected request succeeds, the injected
+            # privilege field plausibly bound and unlocked access.
+            baseline_rejected = (
+                baseline_status in (401, 403, 422)
+                or baseline_soft["is_soft_403"]
+                or baseline_soft["is_soft_404"]
+            )
             length_delta = abs(len(text) - len(baseline_text))
             meaningful_len_delta = length_delta >= max(
                 _MIN_MEANINGFUL_LENGTH_DELTA,
@@ -239,10 +250,14 @@ def evaluate_mass_assignment(
                 or soft["is_soft_404"] != baseline_soft["is_soft_404"]
             )
 
-            if not baseline_was_success:
+            if baseline_rejected:
                 delta_hit = True
-            elif meaningful_len_delta or soft_delta:
+            elif baseline_was_success and (meaningful_len_delta or soft_delta):
                 delta_hit = True
+            # A transient / non-rejection baseline failure (429, 5xx, a timeout
+            # that still returned a body) is inconclusive and is NOT treated as a
+            # hit: otherwise any flaky baseline would flip delta_hit true for
+            # every injected field on every probe (false-positive amplification).
         # No baseline available: only the reflection signal applies.
 
     return {
@@ -376,21 +391,34 @@ async def audit_mass_assignment(
                     resp_status = resp.status_code
                     injected_resp = {"status": resp_status, "text": resp_text}
 
-                    accepted_keys = []
+                    reflected_keys = []
+                    delta_detected = False
                     for k in keys_tested:
                         evaluation = evaluate_mass_assignment(k, injected_map[k], baseline, injected_resp)
-                        if evaluation["hit"]:
-                            if evaluation["reflected"]:
-                                accepted_keys.append(f"{k}={injected_map[k]}")
-                            else:
-                                accepted_keys.append(f"{k} (response delta)")
+                        if evaluation["reflected"]:
+                            reflected_keys.append(f"{k}={injected_map[k]}")
+                        elif evaluation["delta_hit"]:
+                            delta_detected = True
+
+                    # Reflected fields are individually attributable. A whole-
+                    # response delta is a property of the probe as a whole and
+                    # cannot be pinned to any single injected field, so it is
+                    # reported once per probe (and only when nothing concretely
+                    # reflected) rather than duplicated across every field.
+                    accepted_keys = list(reflected_keys)
+                    if delta_detected and not reflected_keys:
+                        accepted_keys.append(
+                            f"response delta vs baseline ({probe['kind']} probe, "
+                            f"{len(keys_tested)} privilege fields injected)"
+                        )
 
                     if accepted_keys:
                         title = f"Mass Assignment / Over-Posting on {log.path} ({', '.join(accepted_keys[:3])})"
                         desc = (
-                            f"The mutation endpoint '{log.path}' inadvertently binds administrative properties into "
-                            f"its internal model without strict DTO validation. The server accepted and reflected "
-                            f"the following injected privilege attributes: {', '.join(accepted_keys)}."
+                            f"The mutation endpoint '{log.path}' appears to bind administrative properties into "
+                            f"its internal model without strict DTO validation. The server accepted the following "
+                            f"injected privilege signals (reflected values are confirmed bound; a 'response delta' "
+                            f"indicates a behavioural change that warrants manual confirmation): {', '.join(accepted_keys)}."
                         )
                         evidence = (
                             f"Injection Vector: {probe['label']}\n"

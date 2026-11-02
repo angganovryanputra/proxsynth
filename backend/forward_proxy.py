@@ -19,6 +19,7 @@ import re
 
 warnings.filterwarnings("ignore", message=r".*eof_received.*")
 import ipaddress
+from collections import OrderedDict
 from typing import Optional, Dict, Any, Tuple
 import httpx
 
@@ -40,7 +41,8 @@ _proxy_host: str = os.getenv("PROXSYNTH_PROXY_HOST", os.getenv("PROXSYNTH_PROXY_
 
 _ca_cert = None
 _ca_key = None
-_cert_cache: Dict[str, ssl.SSLContext] = {}
+_MAX_CERT_CACHE = 500
+_cert_cache: OrderedDict[str, ssl.SSLContext] = OrderedDict()
 
 def get_proxy_port() -> int:
     return _proxy_port
@@ -174,6 +176,7 @@ def _ensure_ca() -> Tuple[Any, Any]:
 def get_ssl_context_for_host(hostname: str) -> ssl.SSLContext:
     clean_host = hostname.split(":")[0].strip().lower()
     if clean_host in _cert_cache:
+        _cert_cache.move_to_end(clean_host)
         return _cert_cache[clean_host]
 
     ca_cert, ca_key = _ensure_ca()
@@ -213,6 +216,8 @@ def get_ssl_context_for_host(hostname: str) -> ssl.SSLContext:
 
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(cert_path, key_path)
+    if len(_cert_cache) >= _MAX_CERT_CACHE:
+        _cert_cache.popitem(last=False)
     _cert_cache[clean_host] = ctx
     return ctx
 

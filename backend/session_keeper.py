@@ -66,42 +66,45 @@ async def _keepalive_loop():
     global _is_running, _last_run_timestamp, _last_summary
     _is_running = True
 
-    while _is_running:
-        db = SessionLocal()
-        try:
-            sessions = db.query(ActiveSession).all()
-            if sessions:
-                ping_tasks = [_ping_session(s) for s in sessions]
-                results = await asyncio.gather(*ping_tasks, return_exceptions=True)
-                success = 0
-                failed = 0
-                for s, res in zip(sessions, results):
-                    if res is True:
-                        success += 1
-                        s.updated_at = datetime.now()
-                    else:
-                        failed += 1
-                if success > 0:
-                    db.commit()
-            else:
-                success = 0
-                failed = 0
-            _last_run_timestamp = datetime.now().isoformat()
-            _last_summary = {
-                "pings_sent": len(sessions),
-                "success_count": success,
-                "fail_count": failed
-            }
-        except Exception:
-            db.rollback()
-        finally:
-            db.close()
+    try:
+        while _is_running:
+            db = SessionLocal()
+            try:
+                sessions = db.query(ActiveSession).all()
+                if sessions:
+                    ping_tasks = [_ping_session(s) for s in sessions]
+                    results = await asyncio.gather(*ping_tasks, return_exceptions=True)
+                    success = 0
+                    failed = 0
+                    for s, res in zip(sessions, results):
+                        if res is True:
+                            success += 1
+                            s.updated_at = datetime.now()
+                        else:
+                            failed += 1
+                    if success > 0:
+                        db.commit()
+                else:
+                    success = 0
+                    failed = 0
+                _last_run_timestamp = datetime.now().isoformat()
+                _last_summary = {
+                    "pings_sent": len(sessions),
+                    "success_count": success,
+                    "fail_count": failed
+                }
+            except Exception:
+                db.rollback()
+            finally:
+                db.close()
 
-        # Sleep interval with interruptible check
-        for _ in range(_interval_seconds):
-            if not _is_running:
-                break
-            await asyncio.sleep(1)
+            # Sleep interval with interruptible check
+            for _ in range(_interval_seconds):
+                if not _is_running:
+                    break
+                await asyncio.sleep(1)
+    except asyncio.CancelledError:
+        pass
 
 
 def start_session_keeper(interval: int = 120):

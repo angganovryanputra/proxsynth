@@ -80,7 +80,7 @@ def suggest_attack_actions(
             "confidence": "HIGH",
             "trigger_reason": f"Observed resource identifier '{matched_id}' in path or parameter '{bola_param or 'path'}'.",
             "recommended_mcp_tool": "test_bola_idor",
-            "tool_arguments": {"log_id": log_id} if log_id else {"endpoint_url": url}
+            "tool_arguments": {"log_id": log_id}
         })
 
     # 2. Broken Function Level Authorization (BFLA) Check
@@ -92,9 +92,9 @@ def suggest_attack_actions(
             "trigger_reason": f"Privileged or sensitive endpoint detected: [{clean_method}] {path}",
             "recommended_mcp_tool": "audit_bfla_permissions",
             "tool_arguments": {
-                "endpoint_url": url,
-                "privileged_role": "admin",
-                "unprivileged_role": "user"
+                "url": url,
+                "method": clean_method,
+                "log_id": log_id
             }
         })
 
@@ -119,11 +119,7 @@ def suggest_attack_actions(
                     "confidence": "HIGH",
                     "trigger_reason": f"JSON mutation request body contains mutable object fields: {', '.join(user_keys[:3])}",
                     "recommended_mcp_tool": "audit_mass_assignment",
-                    "tool_arguments": {
-                        "endpoint_url": url,
-                        "base_payload": parsed_body,
-                        "method": clean_method
-                    }
+                    "tool_arguments": {"log_id": log_id}
                 })
 
     # 4. Numeric Business Logic & Currency Fuzzing Check
@@ -151,7 +147,7 @@ def suggest_attack_actions(
             "trigger_reason": f"Observed numeric/commercial parameters prone to negative quantity or overflow: {', '.join(numeric_params)}",
             "recommended_mcp_tool": "audit_numeric_business_logic",
             "tool_arguments": {
-                "endpoint_url": url,
+                "log_id": log_id,
                 "target_param": target_p
             }
         })
@@ -200,9 +196,9 @@ def suggest_attack_actions(
             "trigger_reason": f"Input parameter '{inj_params[0]}' presents a high-probability injection surface.",
             "recommended_mcp_tool": "audit_differential_injection",
             "tool_arguments": {
-                "endpoint_url": url,
-                "injection_param": inj_params[0],
-                "vuln_type": "SQLI"
+                "url": url,
+                "param_name": inj_params[0],
+                "param_type": "query"
             }
         })
 
@@ -238,9 +234,12 @@ def suggest_attack_actions(
             "trigger_reason": f"Redirect-style parameter '{redirect_params[0]}' should be probed for unvalidated external redirection.",
             "recommended_mcp_tool": "send_http_request",
             "tool_arguments": {
-                "url": url,
                 "method": "GET",
-                "params": {redirect_params[0]: "https://attacker-canary.example.com/"}
+                "url": (
+                    f"{url}{'&' if parsed_url.query else '?'}"
+                    f"{urllib.parse.quote(redirect_params[0])}="
+                    f"{urllib.parse.quote('https://attacker-canary.example.com/')}"
+                )
             }
         })
 
@@ -255,7 +254,7 @@ def suggest_attack_actions(
             "trigger_reason": "GraphQL endpoint path or query/mutation operation detected.",
             "recommended_mcp_tool": "inspect_graphql_endpoint",
             "tool_arguments": {
-                "endpoint_url": url
+                "url": url
             }
         })
 
@@ -271,8 +270,8 @@ def suggest_attack_actions(
             "trigger_reason": "Multipart file-upload request detected (Content-Type or filename= field in body).",
             "recommended_mcp_tool": "audit_file_upload",
             "tool_arguments": {
-                "endpoint_url": url,
-                "method": clean_method
+                "target": log_id if log_id else url,
+                "field": "file"
             }
         })
 
@@ -317,11 +316,7 @@ def suggest_attack_actions(
             "confidence": "MEDIUM",
             "trigger_reason": f"Debug/verbose flag parameter observed ({', '.join(debug_params[:3])}); may expose hidden mutable fields for mass assignment.",
             "recommended_mcp_tool": "audit_mass_assignment",
-            "tool_arguments": {
-                "endpoint_url": url,
-                "base_payload": body_json_for_debug if isinstance(body_json_for_debug, dict) else {},
-                "method": clean_method
-            }
+            "tool_arguments": {"log_id": log_id}
         })
 
     # Dedupe: do not recommend the same tool against the same target twice.
@@ -369,6 +364,12 @@ def get_project_attack_guidance(project: str = "default", limit: int = 15) -> Di
                     hdrs = json.loads(l.request_headers) if isinstance(l.request_headers, str) else l.request_headers
                 except Exception:
                     pass
+            resp_hdrs = {}
+            if l.response_headers:
+                try:
+                    resp_hdrs = json.loads(l.response_headers) if isinstance(l.response_headers, str) else l.response_headers
+                except Exception:
+                    pass
             actions = suggest_attack_actions(
                 url=l.url,
                 method=l.method,
@@ -376,7 +377,8 @@ def get_project_attack_guidance(project: str = "default", limit: int = 15) -> Di
                 body=l.request_body,
                 response_status=l.status_code,
                 response_body=l.response_body,
-                log_id=l.id
+                log_id=l.id,
+                response_headers=resp_hdrs
             )
             for act in actions:
                 sig = f"{act['vulnerability_focus']}:{act['recommended_mcp_tool']}:{l.path}"
