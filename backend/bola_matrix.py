@@ -17,7 +17,7 @@ from backend.security_utils import encrypt_secret, decrypt_secret
 from backend.user_agents import apply_rotating_user_agent
 
 # Patterns indicating an object/resource identifier in the path or query
-_RESOURCE_ID_PATH_REGEX = re.compile(r'/([a-zA-Z0-9_-]+)/([0-9]+|[a-f0-9]{8,36})(?:/|$|\?)', re.IGNORECASE)
+_RESOURCE_ID_PATH_REGEX = re.compile(r'/([a-zA-Z0-9_-]+)/([0-9]+|[a-f0-9-]{8,36})(?:/|$|\?)', re.IGNORECASE)
 _RESOURCE_ID_PARAM_REGEX = re.compile(r'(?:^|[?&])([a-zA-Z0-9_-]*(?:id|account|user|doc|order|invoice|file|org|uuid)[a-zA-Z0-9_-]*)=([a-zA-Z0-9_-]+)', re.IGNORECASE)
 
 _ERROR_DENIAL_KEYWORDS = [

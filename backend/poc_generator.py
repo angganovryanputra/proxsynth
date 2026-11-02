@@ -264,3 +264,66 @@ def generate_finding_dossier(finding_id: int) -> Optional[Dict[str, Any]]:
         }
     finally:
         db.close()
+
+
+
+def generate_hackerone_markdown_report(finding_id: int) -> Optional[str]:
+    """Generates an industry-standard Bug Bounty / HackerOne formatted markdown report."""
+    dossier = generate_finding_dossier(finding_id)
+    if not dossier:
+        return None
+
+    title = dossier["title"]
+    severity = dossier["severity"]
+    cvss = dossier["cvss_score"]
+    cwe = f"{dossier['cwe_id']}: {dossier['cwe_name']}"
+    target_url = dossier["target_url"]
+    method = dossier["target_method"]
+    evidence = dossier["evidence"]
+    remediation = dossier["remediation"]
+    curl_cmd = dossier["curl_command"]
+    py_poc = dossier["python_poc"]
+
+    report_md = f"""# [Vulnerability Report] {title}
+
+## Summary
+A security vulnerability was identified on `{target_url}`. The endpoint improperly handles user input, leading to **{title}**.
+
+- **Severity**: {severity} (CVSS {cvss})
+- **Weakness**: {cwe}
+- **Vulnerable URL**: `{method} {target_url}`
+
+---
+
+## Technical Description
+{dossier["description"]}
+
+### Observed Evidence
+```text
+{evidence}
+```
+
+---
+
+## Steps to Reproduce
+1. Execute the following cURL command targeting the affected endpoint:
+```bash
+{curl_cmd}
+```
+2. Alternatively, run the standalone Python reproduction script provided below:
+```python
+{py_poc}
+```
+3. Observe that the vulnerability condition is confirmed and the server executes/reflects the payload.
+
+---
+
+## Impact
+An attacker can exploit this issue to compromise application confidentiality, integrity, or availability depending on the privileges of the affected resource.
+
+---
+
+## Remediation & Mitigation
+{remediation}
+"""
+    return report_md

@@ -89,12 +89,23 @@ async def startup_event():
     except Exception as ex:
         print(f"[!] Notice: Proxsynth Auto-Updater startup error: {ex}")
 
+    try:
+        from backend.script_snooper import start_script_snooper
+        start_script_snooper()
+    except Exception as ex:
+        print(f"[!] Notice: Proxsynth Script Snooper startup error: {ex}")
+
 @app.on_event("shutdown")
 async def shutdown_event():
     stop_session_keeper()
     try:
         from backend.update_manager import stop_background_updater
         stop_background_updater()
+    except Exception:
+        pass
+    try:
+        from backend.script_snooper import stop_script_snooper
+        stop_script_snooper()
     except Exception:
         pass
     try:
@@ -2182,6 +2193,12 @@ async def handle_oast_callback(token: str, request: Request, subpath: str = ""):
             "event": hit_event,
             "alert": True
         })
+        if hit_event.get("finding"):
+            await ws_manager.broadcast({
+                "type": "NEW_FINDING",
+                "project": hit_event.get("project", "default"),
+                "finding": hit_event["finding"]
+            })
 
     return JSONResponse({
         "status": "captured",
@@ -2351,13 +2368,31 @@ def infer_endpoints_endpoint(req: InferEndpointsRequest):
 
 
 @app.get("/api/findings/{finding_id}/dossier")
-def get_finding_dossier_endpoint(finding_id: int):
+def get_finding_dossier_endpoint(finding_id: int, format: str = "json"):
     """Generates standalone Python exploit script, curl command, and CVSS/CWE remediation dossier."""
+    if format.lower() in ["markdown", "hackerone", "md"]:
+        from backend.poc_generator import generate_hackerone_markdown_report
+        rep = generate_hackerone_markdown_report(finding_id=finding_id)
+        if not rep:
+            raise HTTPException(status_code=404, detail="Finding not found")
+        return Response(content=rep, media_type="text/markdown")
     from backend.poc_generator import generate_finding_dossier
     dossier = generate_finding_dossier(finding_id=finding_id)
     if not dossier:
         raise HTTPException(status_code=404, detail="Finding not found")
     return dossier
+
+
+@app.get("/api/findings/{finding_id}/report")
+def get_finding_report_endpoint(finding_id: int, format: str = "markdown"):
+    """Generates a complete HackerOne / Bug Bounty formatted markdown vulnerability report."""
+    from backend.poc_generator import generate_hackerone_markdown_report
+    rep = generate_hackerone_markdown_report(finding_id=finding_id)
+    if not rep:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    if format.lower() == "json":
+        return {"finding_id": finding_id, "markdown": rep}
+    return Response(content=rep, media_type="text/markdown")
 
 
 @app.get("/api/ws-frames")

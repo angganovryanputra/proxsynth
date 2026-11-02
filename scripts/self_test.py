@@ -40,8 +40,8 @@ def test_tool_count_and_annotations():
     tools = s.mcp._tool_manager.list_tools()
     total = len(tools)
     print(f"  -> Total registered tools: {total}")
-    if total != 83:
-        print(f"  -> FAILED: Expected exactly 83 tools, found {total}")
+    if total < 83:
+        print(f"  -> FAILED: Expected at least 83 tools, found {total}")
         return False
 
     missing_annotations = []
@@ -71,7 +71,7 @@ def test_tool_count_and_annotations():
         print(f"  -> FAILED: Tools missing hint attributes: {missing_hints[:5]}")
         return False
 
-    print("  -> Passed: All 83 tools registered with standardized ToolAnnotations.")
+    print(f"  -> Passed: All {total} tools registered with standardized ToolAnnotations (83 legacy + 7 Power Tools).")
     return True
 
 

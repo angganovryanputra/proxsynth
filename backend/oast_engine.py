@@ -28,7 +28,7 @@ try:
 except ImportError:
     from cryptography.hazmat.primitives.ciphers.modes import CFB
 
-from backend.database import SessionLocal, OastEvent, Project
+from backend.database import SessionLocal, OastEvent, Project, HttpLog, Finding, CapturedPayload
 
 # In-memory listeners for active polling: token -> asyncio.Event
 _active_waiters: Dict[str, asyncio.Event] = {}
@@ -392,6 +392,116 @@ def record_oast_hit(
         db.commit()
         db.refresh(event)
         event_dict = event.to_dict()
+
+        # Closed-Loop OAST Finding Auto-Promotion (Zero False-Positive)
+        try:
+            # 1. Correlate canary token to original outbound HttpLog
+            matching_log = None
+            if clean_token:
+                matching_log = db.query(HttpLog).filter(
+                    HttpLog.project == effective_project,
+                    (HttpLog.url.contains(clean_token) | HttpLog.request_body.contains(clean_token))
+                ).order_by(HttpLog.id.desc()).first()
+
+                if not matching_log:
+                    matching_log = db.query(HttpLog).filter(
+                        (HttpLog.url.contains(clean_token) | HttpLog.request_body.contains(clean_token))
+                    ).order_by(HttpLog.id.desc()).first()
+
+            # If no outbound log exists (e.g. canary triggered by external command/terminal), create synthetic HttpLog
+            if not matching_log:
+                matching_log = HttpLog(
+                    project=effective_project,
+                    agent_id="oast_listener",
+                    source="OAST_LISTENER",
+                    method=method.upper(),
+                    url=f"oast://{clean_token}",
+                    host=client_ip,
+                    path=path or f"/oast/{clean_token}",
+                    status_code=200,
+                    request_headers=headers_json,
+                    request_body=(body or "")[:5242880],
+                    response_headers="{}",
+                    response_body="OAST Callback Acknowledged",
+                    reasoning=effective_desc,
+                    flag_status="CONFIRMED"
+                )
+                db.add(matching_log)
+                db.commit()
+                db.refresh(matching_log)
+            else:
+                matching_log.flag_status = "CONFIRMED"
+                db.commit()
+
+            # 2. Auto-promote any linked CapturedPayload entries
+            if clean_token:
+                payloads = db.query(CapturedPayload).filter(
+                    CapturedPayload.raw_payload.contains(clean_token)
+                ).all()
+                for p in payloads:
+                    p.outcome = "EXECUTED"
+                if payloads:
+                    db.commit()
+
+            # 3. Create or promote Finding with 100% confidence
+            finding_title = f"Confirmed Out-of-Band Callback ({effective_vuln}) [Zero False-Positive]"
+            existing_finding = db.query(Finding).filter(
+                Finding.log_id == matching_log.id,
+                Finding.title == finding_title
+            ).first()
+
+            evidence_str = (
+                f"OAST Protocol: {protocol.upper()}\n"
+                f"Canary Token: {clean_token}\n"
+                f"Client IP: {client_ip}\n"
+                f"Path: {path}\n"
+                f"Method: {method}\n"
+                f"Payload/Exfiltrated Body:\n{(body or '')[:500]}"
+            )
+            desc_str = (
+                f"A remote target server successfully triggered an out-of-band network interaction ({protocol.upper()}) "
+                f"to canary token '{clean_token}'. This confirms a remote vulnerability (e.g. Blind SSRF, Out-of-Band Command "
+                f"Injection, XXE, or Log4Shell) with 100% confidence and zero false positives."
+            )
+            rem_str = (
+                "Validate and sanitize all external user input before using it in network requests, system commands, or XML parsers. "
+                "Implement strict egress firewall rules to restrict outbound traffic from sensitive backend application tiers."
+            )
+
+            if not existing_finding:
+                finding = Finding(
+                    log_id=matching_log.id,
+                    title=finding_title,
+                    severity="CRITICAL",
+                    category=f"Out-of-Band Vulnerability ({effective_vuln})",
+                    evidence=evidence_str,
+                    description=desc_str,
+                    remediation=rem_str
+                )
+                db.add(finding)
+                db.commit()
+                db.refresh(finding)
+                event_dict["finding"] = finding.to_dict()
+            else:
+                event_dict["finding"] = existing_finding.to_dict()
+
+            # 4. Auto-sync to testing hypothesis working memory
+            try:
+                from backend.hypothesis_manager import sync_finding_to_hypothesis
+                sync_finding_to_hypothesis(
+                    project=effective_project,
+                    finding_id=event_dict["finding"]["id"],
+                    log_id=matching_log.id,
+                    title=finding_title,
+                    severity="CRITICAL",
+                    category=f"Out-of-Band Vulnerability ({effective_vuln})",
+                    evidence=evidence_str,
+                    agent_id="oast_engine"
+                )
+            except Exception:
+                pass
+        except Exception:
+            pass
 
         # Signal in-memory waiter if an agent is waiting on this token
         if clean_token in _active_waiters:

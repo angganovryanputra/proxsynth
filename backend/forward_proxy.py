@@ -457,6 +457,24 @@ async def _dispatch_log(log_payload: Dict[str, Any]):
         except Exception:
             pass
 
+        try:
+            from backend.bola_matrix import is_candidate_for_bola, execute_bola_shadow_replay
+            if is_candidate_for_bola(entry.url, entry.method, entry.request_body):
+                req_hdrs = log_payload.get("request_headers", {})
+                asyncio.create_task(execute_bola_shadow_replay(
+                    log_id=entry.id,
+                    project=proj,
+                    url=entry.url,
+                    method=entry.method,
+                    req_headers=req_hdrs,
+                    req_body=entry.request_body,
+                    orig_status=entry.status_code,
+                    orig_body=entry.response_body,
+                    ws_broadcast_callback=None
+                ))
+        except Exception:
+            pass
+
         return {"id": entry.id, "flag_status": flag, "findings": findings}
     except Exception:
         db.rollback()

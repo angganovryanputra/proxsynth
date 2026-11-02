@@ -221,3 +221,24 @@ def mutate_payload(
         "mutations": mutations,
         "evasion_headers": header_spoofs
     }
+
+
+
+def generate_evasion_headers(target_host: Optional[str] = None) -> Dict[str, str]:
+    """Generates dynamic headers for bypassing IP-based and client-fingerprint WAF restrictions."""
+    import random
+    from backend.user_agents import get_random_user_agent
+    spoof_ips = ["127.0.0.1", "10.0.0.1", "172.16.0.1", "192.168.1.1"]
+    chosen_ip = random.choice(spoof_ips)
+    headers = {
+        "User-Agent": get_random_user_agent(),
+        "X-Forwarded-For": chosen_ip,
+        "X-Real-IP": chosen_ip,
+        "X-Client-IP": chosen_ip,
+        "X-Originating-IP": chosen_ip,
+        "True-Client-IP": chosen_ip,
+        "X-Custom-IP-Authorization": "127.0.0.1"
+    }
+    if target_host:
+        headers["X-Forwarded-Host"] = target_host
+    return headers

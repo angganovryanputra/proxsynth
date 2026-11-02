@@ -30,6 +30,12 @@ from backend.mass_assignment_engine import audit_mass_assignment
 from backend.logic_fuzzer import audit_numeric_business_logic
 from backend.verification_gate import verify_vulnerability_candidate
 from backend.database import SessionLocal, Finding, HttpLog, CampaignRecord
+from backend.protocol_inspector import inspect_graphql_endpoint, audit_websocket_security
+from backend.waf_mutator import analyze_waf_response, generate_evasion_headers
+from backend.adaptive_limiter import handle_rate_limit
+from backend.bola_matrix import is_candidate_for_bola, execute_bola_shadow_replay
+from backend.hypothesis_manager import create_hypothesis, sync_finding_to_hypothesis, update_hypothesis
+from backend.target_manager import add_or_update_endpoint, upsert_target_asset
 
 logger = logging.getLogger("proxynth.campaign_orchestrator")
 
@@ -133,8 +139,9 @@ def _persist_campaign_to_db(campaign: Dict[str, Any]) -> None:
 
 def classify_target_input(target_input: str) -> Dict[str, Any]:
     """
-    Intelligently analyzes the target input and determines
-    the target category (NETWORK_INFRA, API, or WEB_SPA) and normalizes endpoints.
+    Intelligently analyzes the target input, determines the target category
+    (NETWORK_INFRA, API, or WEB_SPA), detects protocol specifics (GraphQL, OpenAPI, WebSocket),
+    and synthesizes an autonomous attack strategy with prioritized tracks.
     """
     raw = target_input.strip()
 
@@ -156,30 +163,85 @@ def classify_target_input(target_input: str) -> Dict[str, Any]:
         pass
 
     if is_subnet or (is_ip and "://" not in raw):
+        ttype = "SUBNET_RANGE" if is_subnet else "NETWORK_HOST"
         return {
             "category": "NETWORK_INFRA",
+            "target_type": ttype,
             "host": clean_ip_or_host,
             "url": f"http://{clean_ip_or_host}",
             "is_subnet": is_subnet,
-            "raw_input": raw
+            "is_graphql": False,
+            "is_openapi": False,
+            "is_websocket": False,
+            "raw_input": raw,
+            "autonomous_strategy": {
+                "priority_tracks": ["network_scan", "spider", "api_infer", "gateway_audit", "verify_gate"],
+                "decision_reason": f"Target identified as {ttype}; prioritizing port scanning and service discovery before web probing.",
+                "recommended_rate": "aggressive" if is_subnet else "normal",
+                "primary_vector": "EXPOSED_SERVICES"
+            }
         }
 
     # 2. Check if explicit HTTP/HTTPS URL
-    if raw.startswith(("http://", "https://")):
+    if raw.startswith(("http://", "https://", "ws://", "wss://")):
         parsed = urllib.parse.urlparse(raw)
         path_lower = (parsed.path or "").lower()
         query_lower = (parsed.query or "").lower()
 
-        is_api = any(k in path_lower for k in [
-            "/api", "/v1", "/v2", "/v3", "/graphql", "/swagger", "/openapi", "/api-docs", "/docs"
+        is_graphql = any(k in path_lower for k in ["/graphql", "/gql", "/api/graphql"]) or "graphql" in query_lower
+        is_openapi = any(k in path_lower for k in [
+            "/openapi.json", "/swagger.json", "/api-docs", "/v2/api-docs", "/v3/api-docs", "/swagger/v1/swagger.json"
+        ])
+        is_websocket = raw.startswith(("ws://", "wss://")) or any(k in path_lower for k in ["/ws", "/websocket", "/socket.io"])
+
+        is_api = is_graphql or is_openapi or any(k in path_lower for k in [
+            "/api", "/v1", "/v2", "/v3", "/swagger", "/openapi", "/api-docs", "/docs"
         ]) or any(k in query_lower for k in ["api", "graphql", "wsdl"])
+
+        if is_graphql:
+            ttype = "GRAPHQL_API"
+            strat = {
+                "priority_tracks": ["graphql_audit", "api_infer", "gateway_audit", "bfla_audit", "verify_gate"],
+                "decision_reason": "GraphQL endpoint detected; prioritizing schema introspection, query batching amplification, and field suggestion mining.",
+                "recommended_rate": "moderate",
+                "primary_vector": "GRAPHQL_INTROSPECTION"
+            }
+        elif is_openapi:
+            ttype = "OPENAPI_SPEC"
+            strat = {
+                "priority_tracks": ["openapi_import", "gateway_audit", "bfla_audit", "mass_assignment", "business_logic", "verify_gate"],
+                "decision_reason": "OpenAPI / Swagger spec URL detected; prioritizing automated schema route ingestion and authorization matrix audit.",
+                "recommended_rate": "moderate",
+                "primary_vector": "API_SCHEMA_FUZZING"
+            }
+        elif is_api:
+            ttype = "REST_API"
+            strat = {
+                "priority_tracks": ["api_infer", "gateway_audit", "oast_spray", "bfla_audit", "mass_assignment", "business_logic", "verify_gate"],
+                "decision_reason": "REST API service detected; prioritizing BOLA/IDOR, BFLA verb tampering, Mass Assignment, and OAST canary spraying.",
+                "recommended_rate": "normal",
+                "primary_vector": "BOLA_BFLA_API"
+            }
+        else:
+            ttype = "SINGLE_PAGE_APP"
+            strat = {
+                "priority_tracks": ["spider", "js_mine", "api_infer", "gateway_audit", "oast_spray", "verify_gate"],
+                "decision_reason": "Web application / SPA detected; prioritizing DOM spidering, JavaScript asset secret mining, and endpoint discovery.",
+                "recommended_rate": "normal",
+                "primary_vector": "CLIENT_SECRETS_XSS"
+            }
 
         return {
             "category": "API" if is_api else "WEB_SPA",
+            "target_type": ttype,
             "host": parsed.netloc.split(":")[0],
             "url": raw,
             "is_subnet": False,
-            "raw_input": raw
+            "is_graphql": is_graphql,
+            "is_openapi": is_openapi,
+            "is_websocket": is_websocket,
+            "raw_input": raw,
+            "autonomous_strategy": strat
         }
 
     # 3. Raw domain or hostname without scheme
@@ -189,10 +251,20 @@ def classify_target_input(target_input: str) -> Dict[str, Any]:
 
     return {
         "category": "NETWORK_INFRA",
+        "target_type": "HOST_DOMAIN",
         "host": clean_host,
         "url": f"http://{clean_host}:{port}" if port else f"http://{clean_host}",
         "is_subnet": False,
-        "raw_input": raw
+        "is_graphql": False,
+        "is_openapi": False,
+        "is_websocket": False,
+        "raw_input": raw,
+        "autonomous_strategy": {
+            "priority_tracks": ["network_scan", "spider", "api_infer", "gateway_audit", "verify_gate"],
+            "decision_reason": "Domain hostname without scheme; prioritizing network port scanning and banner discovery.",
+            "recommended_rate": "normal",
+            "primary_vector": "SERVICE_ENUMERATION"
+        }
     }
 
 
@@ -289,10 +361,41 @@ async def _execute_campaign_pipeline(
     resolved_host = target_info["host"]
     primary_web_url = target_info["url"]
 
-    selected_modes = set(modes or [
+    if "autonomous_decisions" not in report:
+        report["autonomous_decisions"] = []
+
+    strat = target_info.get("autonomous_strategy", {})
+    auto_tracks = strat.get("priority_tracks", [
         "network_scan", "spider", "js_mine", "api_infer", "gateway_audit",
         "oast_spray", "bfla_audit", "mass_assignment", "business_logic", "verify_gate"
     ])
+
+    if not modes or "auto" in modes:
+        selected_modes = set(auto_tracks)
+        report["autonomous_decisions"].append({
+            "decision": "AUTOMATIC_TRACK_SELECTION",
+            "reason": strat.get("decision_reason", "Selected tailored priority tracks based on target classification."),
+            "tracks": list(selected_modes)
+        })
+    else:
+        selected_modes = set(modes)
+
+    # Initialize Autonomous Working Memory Hypothesis Roadmap
+    root_hypothesis_id = None
+    try:
+        h_obj = create_hypothesis(
+            project=project,
+            target=primary_web_url,
+            vuln_type=target_info.get("target_type", primary_category),
+            hypothesis=f"Autonomous attack campaign against {target_info.get('target_type', primary_category)}: {strat.get('decision_reason', '')}",
+            status="IN_PROGRESS",
+            evidence_notes=f"Tracks scheduled: {', '.join(sorted(selected_modes))}",
+            agent_id=f"campaign_{campaign_id}"
+        )
+        if isinstance(h_obj, dict):
+            root_hypothesis_id = h_obj.get("id")
+    except Exception:
+        pass
 
     discovered_web_targets: List[str] = [primary_web_url]
 
@@ -529,6 +632,111 @@ async def _execute_campaign_pipeline(
 
                 report["phases_executed"].append("verify_gate")
 
+            # ==========================================
+            # TRACK 9: GRAPHQL PROTOCOL AUDIT
+            # ==========================================
+            graphql_candidates = []
+            if target_info.get("is_graphql"):
+                graphql_candidates.append(primary_web_url)
+            for wt in discovered_web_targets:
+                if "/graphql" in wt.lower() or "/gql" in wt.lower():
+                    if wt not in graphql_candidates:
+                        graphql_candidates.append(wt)
+            if spider_results.get("sample_endpoints"):
+                for ep in spider_results["sample_endpoints"]:
+                    u = ep.get("url", "")
+                    if "/graphql" in u.lower() or "/gql" in u.lower():
+                        if u not in graphql_candidates:
+                            graphql_candidates.append(u)
+
+            if ("graphql_audit" in selected_modes or graphql_candidates) and graphql_candidates:
+                report["current_phase"] = "TRACK_9_GRAPHQL_AUDIT"
+                _persist_campaign_to_db(report)
+                for g_url in graphql_candidates[:2]:
+                    logger.info(f"[Campaign {campaign_id}] Track 9: Assessing GraphQL endpoint {g_url}...")
+                    try:
+                        g_res = await inspect_graphql_endpoint(url=g_url, project=project)
+                        report["phases_executed"].append("graphql_audit")
+                        if g_res.get("findings"):
+                            for gf in g_res["findings"]:
+                                report["high_priority_actions"].append(f"GraphQL: {gf.get('title')} on {g_url}")
+                                report["metrics"]["vulnerabilities_confirmed"] += 1
+                        report["autonomous_decisions"].append({
+                            "decision": "GRAPHQL_ASSESSMENT_EXECUTED",
+                            "url": g_url,
+                            "introspection_enabled": g_res.get("introspection_enabled", False),
+                            "queries_found": len(g_res.get("discovered_queries", [])),
+                            "mutations_found": len(g_res.get("discovered_mutations", []))
+                        })
+                    except Exception as ex:
+                        logger.warning(f"GraphQL audit error: {ex}")
+
+            # ==========================================
+            # TRACK 10: OPENAPI / SWAGGER INGESTION
+            # ==========================================
+            openapi_candidates = []
+            if target_info.get("is_openapi"):
+                openapi_candidates.append(primary_web_url)
+            for wt in discovered_web_targets:
+                if any(k in wt.lower() for k in ["/openapi.json", "/swagger.json", "/api-docs"]):
+                    if wt not in openapi_candidates:
+                        openapi_candidates.append(wt)
+
+            if ("openapi_import" in selected_modes or openapi_candidates) and openapi_candidates:
+                report["current_phase"] = "TRACK_10_OPENAPI_IMPORT"
+                _persist_campaign_to_db(report)
+                for oa_url in openapi_candidates[:2]:
+                    logger.info(f"[Campaign {campaign_id}] Track 10: Ingesting OpenAPI schema from {oa_url}...")
+                    try:
+                        oa_res = await import_api_schema(schema_content_or_url=oa_url, project=project, auto_register=True)
+                        report["phases_executed"].append("openapi_import")
+                        report["metrics"]["endpoints_mapped"] += oa_res.get("endpoints_count", 0)
+                        report["autonomous_decisions"].append({
+                            "decision": "OPENAPI_SCHEMA_INGESTED",
+                            "url": oa_url,
+                            "endpoints_ingested": oa_res.get("endpoints_count", 0)
+                        })
+                    except Exception as ex:
+                        logger.warning(f"OpenAPI import error: {ex}")
+
+            # ==========================================
+            # TRACK 11: AUTONOMOUS BOLA SHADOW TESTING
+            # ==========================================
+            if "bola_shadow_matrix" in selected_modes or primary_category in ("API", "WEB_SPA"):
+                report["current_phase"] = "TRACK_11_BOLA_SHADOW_MATRIX"
+                _persist_campaign_to_db(report)
+                logger.info(f"[Campaign {campaign_id}] Track 11: Testing BOLA/IDOR candidates with secondary identities...")
+                try:
+                    from backend.target_manager import discover_bola_candidates
+                    cands = discover_bola_candidates(project=project, limit=5)
+                    for cand in cands[:3]:
+                        m_id = cand.get("log_id")
+                        if m_id:
+                            orig_log = db.query(HttpLog).filter(HttpLog.id == m_id).first()
+                            if orig_log and is_candidate_for_bola(orig_log.url, orig_log.method, orig_log.request_body):
+                                req_hdrs = json.loads(orig_log.request_headers) if orig_log.request_headers else {}
+                                b_res = await execute_bola_shadow_replay(
+                                    log_id=orig_log.id,
+                                    project=project,
+                                    url=orig_log.url,
+                                    method=orig_log.method,
+                                    req_headers=req_hdrs,
+                                    req_body=orig_log.request_body,
+                                    orig_status=orig_log.status_code,
+                                    orig_body=orig_log.response_body
+                                )
+                                if b_res and b_res.get("vulnerable"):
+                                    report["high_priority_actions"].append(f"Confirmed BOLA/IDOR on {orig_log.url}")
+                                    report["metrics"]["vulnerabilities_confirmed"] += 1
+                                    report["autonomous_decisions"].append({
+                                        "decision": "BOLA_VULNERABILITY_CONFIRMED",
+                                        "url": orig_log.url,
+                                        "role": b_res.get("role")
+                                    })
+                    report["phases_executed"].append("bola_shadow_matrix")
+                except Exception as ex:
+                    logger.warning(f"BOLA shadow matrix error: {ex}")
+
             # Gather final confirmed findings
             confirmed_findings = db.query(Finding).join(HttpLog).filter(
                 HttpLog.project == project
@@ -559,6 +767,19 @@ async def _execute_campaign_pipeline(
 
         finally:
             db.close()
+
+        if root_hypothesis_id:
+            try:
+                conf_count = report["metrics"].get("vulnerabilities_confirmed", 0)
+                final_status = "CONFIRMED" if conf_count > 0 else "COMPLETED"
+                update_hypothesis(
+                    hypothesis_id=root_hypothesis_id,
+                    status=final_status,
+                    evidence_notes=f"Autonomous campaign completed. Confirmed vulnerabilities: {conf_count}. False positives filtered: {report['metrics'].get('false_positives_filtered', 0)}.",
+                    project=project
+                )
+            except Exception:
+                pass
 
         report["status"] = "COMPLETED"
         report["current_phase"] = "COMPLETED"
@@ -623,7 +844,8 @@ async def run_autonomous_security_campaign(
             "reason": ""
         },
         "findings_summary": [],
-        "high_priority_actions": []
+        "high_priority_actions": [],
+        "autonomous_decisions": []
     }
 
     CAMPAIGN_REGISTRY[campaign_id] = report_entry

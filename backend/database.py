@@ -136,6 +136,7 @@ class HttpLog(Base):
     response_body = Column(Text, default="")
     flag_status = Column(String(32), default="CLEAN", index=True)  # CLEAN, POTENTIAL, CONFIRMED, BLOCKED
     reasoning = Column(Text, nullable=True, default="")  # AI Agent Hypothesis / Intent
+    command_id = Column(Integer, nullable=True, index=True)  # Associated AgentCommandLog.id
 
     findings = relationship("Finding", back_populates="log", cascade="all, delete-orphan", lazy="joined")
 
@@ -649,6 +650,9 @@ def _run_migrations():
             cur.execute("ALTER TABLE http_logs ADD COLUMN agent_id VARCHAR(100) DEFAULT 'primary_agent'")
         if "proxy_attempts" not in log_cols:
             cur.execute("ALTER TABLE http_logs ADD COLUMN proxy_attempts INTEGER DEFAULT 1")
+        if "command_id" not in log_cols:
+            cur.execute("ALTER TABLE http_logs ADD COLUMN command_id INTEGER DEFAULT NULL")
+            cur.execute("CREATE INDEX IF NOT EXISTS ix_http_logs_command_id ON http_logs(command_id)")
 
         cur.execute("PRAGMA table_info(active_sessions)")
         sess_cols = [row[1] for row in cur.fetchall()]

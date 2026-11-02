@@ -10,7 +10,7 @@ import json
 import time
 import asyncio
 import urllib.parse
-from typing import Optional, Dict, Any, List, Union, Tuple
+from typing import Optional, Dict, Any, List, Union, Tuple, Literal
 
 CURRENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import httpx
@@ -216,12 +216,20 @@ async def report_vulnerability(
 
 @proxsynth_tool(name="generate_exploit_poc")
 async def generate_exploit_poc(
-    finding_id: int
+    finding_id: int,
+    report_format: Literal["json", "markdown", "hackerone"] = "json"
 ) -> str:
     """
     Generates a standalone, zero-dependency Python exploit script, cURL command, HTML PoC,
-    and complete CVSS/CWE remediation dossier for a verified vulnerability finding.
+    and complete CVSS/CWE remediation dossier or HackerOne markdown report for a verified vulnerability finding.
     """
+    if report_format in ["markdown", "hackerone"]:
+        from backend.poc_generator import generate_hackerone_markdown_report
+        rep = generate_hackerone_markdown_report(finding_id=finding_id)
+        if not rep:
+            return f"[!] Finding #{finding_id} was not found."
+        return rep
+
     from backend.poc_generator import generate_finding_dossier
     dossier = generate_finding_dossier(finding_id=finding_id)
     if not dossier:

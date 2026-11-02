@@ -18,6 +18,7 @@ import mcp_core.tools.autonomous
 import mcp_core.tools.session
 import mcp_core.tools.report
 import mcp_core.tools.audit_new
+import mcp_core.tools.powertools
 
 __all__ = [
     "context",
@@ -34,5 +35,6 @@ __all__ = [
     "autonomous",
     "session",
     "report",
-    "audit_new"
+    "audit_new",
+    "powertools"
 ]

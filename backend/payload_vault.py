@@ -1,3 +1,4 @@
+import ast
 """
 Proxsynth - Automated Payload Vault Capture & Extraction Engine
 Captures, parses, classifies, and commits verified exploit payloads and fuzzer anomalies
@@ -199,6 +200,87 @@ def auto_vault_payload(
     return vault_entry
 
 
+
+def extract_ast_script_payloads(script_content: str) -> List[Tuple[str, str, str]]:
+    """
+    Parses Python script content using standard ast module to extract:
+    - Target URLs (from requests/httpx calls)
+    - Key-value payloads from params, json, data dictionaries
+    - Exploit variable assignments
+    Returns List of (payload_value, param_hint, target_url)
+    """
+    candidates: List[Tuple[str, str, str]] = []
+    if not script_content or not script_content.strip():
+        return candidates
+
+    try:
+        tree = ast.parse(script_content)
+    except Exception:
+        return candidates
+
+    def _resolve_val(node):
+        try:
+            return ast.literal_eval(node)
+        except Exception:
+            if isinstance(node, ast.Constant):
+                return node.value
+            return None
+
+    def _walk_dict_vals(val_dict, prefix="body", target=""):
+        for k, v in val_dict.items():
+            if isinstance(v, (str, int, float)):
+                candidates.append((str(v), f"{prefix}.{k}", target))
+            elif isinstance(v, dict):
+                _walk_dict_vals(v, f"{prefix}.{k}", target)
+            elif isinstance(v, list):
+                for idx, item in enumerate(v):
+                    if isinstance(item, (str, int, float)):
+                        candidates.append((str(item), f"{prefix}.{k}[{idx}]", target))
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            target_url = ""
+            if node.args:
+                arg0 = _resolve_val(node.args[0])
+                if isinstance(arg0, str) and (arg0.startswith("http://") or arg0.startswith("https://")):
+                    target_url = arg0
+
+            for kw in node.keywords:
+                k_name = kw.arg
+                if k_name == "url":
+                    u_val = _resolve_val(kw.value)
+                    if isinstance(u_val, str):
+                        target_url = u_val
+                elif k_name in ("params", "data", "json"):
+                    val = _resolve_val(kw.value)
+                    if isinstance(val, dict):
+                        _walk_dict_vals(val, prefix=k_name, target=target_url)
+                    elif isinstance(val, (str, int, float)) and len(str(val)) >= 2:
+                        candidates.append((str(val), k_name, target_url))
+                elif k_name == "headers":
+                    val = _resolve_val(kw.value)
+                    if isinstance(val, dict):
+                        for hk, hv in val.items():
+                            if any(x in str(hk).lower() for x in ("auth", "token", "x-", "cookie", "forwarded", "origin")):
+                                candidates.append((str(hv), f"header.{hk}", target_url))
+
+        elif isinstance(node, ast.Assign):
+            target_names = [t.id.lower() for t in node.targets if isinstance(t, ast.Name)]
+            if any(k in name for name in target_names for k in ("payload", "exploit", "vector", "poc", "sqli", "xss", "canary")):
+                val = _resolve_val(node.value)
+                t_name = target_names[0] if target_names else "exploit_var"
+                if isinstance(val, (str, int, float)) and len(str(val)) >= 2:
+                    candidates.append((str(val), t_name, ""))
+                elif isinstance(val, list):
+                    for item in val:
+                        if isinstance(item, (str, int, float)) and len(str(item)) >= 2:
+                            candidates.append((str(item), f"{t_name}_item", ""))
+                elif isinstance(val, dict):
+                    _walk_dict_vals(val, prefix=t_name, target="")
+
+    return candidates
+
+
 def auto_vault_script_payloads(
     db: Session,
     project: str,
@@ -222,8 +304,14 @@ def auto_vault_script_payloads(
     if url_match:
         target_url = url_match.group(0).rstrip(")\"',;")
 
-    # 2. Extract payload candidates
+    # 2. Extract payload candidates via AST + Regex
     candidates: List[Tuple[str, str]] = []  # List of (payload, param_hint)
+    if script_content and ("def " in script_content or "import " in script_content or "=" in script_content):
+        ast_hits = extract_ast_script_payloads(script_content)
+        for p_val, p_hint, p_url in ast_hits:
+            if not target_url and p_url:
+                target_url = p_url
+            candidates.append((p_val, p_hint))
 
     # a) Explicit variable assignments (Python / JS / Bash)
     # e.g., payload = "..." or exploit = '...'

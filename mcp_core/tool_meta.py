@@ -121,6 +121,15 @@ TOOL_PERMS: Dict[str, Dict[str, Any]] = {
     "audit_cache_poisoning": {"read_only": False, "destructive": False, "category": "cache"},
     "audit_csrf_indepth": {"read_only": False, "destructive": False, "category": "csrf"},
     "audit_file_upload": {"read_only": False, "destructive": False, "category": "upload"},
+    # 16. Consolidated Domain Power Tools (7 tools)
+    "manage_pentest_execution": {"read_only": False, "destructive": True, "category": "execution"},
+    "manage_attack_surface": {"read_only": False, "destructive": False, "category": "recon"},
+    "analyze_and_diff_traffic": {"read_only": True, "destructive": False, "category": "analysis"},
+    "manage_interception_rules": {"read_only": False, "destructive": False, "category": "intercept"},
+    "manage_session_vault": {"read_only": False, "destructive": False, "category": "session"},
+    "manage_oast_and_tunnels": {"read_only": False, "destructive": False, "category": "oast"},
+    "manage_testing_agenda": {"read_only": False, "destructive": False, "category": "agenda"},
+
 }
 
 # Alias for backward compatibility
