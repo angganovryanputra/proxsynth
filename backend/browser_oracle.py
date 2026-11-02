@@ -179,6 +179,22 @@ async def verify_dom_execution(
                 except Exception:
                     pass
 
+            # 7. Capture visual screenshot evidence if client-side execution triggered
+            screenshot_path = None
+            screenshot_filename = None
+            if len(dialog_events) > 0 or len(canary_hits) > 0 or len(network_beacons) > 0:
+                try:
+                    import hashlib
+                    import time
+                    evidence_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "evidence")
+                    os.makedirs(evidence_dir, exist_ok=True)
+                    h = hashlib.sha256(f"{target_url}:{time.time()}".encode("utf-8")).hexdigest()[:12]
+                    screenshot_filename = f"xss_proof_{h}.png"
+                    screenshot_path = os.path.join(evidence_dir, screenshot_filename)
+                    await page.screenshot(path=screenshot_path, full_page=True)
+                except Exception:
+                    pass
+
             await browser.close()
 
     except Exception as ex:
@@ -227,5 +243,7 @@ async def verify_dom_execution(
         "network_beacons": network_beacons[:10],
         "beacon_fired": beacon_fired,
         "canary_fired": canary_fired,
-        "cookie_access": cookie_access
+        "cookie_access": cookie_access,
+        "screenshot_path": screenshot_path if "screenshot_path" in locals() else None,
+        "screenshot_filename": screenshot_filename if "screenshot_filename" in locals() else None
     }

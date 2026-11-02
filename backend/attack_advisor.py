@@ -319,6 +319,48 @@ def suggest_attack_actions(
             "tool_arguments": {"log_id": log_id}
         })
 
+    # 13. Target Context-Aware Memory: Tech-Stack RAG & Golden Payload Matching
+    resp_hdrs_lower = {str(k).lower(): str(v) for k, v in resp_hdrs.items()}
+    server_hdr = resp_hdrs_lower.get("server", "").lower()
+    powered_by = resp_hdrs_lower.get("x-powered-by", "").lower()
+    cookie_hdr = resp_hdrs_lower.get("set-cookie", "").lower()
+
+    detected_stack = None
+    if "php" in powered_by or "phpsessid" in cookie_hdr or path.endswith(".php"):
+        detected_stack = "PHP"
+    elif "express" in powered_by or "node" in powered_by or "connect.sid" in cookie_hdr:
+        detected_stack = "NODE"
+    elif "django" in powered_by or "csrftoken" in cookie_hdr or "werkzeug" in server_hdr:
+        detected_stack = "PYTHON"
+    elif "spring" in powered_by or "jsessionid" in cookie_hdr or "tomcat" in server_hdr or path.endswith(".do") or path.endswith(".action"):
+        detected_stack = "JAVA"
+    elif "graphql" in path or is_graphql_path:
+        detected_stack = "GRAPHQL"
+    elif "rails" in powered_by or "rack" in powered_by:
+        detected_stack = "RUBY"
+
+    if detected_stack:
+        try:
+            from backend.payload_vault import get_golden_payloads_for_stack
+            golden_vectors = get_golden_payloads_for_stack(detected_stack)
+            if golden_vectors:
+                top_vector = golden_vectors[0]
+                suggestions.append({
+                    "vulnerability_focus": f"Target Tech Stack Exploit: {detected_stack} ({top_vector['vuln_type']})",
+                    "severity_potential": "HIGH",
+                    "confidence": "HIGH",
+                    "trigger_reason": f"Target environment fingerprinted as '{detected_stack}'. Injecting curated golden attack vector: {top_vector['description']}",
+                    "recommended_mcp_tool": "fuzz_endpoint",
+                    "tool_arguments": {
+                        "url": url,
+                        "method": clean_method,
+                        "payload_list": [v["payload"] for v in golden_vectors[:4]]
+                    },
+                    "golden_payloads": golden_vectors
+                })
+        except Exception:
+            pass
+
     # Dedupe: do not recommend the same tool against the same target twice.
     deduped: List[Dict[str, Any]] = []
     seen_tool_targets = set()

@@ -9,7 +9,7 @@ from mcp.types import ToolAnnotations
 
 # Dual-Mode Registry: FastMCP Power Mode active tool set (~87.5% prompt token reduction)
 POWER_MODE_TOOLS: Set[str] = {
-    # 7 High-Leverage Consolidated Multi-Action Power Tools
+    # 7 High-Leverage Consolidated Multi-Action Power Tools + Auto-Pilot
     "manage_pentest_execution",
     "manage_attack_surface",
     "analyze_and_diff_traffic",
@@ -17,6 +17,7 @@ POWER_MODE_TOOLS: Set[str] = {
     "manage_session_vault",
     "manage_oast_and_tunnels",
     "manage_testing_agenda",
+    "run_autonomous_autopilot",
     # Essential Project Workspace Context & Security Harness Manifest
     "set_active_project",
     "get_active_project",
@@ -100,6 +101,7 @@ TOOL_PERMS: Dict[str, Dict[str, Any]] = {
 
     # 12. Autonomous Campaign & Cognitive Guidance (5 tools)
     "run_autonomous_security_campaign": {"read_only": False, "destructive": True, "category": "orchestration"},
+    "run_autonomous_autopilot": {"read_only": False, "destructive": True, "category": "orchestration"},
     "get_campaign_status": {"read_only": True, "destructive": False, "category": "orchestration"},
     "list_campaigns": {"read_only": True, "destructive": False, "category": "orchestration"},
     "get_autonomous_attack_guidance": {"read_only": True, "destructive": False, "category": "advisor"},

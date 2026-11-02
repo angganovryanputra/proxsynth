@@ -3882,6 +3882,37 @@ def get_campaign_detail_api(campaign_id: str):
     return status
 
 
+
+class AutopilotStartRequest(BaseModel):
+    target: str
+    project: str = "default"
+    goal: str = "high_risk_vulnerabilities"
+    max_depth: int = 3
+    auto_exploit: bool = True
+
+@app.post("/api/autopilot/start")
+async def start_autopilot_endpoint(req: AutopilotStartRequest):
+    """Spawns an end-to-end 7-phase self-driving Auto-Pilot pentest campaign."""
+    from backend.autopilot_engine import AutonomousAutoPilot
+    pilot = AutonomousAutoPilot(
+        target=req.target,
+        project=req.project,
+        goal=req.goal,
+        max_depth=req.max_depth,
+        auto_exploit=req.auto_exploit
+    )
+    # Run in background task to avoid HTTP timeout
+    asyncio.create_task(pilot.run())
+    return {
+        "status": "LAUNCHED",
+        "autopilot_id": pilot.autopilot_id,
+        "target": req.target,
+        "project": req.project,
+        "goal": req.goal,
+        "message": f"Auto-Pilot #{pilot.autopilot_id} initiated. Real-time telemetry streaming to /ws/terminal."
+    }
+
+
 @app.api_route("/api/health", methods=["GET", "HEAD", "POST", "OPTIONS"])
 @app.api_route("/api/health/", methods=["GET", "HEAD", "POST", "OPTIONS"])
 @app.api_route("/health", methods=["GET", "HEAD", "POST", "OPTIONS"])

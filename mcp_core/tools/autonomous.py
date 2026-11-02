@@ -216,3 +216,31 @@ async def get_autonomous_attack_guidance(
 
     res = get_project_attack_guidance(project=proj, limit=15)
     return json.dumps(res, indent=2)
+
+
+@proxsynth_tool(name="run_autonomous_autopilot")
+async def run_autonomous_autopilot_tool(
+    target: str,
+    goal: str = "high_risk_vulnerabilities",
+    project: Optional[str] = None,
+    max_depth: int = 3,
+    auto_exploit: bool = True
+) -> str:
+    """
+    [AUTONOMOUS: HIGH-LEVERAGE]
+    Launches the end-to-end 7-phase self-driving pentest Auto-Pilot against a target.
+    Executes: Classification -> Scope Recon -> Route Crawling -> Attack Advisor Decisions ->
+    Targeted Audits (BOLA, BFLA, Mass Assignment, Logic) -> Verification Gate -> Exploit Chaining.
+    Returns complete campaign summary with confirmed vulnerabilities and multi-hop exploit chains.
+    """
+    from backend.autopilot_engine import AutonomousAutoPilot
+    proj = _resolve_project(project, allow_all=False)
+    pilot = AutonomousAutoPilot(
+        target=target,
+        project=proj,
+        goal=goal,
+        max_depth=max_depth,
+        auto_exploit=auto_exploit
+    )
+    result = await pilot.run()
+    return json.dumps(result, indent=2)

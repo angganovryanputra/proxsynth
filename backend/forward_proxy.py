@@ -783,6 +783,35 @@ async def _handle_decrypted_tls_session(
                                 res_body_text = f"<Binary response: {len(res_bytes)} bytes>"
                             if cache_enabled and 200 <= status_code < 400:
                                 http_cache.set(sub_method, full_url, status_code, res_headers, res_body_text, req_body=body_text)
+
+                            # Rate-Limit (429) & WAF Auto-Healing Layer
+                            if status_code in (429, 503) or (status_code in (403, 406) and any(sig in res_body_text.lower() for sig in ["cloudflare", "waf", "access denied", "blocked"])):
+                                try:
+                                    from backend.adaptive_limiter import handle_rate_limit
+                                    from backend.waf_mutator import generate_evasion_headers
+                                    target_domain = urllib.parse.urlparse(full_url).hostname or "target"
+                                    if status_code in (429, 503):
+                                        await handle_rate_limit(status_code, res_headers, domain=target_domain)
+                                    healed_headers = dict(fwd_headers)
+                                    healed_headers.update(generate_evasion_headers(target_domain))
+                                    async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=30.0, **proxy_kwargs) as retry_client:
+                                        retry_resp = await retry_client.request(
+                                            method=sub_method,
+                                            url=full_url,
+                                            headers=healed_headers,
+                                            content=body_text.encode("utf-8") if body_text else None
+                                        )
+                                        if retry_resp.status_code < 400 or retry_resp.status_code != status_code:
+                                            status_code = retry_resp.status_code
+                                            res_headers = dict(retry_resp.headers)
+                                            res_headers["X-Proxsynth-AutoHealed"] = "TRUE"
+                                            res_bytes = retry_resp.content
+                                            try:
+                                                res_body_text = retry_resp.text
+                                            except Exception:
+                                                res_body_text = f"<Binary response: {len(res_bytes)} bytes>"
+                                except Exception:
+                                    pass
                     except Exception as ex:
                         status_code = 502
                         res_body_text = f"Target Connection Error: {str(ex)}"
@@ -1187,6 +1216,35 @@ async def _handle_client_connection(reader: asyncio.StreamReader, writer: asynci
                         res_bytes = res.content
                         if cache_enabled and 200 <= status_code < 400:
                             http_cache.set(method, full_url, status_code, res_headers, res_body_text, req_body=body_text)
+
+                        # Rate-Limit (429) & WAF Auto-Healing Layer
+                        if status_code in (429, 503) or (status_code in (403, 406) and any(sig in res_body_text.lower() for sig in ["cloudflare", "waf", "access denied", "blocked"])):
+                            try:
+                                from backend.adaptive_limiter import handle_rate_limit
+                                from backend.waf_mutator import generate_evasion_headers
+                                target_domain = urllib.parse.urlparse(full_url).hostname or "target"
+                                if status_code in (429, 503):
+                                    await handle_rate_limit(status_code, res_headers, domain=target_domain)
+                                healed_headers = dict(fwd_headers)
+                                healed_headers.update(generate_evasion_headers(target_domain))
+                                async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=30.0, **proxy_kwargs) as retry_client:
+                                    retry_resp = await retry_client.request(
+                                        method=method,
+                                        url=full_url,
+                                        headers=healed_headers,
+                                        content=body_text.encode("utf-8") if body_text else None
+                                    )
+                                    if retry_resp.status_code < 400 or retry_resp.status_code != status_code:
+                                        status_code = retry_resp.status_code
+                                        res_headers = dict(retry_resp.headers)
+                                        res_headers["X-Proxsynth-AutoHealed"] = "TRUE"
+                                        res_bytes = retry_resp.content
+                                        try:
+                                            res_body_text = retry_resp.text
+                                        except Exception:
+                                            res_body_text = f"<Binary response: {len(res_bytes)} bytes>"
+                            except Exception:
+                                pass
                 except Exception as ex:
                     status_code = 502
                     res_body_text = f"Gateway Connection Error: {str(ex)}"
