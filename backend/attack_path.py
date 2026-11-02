@@ -346,6 +346,34 @@ def build_attack_path_graph(project: str = "default") -> Dict[str, Any]:
             })
             _add_edge(entry_node_id, h_node_id, f"TESTING_{h.status}")
 
+        # 7b. Autonomous Multi-Step Exploit Chains Integration
+        try:
+            from backend.exploit_chainer import synthesize_exploit_chains
+            chainer_res = synthesize_exploit_chains(project=target_project)
+            for c_info in chainer_res.get("chains", []):
+                chain_node_id = f"echain_{c_info['chain_id']}"
+                _add_node({
+                    "id": chain_node_id,
+                    "label": f"Chained Exploit: {c_info['name']}",
+                    "type": "EXPLOIT_CHAIN",
+                    "severity": c_info.get("severity", "CRITICAL"),
+                    "details": f"Confidence: {c_info.get('confidence_score', 0.9):.2f} | Hops: {c_info.get('total_hops', 1)}"
+                })
+                _add_edge(entry_node_id, chain_node_id, f"SYNTHESIZED_CHAIN_{c_info.get('category', 'KILL_CHAIN')}")
+                chains.append({
+                    "chain_id": c_info["chain_id"],
+                    "type": c_info.get("category", "MULTI_HOP_EXPLOIT"),
+                    "target_impact": c_info.get("crown_jewel_target", "Crown Jewel Compromise"),
+                    "severity": c_info.get("severity", "CRITICAL"),
+                    "hop_count": c_info.get("total_hops", 3),
+                    "stages": [f"Hop {h.get('hop_index')}: {h.get('title')}" for h in c_info.get("hops", [])],
+                    "exploit_step": c_info["name"],
+                    "target_host": target_project,
+                    "path_nodes": [entry_node_id, chain_node_id]
+                })
+        except Exception:
+            pass
+
         # 8. Generate Mermaid Diagram
         mermaid_lines = ["flowchart LR"]
         for n in nodes:
@@ -353,7 +381,7 @@ def build_attack_path_graph(project: str = "default") -> Dict[str, Any]:
             shape_start, shape_end = ("[", "]")
             if n["type"] == "ENTRY_POINT":
                 shape_start, shape_end = ("([", "])")
-            elif n["type"] == "VULNERABILITY":
+            elif n["type"] in ["VULNERABILITY", "EXPLOIT_CHAIN"]:
                 shape_start, shape_end = ("{{", "}}")
             elif n["type"] == "SESSION_CREDENTIAL":
                 shape_start, shape_end = ("[/", "/]")

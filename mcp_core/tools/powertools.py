@@ -368,7 +368,7 @@ async def manage_pentest_execution(
 # ==============================================================================
 @proxsynth_tool(name="manage_attack_surface")
 async def manage_attack_surface(
-    action: Literal["add_asset", "upsert_asset", "add_service", "upsert_service", "add_endpoint", "upsert_endpoint", "batch_ingest", "delete", "clear", "get_graph"] = "get_graph",
+    action: Literal["add_asset", "upsert_asset", "add_service", "upsert_service", "add_endpoint", "upsert_endpoint", "batch_ingest", "delete", "clear", "get_graph", "scope_recon", "recon", "exploit_chains", "synthesize_chains"] = "get_graph",
     project: Optional[str] = None,
     host: Optional[str] = None,
     target: Optional[str] = None,
@@ -465,6 +465,17 @@ async def manage_attack_surface(
 
         return json.dumps({"status": "SUCCESS", "project": target_project, "ingested_count": ingested}, indent=2)
 
+    elif action in ["scope_recon", "recon"]:
+        from backend.scope_recon import auto_ingest_scope_targets
+        target_domain = effective_host or target_project
+        res = auto_ingest_scope_targets(domain=target_domain, project=target_project)
+        return json.dumps(res, indent=2)
+
+    elif action in ["exploit_chains", "synthesize_chains"]:
+        from backend.exploit_chainer import synthesize_exploit_chains
+        res = synthesize_exploit_chains(project=target_project)
+        return json.dumps(res, indent=2)
+
     return json.dumps({"status": "FAILED", "error": f"Unknown action '{action}'"})
 
 
@@ -473,7 +484,7 @@ async def manage_attack_surface(
 # ==============================================================================
 @proxsynth_tool(name="analyze_and_diff_traffic")
 async def analyze_and_diff_traffic(
-    mode: Literal["semantic_diff", "raw_diff", "distill_noise", "cluster_patterns"] = "semantic_diff",
+    mode: Literal["semantic_diff", "raw_diff", "distill_noise", "cluster_patterns", "strip_noise"] = "semantic_diff",
     log_id_a: Optional[int] = None,
     log_id_b: Optional[int] = None,
     text_a: Optional[str] = None,
@@ -518,7 +529,7 @@ async def analyze_and_diff_traffic(
             "diff_summary": diff_res.get("diff_summary", "")
         }, indent=2)
 
-    elif mode == "distill_noise":
+    elif mode in ["distill_noise", "strip_noise"]:
         body_to_distill = text_a or ""
         if log_id_a and not body_to_distill:
             db = SessionLocal()
@@ -530,7 +541,15 @@ async def analyze_and_diff_traffic(
                 db.close()
 
         distilled = distill_response_body(body_to_distill)
-        return json.dumps({"status": "SUCCESS", "mode": "distill_noise", "log_id": log_id_a, "distilled": distilled}, indent=2)
+        from backend.semantic_fuzzer import strip_dynamic_noise
+        noise_stripped = strip_dynamic_noise(body_to_distill)
+        return json.dumps({
+            "status": "SUCCESS",
+            "mode": mode,
+            "log_id": log_id_a,
+            "distilled": distilled,
+            "noise_stripped": noise_stripped
+        }, indent=2)
 
     elif mode == "cluster_patterns":
         db = SessionLocal()

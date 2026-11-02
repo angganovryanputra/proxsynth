@@ -4,8 +4,13 @@
 [![Release](https://img.shields.io/badge/Release-v0.1.0--beta-orange.svg)](#-overview)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
 [![MCP](https://img.shields.io/badge/Model%20Context%20Protocol-FastMCP%202.0%2B-purple.svg)](https://modelcontextprotocol.io)
-[![FastMCP Tools](https://img.shields.io/badge/FastMCP%20Tools-83%20Registered-8b5cf6.svg)](#-complete-fastmcp-tools-reference-specification-83-tools)
+[![FastMCP Tools](https://img.shields.io/badge/FastMCP%20Tools-90%20Registered-8b5cf6.svg)](#-complete-fastmcp-tools-reference-specification-90-tools)
 [![FastAPI](https://img.shields.io/badge/FastAPI-High%20Performance-009688.svg)](https://fastapi.tiangolo.com)
+[![Exploit Chainer](https://img.shields.io/badge/Exploit%20Chainer-Multi--Hop%20Pivots-e11d48.svg)](#pilar-1-autonomous-multi-step-exploit-chainer)
+[![Wildcard Recon](https://img.shields.io/badge/Scope%20Recon-crt.sh%20%7C%20Takeover%20Detector-38bdf8.svg)](#pilar-2-wildcard-subdomain--scope-reconnaissance-engine)
+[![Semantic Fuzzer](https://img.shields.io/badge/Semantic%20Fuzzer-Welch's%20t--Test%20Oracle-10b981.svg)](#pilar-3-intelligent-semantic-fuzzing--anomaly-detector)
+[![Attack Map](https://img.shields.io/badge/Attack%20Map-Cytoscape%20%26%20D3%20Live-a855f7.svg)](#pilar-4-interactive-live-attack-map--web-terminal-integration)
+[![CLI Wrappers](https://img.shields.io/badge/CLI%20Wrappers-proxsynth--exec-0ea5e9.svg)](#-transparent-agentic-cli-execution-wrappers-proxsynth-exec)
 [![Playwright](https://img.shields.io/badge/Playwright-Chromium%20DOM%20Oracle-45ba4b.svg)](https://playwright.dev)
 [![Database](https://img.shields.io/badge/SQLite-WAL%20Engine-003B57.svg)](https://sqlite.org)
 [![Forward Proxy](https://img.shields.io/badge/Forward%20Proxy-Port%208088-0ea5e9.svg)](#-transparent-runtime-auto-enforcement-sitecustomizepy)
@@ -35,7 +40,12 @@
 - [📌 Overview](#-overview)
 - [🥊 Comparison with Traditional Proxies](#-comparison-with-traditional-proxies)
 - [🏗️ System Architecture](#️-system-architecture)
-- [⚡ The 4 Agentic Pillars (P1 – P4)](#-the-4-agentic-pillars-p1--p4)
+- [🏛️ The 4 Strategic Pillars (Advanced Agentic Architecture)](#️-the-4-strategic-pillars-advanced-agentic-architecture)
+  - [Pilar 1: Autonomous Multi-Step Exploit Chainer](#pilar-1-autonomous-multi-step-exploit-chainer)
+  - [Pilar 2: Wildcard Subdomain & Scope Reconnaissance Engine](#pilar-2-wildcard-subdomain--scope-reconnaissance-engine)
+  - [Pilar 3: Intelligent Semantic Fuzzing & Anomaly Detector](#pilar-3-intelligent-semantic-fuzzing--anomaly-detector)
+  - [Pilar 4: Interactive Live Attack Map & Web Terminal Integration](#pilar-4-interactive-live-attack-map--web-terminal-integration)
+- [⚡ The 4 Core Agentic Foundations (P1 – P4)](#-the-4-core-agentic-foundations-p1--p4)
   - [P1: LLM Semantic Response Body Distiller](#pillar-1-p1-llm-semantic-response-body-distiller)
   - [P2: Autonomous Multi-Protocol OAST Canary Sprayer](#pillar-2-p2-autonomous-multi-protocol-oast-canary-sprayer)
   - [P3: Agent Working Memory & Attack Hypothesis Ledger](#pillar-3-p3-agent-working-memory--attack-hypothesis-ledger)
@@ -58,7 +68,9 @@
   - [Active Project Context Synchronization](#3-active-project-context-synchronization)
   - [Zero-Prompt Session & Cookie Credentials Manager](#4-zero-prompt-session--cookie-credentials-manager)
   - [Automated 1-Click System & MCP Self-Updater](#5-automated-1-click-system--mcp-self-updater)
-- [🧰 Complete FastMCP Tools Reference Specification (83 Tools)](#-complete-fastmcp-tools-reference-specification-83-tools)
+- [⌨️ Transparent Agentic CLI Execution Wrappers (`proxsynth-exec`)](#️-transparent-agentic-cli-execution-wrappers-proxsynth-exec)
+- [⚡ The 7 Unified FastMCP Power Tools](#-the-7-unified-fastmcp-power-tools)
+- [🧰 Complete FastMCP Tools Reference Specification (90 Tools)](#-complete-fastmcp-tools-reference-specification-90-tools)
 - [🐍 Transparent Runtime Auto-Enforcement (`sitecustomize.py`)](#-transparent-runtime-auto-enforcement-sitecustomizepy)
 - [🚀 Quick Start & Installation](#-quick-start--installation)
 - [🤖 AI Agent Integration Guide](#-ai-agent-integration-guide)
@@ -186,7 +198,67 @@ When deploying autonomous AI agents against complex web applications, single-pag
 
 ---
 
-## ⚡ The 4 Agentic Pillars (P1 – P4)
+---
+
+## 🏛️ The 4 Strategic Pillars (Advanced Agentic Architecture)
+
+PROXSYNTH implements four advanced strategic pillars engineered for autonomous end-to-end bug bounty hunting and multi-target penetration testing:
+
+---
+
+### Pilar 1: Autonomous Multi-Step Exploit Chainer
+Located in [`backend/exploit_chainer.py`](file:///d:/PROJECT/01/backend/exploit_chainer.py):
+* **Causal Multi-Hop Attack Synthesis:** Analyzes confirmed vulnerabilities (`Finding`) and automatically synthesizes high-impact exploit chains leading to Crown Jewel compromise:
+  - **SSRF ➔ Cloud Metadata Pivot:** Probes AWS IMDSv1 (`http://169.254.169.254/latest/meta-data/iam/security-credentials/`), GCP compute metadata (`Metadata-Flavor: Google`), Azure IMDS, or internal loopback management services (`127.0.0.1:8080`).
+  - **BOLA/IDOR ➔ Privilege Escalation:** Probes administrative identifiers (`0`, `1`, `admin`), role parameter tampering (`{"role": "admin"}`), and cross-tenant resource manipulation.
+  - **Sensitive Token Leak ➔ Authenticated Route Access:** Extracts leaked JWTs or API keys from logs/assets and verifies access against protected administrative endpoints (`/admin`, `/api/internal`).
+  - **Blind SQLi ➔ Schema & Credential Exfiltration:** Synthesizes non-destructive extraction vectors to demonstrate business impact.
+* **Autonomous Execution & Simulation:** Safely evaluates and verifies multi-hop viability in simulation or live probe mode. Updates in-flight `TestingHypothesis` records and generates production-ready standalone Python exploit scripts.
+* **REST & MCP Integration:** `POST /api/exploit-chains/synthesize`, `POST /api/exploit-chains/execute`, and FastMCP Power Tool `manage_attack_surface(action="exploit_chains")`.
+
+---
+
+### Pilar 2: Wildcard Subdomain & Scope Reconnaissance Engine
+Located in [`backend/scope_recon.py`](file:///d:/PROJECT/01/backend/scope_recon.py):
+* **Passive Certificate Transparency Enumeration:** Queries `crt.sh` logs for target wildcard scopes (`*.target.com`) with zero active scan noise, automatic wildcard cleaning, and intelligent seed fallback.
+* **DNS Resolution & Service Probing:** Resolves A, AAAA, and CNAME records with fast asynchronous multi-port discovery (probes HTTP :80 and HTTPS :443).
+* **Automated Dangling CNAME Takeover Detector:** Cross-references resolved CNAME pointers against known vulnerable cloud provider signatures:
+  - **AWS S3:** `NoSuchBucket` / `The specified bucket does not exist`
+  - **GitHub Pages:** `There isn't a GitHub Pages site here`
+  - **Heroku:** `No such app` / `Heroku | No such app`
+  - **Azure:** `404 Web Site not found` / `Web App - Unavailable`
+  - **Shopify, Surge.sh, Bitbucket, Pantheon:** Cloud orphan signatures.
+* **Automatic Knowledge Graph Ingestion:** Directly populates `TargetAsset`, `TargetService`, and `TargetEndpoint` in the attack surface topology. Immediately files `CRITICAL` or `HIGH` `Finding` records upon confirming dangling takeovers.
+* **Target Classification & Orchestration:** `classify_target_input` categorizes `*.target.com` as `WILDCARD_DOMAIN` and automatically schedules **Track 0 (`scope_recon`)**.
+* **REST & MCP Integration:** `POST /api/recon/scope` and FastMCP Power Tool `manage_attack_surface(action="scope_recon")`.
+
+---
+
+### Pilar 3: Intelligent Semantic Fuzzing & Anomaly Detector
+Located in [`backend/semantic_fuzzer.py`](file:///d:/PROJECT/01/backend/semantic_fuzzer.py) and integrated into [`backend/differential_oracle.py`](file:///d:/PROJECT/01/backend/differential_oracle.py):
+* **Dynamic Noise Stripper (Zero False Positive Diffing):** Normalizes volatile dynamic nonces, anti-CSRF tokens, ISO-8601 timestamps, Unix epoch timestamps, UUIDs, trace IDs, ETags, and ephemeral JSON keys before structural comparison so that non-deterministic variations are recognized as identical.
+* **Multi-Sample Statistical Timing Oracle (Welch's t-Test):** Performs rigorous two-sample Welch's t-test comparing baseline latency distribution against probe latency distribution. Utilizes Interquartile Range (IQR) filtering to discard network lag spikes and mathematically verify time-based blind SQLi and command injection with zero false positives.
+* **Boundary-Breaking Semantic Mutations:**
+  - *Type Confusion:* Array wrapping `["admin"]`, NoSQL operator injection `{"$ne": ""}`.
+  - *Unicode Normalization / Casing Bypass:* Turkish dotless i (`adm\u0131n` ➔ `ADMIN`), overlong UTF-8.
+  - *Boundary Edge Cases:* Null-byte terminators (`%00.json`), signed 32-bit integer overflow (`2147483648`), negative values (`-1`).
+  - *Header Overrides:* `X-Original-URL`, `X-Rewrite-URL`, `X-Forwarded-For: 127.0.0.1`.
+* **REST & MCP Integration:** `POST /api/fuzzer/semantic` and Power Tool `analyze_and_diff_traffic(mode="strip_noise")`.
+
+---
+
+### Pilar 4: Interactive Live Attack Map & Web Terminal Integration
+Located in [`backend/app.py`](file:///d:/PROJECT/01/backend/app.py):
+* **Interactive Cytoscape.js & D3.js Topology:**
+  - `GET /api/attack-graph/interactive`: Returns rich node-edge graph structures with hierarchical layout coordinates, asset clustering, node severity coloring, animated compromise edges, and overall composite risk scores ($0.0 - 100.0$).
+* **Dedicated WebSocket Live Terminal (`/ws/terminal`):**
+  - Bidirectional WebSocket streaming channel enabling external CLI scripts (`proxsynth-exec.ps1`, `proxsynth-exec.sh`), agents, and web operators to stream command execution logs, terminal chunks, and interactive map events in real time.
+* **Transparent CLI Telemetry REST Ingestion:**
+  - `POST /api/telemetry/cli-event`: Transparent fallback endpoint ingesting CLI output chunks and broadcasting live telemetry directly to connected WebSocket clients and the live attack map.
+
+---
+
+## ⚡ The 4 Core Agentic Foundations (P1 – P4)
 
 PROXSYNTH introduces four architectural pillars specifically engineered to elevate AI agents from blind scripts into disciplined offensive security operators.
 
@@ -388,11 +460,11 @@ Accessible via the **AI Activity** tab:
 
 ---
 
-## 🧰 Complete FastMCP Tools Reference Specification (83 Tools)
+## 🧰 Complete FastMCP Tools Reference Specification (90 Tools)
 
-PROXSYNTH's FastMCP server ([`mcp_server.py`](file:///d:/PROJECT/01/mcp_server.py)) exposes **83 enterprise-grade security tools** categorized across core offensive operations:
+PROXSYNTH's FastMCP server ([`mcp_server.py`](file:///d:/PROJECT/01/mcp_server.py)) exposes **90 enterprise-grade security tools** (83 modular core tools + 7 unified Power Tools) categorized across core offensive operations:
 
-### 🛡️ Master FastMCP Tool Permissions & Safety Matrix (83 Tools)
+### 🛡️ Master FastMCP Tool Permissions & Safety Matrix (90 Tools)
 | # | Tool Name | Category | Read-Only | Destructive |
 | :---: | :--- | :---: | :---: | :---: |
 | 1 | `set_active_project` | `context` | No | No |
@@ -478,6 +550,13 @@ PROXSYNTH's FastMCP server ([`mcp_server.py`](file:///d:/PROJECT/01/mcp_server.p
 | 81 | `audit_cache_poisoning` | `cache` | No | No |
 | 82 | `audit_csrf_indepth` | `csrf` | No | No |
 | 83 | `audit_file_upload` | `upload` | No | No |
+| 84 | `manage_pentest_execution` | `powertools` | No | Yes |
+| 85 | `manage_attack_surface` | `powertools` | No | Yes |
+| 86 | `analyze_and_diff_traffic` | `powertools` | Yes | No |
+| 87 | `manage_interception_rules` | `powertools` | No | Yes |
+| 88 | `manage_session_vault` | `powertools` | No | Yes |
+| 89 | `manage_oast_and_tunnels` | `powertools` | No | Yes |
+| 90 | `manage_testing_agenda` | `powertools` | No | No |
 
 ### Category A: Autonomous Campaign, Guidance & Discovery (Tools 1 – 7)
 | # | Tool Name | Key Arguments | Description |
@@ -617,6 +696,50 @@ PROXSYNTH's FastMCP server ([`mcp_server.py`](file:///d:/PROJECT/01/mcp_server.p
 | **81** | `audit_cache_poisoning` | `url`, `param`, `headers`, `project` | Probes for unkeyed header cache poisoning, parameter keying confusion, and path deception (`/x.css`, `/.json`). |
 | **82** | `audit_csrf_indepth` | `url`, `form_field`, `method`, `test_body`, `project` | Deterministic CSRF audit testing token omission, cross-session reuse, Origin/Referer acceptance, and SameSite flags. |
 | **83** | `audit_file_upload` | `target`, `field`, `project`, `allow_exploit`, `confirmation` | Probes multipart file upload filters (MIME confusion, magic bytes, double extensions, SVG XSS, path traversal). |
+
+### ⚡ Category O: The 7 Unified FastMCP Power Tools (Tools 84 – 90)
+Consolidated multi-capability meta-tools designed for high-efficiency agentic workflows:
+
+| # | Tool Name | Key Arguments | Description |
+| :---: | :--- | :--- | :--- |
+| **84** | `manage_pentest_execution` | `action`, `command`, `script_path`, `script_content`, `reasoning`, `target_url` | Unified sandbox command execution, external CLI recording, AST script vector ingestion, and replay with response diffing. |
+| **85** | `manage_attack_surface` | `action`, `project`, `host`, `target`, `ip_address`, `port`, `endpoint_url`, `method`, `batch_items` | Unified Target Knowledge Graph manager: asset/service/endpoint mapping, batch ingestion, passive scope recon, and exploit chains. |
+| **86** | `analyze_and_diff_traffic` | `mode`, `log_id_a`, `log_id_b`, `text_a`, `text_b`, `project`, `limit` | High-precision traffic analysis: semantic diffing, raw diff, DOM distillation, JSON/DOM dynamic noise stripping, and pattern clustering. |
+| **87** | `manage_interception_rules` | `action`, `url_pattern`, `match_header_name`, `match_header_value`, `replace_body`, `rule_id`, `project` | Interception rules intelligence hub: list, add, toggle, and delete automated traffic modification rules. |
+| **88** | `manage_session_vault` | `action`, `identity_role`, `token`, `cookie_string`, `domain`, `auth_headers`, `project` | Multi-role identity vault: manages primary, attacker, victim, and admin credentials for automated authorization matrix audits. |
+| **89** | `manage_oast_and_tunnels` | `action`, `target_url`, `vuln_types`, `provider`, `service_type`, `tunnel_provider` | Unified Out-of-Band operations: sprays canaries, polls HTTP/DNS/LDAP events, registers tokens, and manages public tunnels (Cloudflare/Ngrok). |
+| **90** | `manage_testing_agenda` | `action`, `target`, `vuln_type`, `hypothesis`, `status`, `hypothesis_id`, `project` | Agent working memory hub: manages testing hypotheses, tracks verification status, and computes next attack agendas. |
+
+---
+
+## ⌨️ Transparent Agentic CLI Execution Wrappers (`proxsynth-exec`)
+
+When deploying AI agents that run terminal commands directly (such as `nmap`, `nuclei`, `curl`, `ffuf`, `sqlmap`, or custom Python scripts), tools frequently bypass proxy environment variables or spawn unmonitored subprocesses.
+
+PROXSYNTH includes standalone, zero-dependency wrapper scripts located at the repository root:
+* **Windows (PowerShell):** [`proxsynth-exec.ps1`](file:///d:/PROJECT/01/proxsynth-exec.ps1)
+* **Linux / macOS (Bash):** [`proxsynth-exec.sh`](file:///d:/PROJECT/01/proxsynth-exec.sh)
+
+### Key Capabilities & Workflow:
+1. **Zero-Configuration Proxy Chaining:** Automatically sets `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and CA bundle certificates for the child process.
+2. **Real-Time Telemetry Streaming:** Streams stdout/stderr line-by-line via WebSocket (`/ws/terminal`) or REST (`POST /api/telemetry/cli-event`) directly into the Cyberpunk SOC Dashboard and Interactive Live Attack Map.
+3. **Workspace Script Snooper Integration:** Watches for temporary exploit scripts generated in the workspace and ingests their AST representations and test payloads into the Payload Vault.
+4. **Automated CLI Output Mining:** Automatically mines structured findings and open services from command outputs.
+
+#### Usage Examples:
+```powershell
+# Windows PowerShell
+.\proxsynth-exec.ps1 -Target "https://target.com" -Tool "nuclei" -Command "nuclei -u https://target.com -tags cve"
+.\proxsynth-exec.ps1 -Target "10.0.0.1" -Tool "nmap" -Command "nmap -sV -p 80,443,8080 10.0.0.1"
+```
+
+```bash
+# Linux / macOS Bash
+./proxsynth-exec.sh -t "https://target.com" -c "nuclei -u https://target.com -tags cve"
+./proxsynth-exec.sh -t "https://target.com" -c "python3 exploit.py"
+```
+
+---
 
 ---
 

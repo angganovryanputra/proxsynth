@@ -15,6 +15,7 @@ from backend.database import SessionLocal, HttpLog, Finding
 from backend.diff_engine import compute_semantic_diff
 from backend.user_agents import apply_rotating_user_agent
 from backend.forward_proxy import _get_upstream_proxy
+from backend.semantic_fuzzer import strip_dynamic_noise, analyze_timing_distribution
 
 # 3-Point Boolean Differential Test Pairs: (True Probe, False Probe, Category, Description)
 DIFFERENTIAL_PAIRS = [
@@ -88,7 +89,7 @@ async def audit_differential_injection(
                     if base_resp_data is None:
                         base_resp_data = {
                             "status_code": r.status_code,
-                            "body": r.text or "",
+                            "body": strip_dynamic_noise(r.text or ""),
                             "headers": dict(r.headers)
                         }
         except Exception as ex:
@@ -143,8 +144,8 @@ async def audit_differential_injection(
                     r_true = await client.request(method=clean_method, url=true_url, headers=headers, content=true_body.encode("utf-8") if true_body else None)
                     r_false = await client.request(method=clean_method, url=false_url, headers=headers, content=false_body.encode("utf-8") if false_body else None)
 
-                    true_data = {"status_code": r_true.status_code, "body": r_true.text or "", "headers": dict(r_true.headers)}
-                    false_data = {"status_code": r_false.status_code, "body": r_false.text or "", "headers": dict(r_false.headers)}
+                    true_data = {"status_code": r_true.status_code, "body": strip_dynamic_noise(r_true.text or ""), "headers": dict(r_true.headers)}
+                    false_data = {"status_code": r_false.status_code, "body": strip_dynamic_noise(r_false.text or ""), "headers": dict(r_false.headers)}
 
                     diff_true = compute_semantic_diff(base_resp_data, true_data)
                     diff_false = compute_semantic_diff(base_resp_data, false_data)
@@ -221,9 +222,10 @@ async def audit_differential_injection(
                 delay_observed = time.time() - t0
 
                 z_score = (delay_observed - base_mean) / base_stdev
+                timing_analysis = analyze_timing_distribution(baseline_latencies, [delay_observed])
 
-                # Confirmed if Z-score >= 3.0 and latency >= 3.5s
-                if z_score >= 3.0 and delay_observed >= 3.5:
+                # Confirmed if Z-score >= 3.0 and latency >= 3.5s (or timing distribution confirms significance)
+                if (z_score >= 3.0 and delay_observed >= 3.5) or timing_analysis.get("is_statistically_significant"):
                     title = f"Time-Based Blind SQL Injection confirmed on '{param_name}' (Z-Score: {z_score:.2f})"
                     desc = (
                         f"Statistical timing oracle confirmed time-based injection. The server delayed execution "

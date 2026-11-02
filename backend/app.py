@@ -630,6 +630,73 @@ async def websocket_endpoint(websocket: WebSocket):
         ws_manager.disconnect(websocket)
 
 
+@app.websocket("/ws/terminal")
+async def websocket_terminal_endpoint(websocket: WebSocket):
+    """
+    Dedicated bidirectional WebSocket terminal channel for live proxsynth-exec CLI execution
+    streaming and interactive agent attack map telemetry.
+    """
+    client_host = websocket.client.host if websocket.client else "unknown"
+    if not PROXSYNTH_ALLOW_REMOTE:
+        is_local_client = client_host in ["127.0.0.1", "localhost", "::1", "testclient"]
+        if not is_local_client:
+            try:
+                ip_addr = ipaddress.ip_address(client_host)
+                if ip_addr in ipaddress.ip_network("172.16.0.0/12") or ip_addr.is_loopback:
+                    is_local_client = True
+            except ValueError:
+                pass
+        if not is_local_client:
+            await websocket.close(code=1008)
+            return
+
+    effective_api_key = PROXSYNTH_API_KEY
+    if effective_api_key:
+        api_key = (
+            websocket.query_params.get("api_key") or
+            websocket.headers.get("x-proxsynth-key") or
+            websocket.headers.get("x-proxynth-key") or
+            ""
+        )
+        if not secrets.compare_digest(api_key, effective_api_key):
+            await websocket.close(code=1008)
+            return
+
+    await ws_manager.connect(websocket)
+    try:
+        await websocket.send_json({
+            "type": "TERMINAL_CONNECTED",
+            "server": "PROXSYNTH_LIVE_TERMINAL",
+            "features": ["cli_streaming", "attack_graph_events", "interactive_map"],
+            "timestamp": datetime.now().isoformat()
+        })
+        while True:
+            raw_msg = await websocket.receive_text()
+            if raw_msg == "ping":
+                await websocket.send_text("pong")
+                continue
+            try:
+                msg_data = json.loads(raw_msg)
+                msg_type = msg_data.get("type", "UNKNOWN")
+                if msg_type in ["CLI_COMMAND_START", "CLI_OUTPUT", "CLI_COMMAND_FINISH"]:
+                    await ws_manager.broadcast({
+                        "type": "CLI_STREAM",
+                        "data": msg_data,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                elif msg_type == "COMMAND_INPUT":
+                    await websocket.send_json({
+                        "type": "COMMAND_RECEIVED",
+                        "command": msg_data.get("command")
+                    })
+            except Exception:
+                pass
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+    except Exception:
+        ws_manager.disconnect(websocket)
+
+
 # ==============================================================================
 # Project Management & Scope Guardrails Endpoints
 # ==============================================================================
@@ -2393,6 +2460,264 @@ def get_finding_report_endpoint(finding_id: int, format: str = "markdown"):
     if format.lower() == "json":
         return {"finding_id": finding_id, "markdown": rep}
     return Response(content=rep, media_type="text/markdown")
+
+
+# ==============================================================================
+# STRATEGIC PILLARS REST ENDPOINTS (INTERACTIVE ATTACK MAP, RECON, FUZZER, TELEMETRY)
+# ==============================================================================
+
+@app.get("/api/attack-graph/interactive")
+def get_interactive_attack_graph_endpoint(
+    project: str = "default",
+    min_severity: Optional[str] = None,
+    cluster_by: str = "asset"
+):
+    """
+    Returns Cytoscape.js & D3.js compatible interactive attack graph topology:
+    rich node coordinates, cluster assignments, severity weights, and animated exploit edges.
+    """
+    from backend.attack_path import build_attack_path_graph
+    base_graph = build_attack_path_graph(project=project)
+    raw_nodes = base_graph.get("nodes", [])
+    raw_edges = base_graph.get("edges", [])
+    chains = base_graph.get("chains", [])
+
+    SEV_WEIGHTS = {"CRITICAL": 100, "HIGH": 75, "MEDIUM": 50, "LOW": 25, "INFO": 10}
+    TYPE_COLORS = {
+        "ENTRY_POINT": "#38bdf8",
+        "ASSET": "#818cf8",
+        "SERVICE": "#60a5fa",
+        "ENDPOINT": "#34d399",
+        "SESSION_CREDENTIAL": "#fbbf24",
+        "VULNERABILITY": "#f87171",
+        "EXPLOIT_CHAIN": "#e11d48",
+        "CROWN_JEWEL": "#c084fc",
+        "HYPOTHESIS": "#a78bfa"
+    }
+    TYPE_SHAPES = {
+        "ENTRY_POINT": "ellipse",
+        "ASSET": "roundrectangle",
+        "SERVICE": "rectangle",
+        "ENDPOINT": "roundrectangle",
+        "SESSION_CREDENTIAL": "rhombus",
+        "VULNERABILITY": "diamond",
+        "EXPLOIT_CHAIN": "hexagon",
+        "CROWN_JEWEL": "star",
+        "HYPOTHESIS": "vee"
+    }
+    TYPE_X = {
+        "ENTRY_POINT": 50,
+        "ASSET": 250,
+        "SERVICE": 450,
+        "ENDPOINT": 650,
+        "SESSION_CREDENTIAL": 750,
+        "VULNERABILITY": 900,
+        "EXPLOIT_CHAIN": 950,
+        "HYPOTHESIS": 1000,
+        "CROWN_JEWEL": 1200
+    }
+
+    min_weight = SEV_WEIGHTS.get((min_severity or "").upper(), 0)
+
+    asset_clusters: Dict[str, str] = {}
+    for n in raw_nodes:
+        if n["type"] == "ASSET":
+            asset_clusters[n["id"]] = f"cluster_{n['id']}"
+
+    for e in raw_edges:
+        src = e["from"]
+        dst = e["to"]
+        if src in asset_clusters and dst not in asset_clusters:
+            asset_clusters[dst] = asset_clusters[src]
+
+    interactive_nodes = []
+    y_counters: Dict[str, int] = {}
+    crown_jewels_count = 0
+    total_risk_points = 0.0
+
+    for n in raw_nodes:
+        sev = (n.get("severity") or "INFO").upper()
+        if SEV_WEIGHTS.get(sev, 10) < min_weight:
+            continue
+
+        ntype = n.get("type", "ASSET")
+        if ntype == "CROWN_JEWEL":
+            crown_jewels_count += 1
+        total_risk_points += SEV_WEIGHTS.get(sev, 10)
+
+        x_pos = TYPE_X.get(ntype, 300)
+        curr_y_idx = y_counters.get(ntype, 0)
+        y_counters[ntype] = curr_y_idx + 1
+        y_pos = 100 + (curr_y_idx * 90)
+
+        cluster_id = asset_clusters.get(n["id"], "cluster_general")
+        color = TYPE_COLORS.get(ntype, "#94a3b8")
+        shape = TYPE_SHAPES.get(ntype, "roundrectangle")
+
+        interactive_nodes.append({
+            "id": n["id"],
+            "label": n["label"],
+            "type": ntype,
+            "severity": sev,
+            "cluster": cluster_id,
+            "position": {"x": x_pos, "y": y_pos},
+            "data": {
+                "label": n["label"],
+                "type": ntype,
+                "severity": sev,
+                "weight": SEV_WEIGHTS.get(sev, 10),
+                "details": n.get("details", "")
+            },
+            "style": {
+                "backgroundColor": color,
+                "color": "#ffffff",
+                "shape": shape,
+                "borderWidth": 2,
+                "borderColor": "#ffffff" if sev in ["CRITICAL", "HIGH"] else "rgba(255,255,255,0.3)"
+            }
+        })
+
+    interactive_edges = []
+    node_id_set = {n["id"] for n in interactive_nodes}
+    for idx, e in enumerate(raw_edges):
+        if e["from"] in node_id_set and e["to"] in node_id_set:
+            rel = e.get("relationship", "CONNECTED")
+            is_animated = rel in [
+                "ROUTES_TO", "EXPLOITS", "AUTHENTICATED_ACCESS", "POST_AUTH_EXPLOIT",
+                "ACHIEVES_IMPACT", "SYNTHESIZED_CHAIN", "HARVESTS_SESSION"
+            ]
+            edge_color = "#f43f5e" if is_animated else "#64748b"
+            interactive_edges.append({
+                "id": f"edge_{idx+1}",
+                "source": e["from"],
+                "target": e["to"],
+                "relationship": rel,
+                "animated": is_animated,
+                "data": {"relationship": rel, "animated": is_animated},
+                "style": {
+                    "lineColor": edge_color,
+                    "targetArrowColor": edge_color,
+                    "targetArrowShape": "triangle",
+                    "curveStyle": "bezier",
+                    "width": 3 if is_animated else 1.5
+                }
+            })
+
+    crit_high_count = sum(1 for n in interactive_nodes if n["severity"] in ["CRITICAL", "HIGH"])
+    overall_risk = min(100.0, round((crit_high_count * 20.0) + (crown_jewels_count * 25.0) + (len(chains) * 10.0), 1))
+
+    return {
+        "status": "success",
+        "project": project,
+        "metrics": {
+            "total_nodes": len(interactive_nodes),
+            "total_edges": len(interactive_edges),
+            "crown_jewels_at_risk": crown_jewels_count,
+            "critical_chains_count": len([c for c in chains if c.get("severity") in ["CRITICAL", "HIGH"]]),
+            "overall_risk_score": overall_risk
+        },
+        "nodes": interactive_nodes,
+        "edges": interactive_edges,
+        "chains": chains,
+        "clusters": [
+            {"id": cid, "label": cid.replace("cluster_", "")}
+            for cid in set(asset_clusters.values())
+        ]
+    }
+
+
+class SynthesizeChainsRequest(BaseModel):
+    project: str = "default"
+    min_confidence: float = 0.5
+
+
+@app.post("/api/exploit-chains/synthesize")
+def synthesize_exploit_chains_endpoint(req: SynthesizeChainsRequest):
+    """Synthesizes autonomous multi-step exploit chains from confirmed findings."""
+    from backend.exploit_chainer import synthesize_exploit_chains
+    return synthesize_exploit_chains(project=req.project, min_confidence=req.min_confidence)
+
+
+class ExecuteChainRequest(BaseModel):
+    chain_id: str
+    live_execution: bool = False
+    project: str = "default"
+
+
+@app.post("/api/exploit-chains/execute")
+def execute_exploit_chain_endpoint(req: ExecuteChainRequest):
+    """Executes or simulates a synthesized multi-hop exploit chain."""
+    from backend.exploit_chainer import execute_exploit_chain
+    return execute_exploit_chain(chain_id=req.chain_id, live_execution=req.live_execution, project=req.project)
+
+
+class ScopeReconRequest(BaseModel):
+    domain: str
+    project: str = "default"
+    auto_probe_takeover: bool = True
+    custom_subdomains: Optional[List[str]] = None
+
+
+@app.post("/api/recon/scope")
+def scope_recon_endpoint(req: ScopeReconRequest):
+    """Runs passive Certificate Transparency and DNS reconnaissance with takeover checks."""
+    from backend.scope_recon import auto_ingest_scope_targets
+    return auto_ingest_scope_targets(
+        domain=req.domain,
+        project=req.project,
+        auto_probe_takeover=req.auto_probe_takeover,
+        custom_subdomains=req.custom_subdomains
+    )
+
+
+class SemanticFuzzRequest(BaseModel):
+    url: str
+    method: str = "GET"
+    params: Optional[Dict[str, Any]] = None
+    headers: Optional[Dict[str, str]] = None
+    body: Optional[str] = None
+    project: str = "default"
+
+
+@app.post("/api/fuzzer/semantic")
+async def semantic_fuzzer_endpoint(req: SemanticFuzzRequest):
+    """Executes intelligent semantic fuzzing with dynamic noise stripping and timing oracle."""
+    from backend.semantic_fuzzer import fuzz_endpoint_semantic
+    return await fuzz_endpoint_semantic(
+        url=req.url,
+        method=req.method,
+        params=req.params,
+        headers=req.headers,
+        body=req.body,
+        project=req.project
+    )
+
+
+class CliTelemetryEvent(BaseModel):
+    command: str
+    project: str = "default"
+    tool: str = "cli"
+    event_type: str = "OUTPUT"
+    output_chunk: Optional[str] = None
+    exit_code: Optional[int] = None
+    timestamp: Optional[str] = None
+
+
+@app.post("/api/telemetry/cli-event")
+async def cli_telemetry_endpoint(req: CliTelemetryEvent, db: Session = Depends(get_db)):
+    """Receives real-time execution logs from proxsynth-exec wrappers and streams to WebSockets."""
+    payload = {
+        "type": "CLI_TELEMETRY",
+        "command": req.command,
+        "project": req.project,
+        "tool": req.tool,
+        "event_type": req.event_type,
+        "output_chunk": req.output_chunk,
+        "exit_code": req.exit_code,
+        "timestamp": req.timestamp or datetime.now().isoformat()
+    }
+    await ws_manager.broadcast(payload)
+    return {"status": "success", "event_type": req.event_type}
 
 
 @app.get("/api/ws-frames")

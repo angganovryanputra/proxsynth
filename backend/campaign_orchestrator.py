@@ -249,6 +249,28 @@ def classify_target_input(target_input: str) -> Dict[str, Any]:
     clean_host = parts[0].strip("/")
     port = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
 
+    is_wildcard = clean_host.startswith("*.") or clean_host.startswith(".") or "*" in clean_host
+    if is_wildcard:
+        clean_root = clean_host.lstrip("*.").strip("/")
+        return {
+            "category": "NETWORK_INFRA",
+            "target_type": "WILDCARD_DOMAIN",
+            "host": clean_root,
+            "url": f"http://{clean_root}:{port}" if port else f"http://{clean_root}",
+            "is_subnet": False,
+            "is_wildcard": True,
+            "is_graphql": False,
+            "is_openapi": False,
+            "is_websocket": False,
+            "raw_input": raw,
+            "autonomous_strategy": {
+                "priority_tracks": ["scope_recon", "network_scan", "spider", "api_infer", "gateway_audit", "verify_gate"],
+                "decision_reason": f"Wildcard scope target '{raw}' detected; prioritizing Certificate Transparency subdomain enumeration and dangling CNAME takeover audit.",
+                "recommended_rate": "normal",
+                "primary_vector": "SUBDOMAIN_TAKEOVER_AND_ASSET_EXPANSION"
+            }
+        }
+
     return {
         "category": "NETWORK_INFRA",
         "target_type": "HOST_DOMAIN",
@@ -400,6 +422,38 @@ async def _execute_campaign_pipeline(
     discovered_web_targets: List[str] = [primary_web_url]
 
     try:
+        # ==========================================
+        # TRACK 0: WILDCARD SUBDOMAIN & SCOPE RECON
+        # ==========================================
+        if "scope_recon" in selected_modes or target_info.get("target_type") == "WILDCARD_DOMAIN" or target_info.get("is_wildcard"):
+            report["current_phase"] = "TRACK_0_SCOPE_RECON"
+            _persist_campaign_to_db(report)
+            logger.info(f"[Campaign {campaign_id}] Track 0: Enumerating subdomains & dangling CNAMEs for {resolved_host}...")
+            try:
+                from backend.scope_recon import auto_ingest_scope_targets
+                recon_res = auto_ingest_scope_targets(domain=resolved_host, project=project)
+                report["tracks_executed"].append("scope_recon")
+                report["phases_executed"].append("scope_recon")
+                report["metrics"]["subdomains_discovered"] = recon_res.get("total_subdomains_discovered", 0)
+                report["metrics"]["alive_scope_assets"] = recon_res.get("alive_assets_count", 0)
+                report["autonomous_decisions"].append({
+                    "decision": "WILDCARD_SCOPE_ENUMERATED",
+                    "root_domain": resolved_host,
+                    "subdomains_count": recon_res.get("total_subdomains_discovered", 0),
+                    "alive_assets": recon_res.get("alive_assets_count", 0),
+                    "takeovers_found": recon_res.get("takeover_alerts_count", 0)
+                })
+                for alert in recon_res.get("takeover_alerts", []):
+                    report["high_priority_actions"].append(
+                        f"CRITICAL: Subdomain takeover on {alert.get('domain')} -> {alert.get('cname')} ({alert.get('provider')})"
+                    )
+                for asset in recon_res.get("alive_assets", []):
+                    sub_url = f"http://{asset['host']}"
+                    if sub_url not in discovered_web_targets:
+                        discovered_web_targets.append(sub_url)
+            except Exception as e:
+                logger.warning(f"Scope recon error: {e}")
+
         # ==========================================
         # TRACK 1: NETWORK & INFRASTRUCTURE RECON
         # ==========================================
@@ -736,6 +790,32 @@ async def _execute_campaign_pipeline(
                     report["phases_executed"].append("bola_shadow_matrix")
                 except Exception as ex:
                     logger.warning(f"BOLA shadow matrix error: {ex}")
+
+            # ==========================================
+            # TRACK 12: AUTONOMOUS EXPLOIT CHAINER
+            # ==========================================
+            if "exploit_chainer" in selected_modes or True:
+                report["current_phase"] = "TRACK_12_EXPLOIT_CHAINER"
+                _persist_campaign_to_db(report)
+                try:
+                    from backend.exploit_chainer import synthesize_exploit_chains
+                    chainer_res = synthesize_exploit_chains(project=project)
+                    chains_found = chainer_res.get("chains", [])
+                    if chains_found:
+                        report["phases_executed"].append("exploit_chainer")
+                        report["tracks_executed"].append("exploit_chainer")
+                        report["metrics"]["exploit_chains_count"] = len(chains_found)
+                        report["autonomous_decisions"].append({
+                            "decision": "EXPLOIT_CHAINS_SYNTHESIZED",
+                            "chains_count": len(chains_found),
+                            "chains": [c.get("name") for c in chains_found]
+                        })
+                        for c in chains_found:
+                            report["high_priority_actions"].append(
+                                f"EXPLOIT CHAIN [{c.get('severity', 'CRITICAL')}]: {c.get('name')} -> {c.get('crown_jewel_target')}"
+                            )
+                except Exception as ex:
+                    logger.warning(f"Exploit chainer error: {ex}")
 
             # Gather final confirmed findings
             confirmed_findings = db.query(Finding).join(HttpLog).filter(
