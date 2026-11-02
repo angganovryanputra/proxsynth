@@ -10,11 +10,14 @@ __pycache__/
 *.db-wal
 proxynth.db*
 
-# Test scripts (Local Only - Not Pushed to Public Repo)
+# Test scripts & Development Scratch (Local Only - Not Pushed to Public Repo)
 test_*.py
 tests/
+scratch/
 .pytest_cache/
 test_output/
+.codegraph/
+.superpowers/
 
 # Virtual Environments
 venv/
@@ -33,6 +36,7 @@ env/
 Thumbs.db
 
 # Certificates & Local Secrets
+.proxsynth_ca/
 .proxynth_ca/
 .proxynth_key*
 *.key
