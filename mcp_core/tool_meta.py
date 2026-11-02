@@ -4,8 +4,24 @@ Single source of truth for all 83 FastMCP tool permissions, categories,
 MCP-standard ToolAnnotations (readOnlyHint, destructiveHint), and outputSchemas.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Set
 from mcp.types import ToolAnnotations
+
+# Dual-Mode Registry: FastMCP Power Mode active tool set (~87.5% prompt token reduction)
+POWER_MODE_TOOLS: Set[str] = {
+    # 7 High-Leverage Consolidated Multi-Action Power Tools
+    "manage_pentest_execution",
+    "manage_attack_surface",
+    "analyze_and_diff_traffic",
+    "manage_interception_rules",
+    "manage_session_vault",
+    "manage_oast_and_tunnels",
+    "manage_testing_agenda",
+    # Essential Project Workspace Context & Security Harness Manifest
+    "set_active_project",
+    "get_active_project",
+    "get_tool_harness_manifest",
+}
 
 
 TOOL_PERMS: Dict[str, Dict[str, Any]] = {

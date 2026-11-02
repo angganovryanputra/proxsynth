@@ -33,6 +33,7 @@ from backend.intercept_manager import async_check_scope, is_intercept_enabled, c
 from backend.analyzer import analyze_traffic
 from backend.target_manager import auto_ingest_url_to_target_graph
 from backend.user_agents import apply_rotating_user_agent
+from backend.cache_manager import http_cache
 
 _proxy_server: Optional[asyncio.Server] = None
 _is_proxy_running: bool = False
@@ -750,28 +751,42 @@ async def _handle_decrypted_tls_session(
                 res_body_text = mock_res.get("body", "")
                 res_bytes = res_body_text.encode("utf-8")
             else:
-                upstream_p = _get_upstream_proxy(target_project)
-                proxy_kwargs = {"proxy": upstream_p} if upstream_p else {"proxy": None, "trust_env": False}
-
-                try:
-                    async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=30.0, **proxy_kwargs) as client:
-                        resp = await client.request(
-                            method=sub_method,
-                            url=full_url,
-                            headers=fwd_headers,
-                            content=body_text.encode("utf-8") if body_text else None
-                        )
-                        status_code = resp.status_code
-                        res_headers = dict(resp.headers)
-                        res_bytes = resp.content
-                        try:
-                            res_body_text = resp.text
-                        except Exception:
-                            res_body_text = f"<Binary response: {len(res_bytes)} bytes>"
-                except Exception as ex:
-                    status_code = 502
-                    res_body_text = f"Target Connection Error: {str(ex)}"
+                cache_enabled = (
+                    os.getenv("PROXSYNTH_CACHE_ENABLED", "0").strip() in ("1", "true", "yes")
+                    or any(k.lower() == "x-proxsynth-cache" for k in fwd_headers.keys())
+                )
+                cached_res = http_cache.get(sub_method, full_url, body_text) if cache_enabled else None
+                if cached_res:
+                    status_code = cached_res["status_code"]
+                    res_headers = dict(cached_res["headers"])
+                    res_headers["X-Proxsynth-Cache"] = "HIT"
+                    res_body_text = cached_res["body"]
                     res_bytes = res_body_text.encode("utf-8")
+                else:
+                    upstream_p = _get_upstream_proxy(target_project)
+                    proxy_kwargs = {"proxy": upstream_p} if upstream_p else {"proxy": None, "trust_env": False}
+
+                    try:
+                        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=30.0, **proxy_kwargs) as client:
+                            resp = await client.request(
+                                method=sub_method,
+                                url=full_url,
+                                headers=fwd_headers,
+                                content=body_text.encode("utf-8") if body_text else None
+                            )
+                            status_code = resp.status_code
+                            res_headers = dict(resp.headers)
+                            res_bytes = resp.content
+                            try:
+                                res_body_text = resp.text
+                            except Exception:
+                                res_body_text = f"<Binary response: {len(res_bytes)} bytes>"
+                            if cache_enabled and 200 <= status_code < 400:
+                                http_cache.set(sub_method, full_url, status_code, res_headers, res_body_text, req_body=body_text)
+                    except Exception as ex:
+                        status_code = 502
+                        res_body_text = f"Target Connection Error: {str(ex)}"
+                        res_bytes = res_body_text.encode("utf-8")
 
             # Apply Interception Response Modification Rules
             try:
@@ -1140,28 +1155,42 @@ async def _handle_client_connection(reader: asyncio.StreamReader, writer: asynci
             res_body_text = mock_res.get("body", "")
             res_bytes = res_body_text.encode("utf-8")
         else:
-            upstream_p = _get_upstream_proxy(target_project)
-            proxy_kwargs = {"proxy": upstream_p} if upstream_p else {"proxy": None, "trust_env": False}
-
-            try:
-                async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=30.0, **proxy_kwargs) as client:
-                    res = await client.request(
-                        method=method,
-                        url=full_url,
-                        headers=fwd_headers,
-                        content=body_text.encode("utf-8") if body_text else None
-                    )
-                    status_code = res.status_code
-                    res_headers = dict(res.headers)
-                    try:
-                        res_body_text = res.text
-                    except Exception:
-                        res_body_text = f"<Binary response: {len(res.content)} bytes>"
-                    res_bytes = res.content
-            except Exception as ex:
-                status_code = 502
-                res_body_text = f"Gateway Connection Error: {str(ex)}"
+            cache_enabled = (
+                os.getenv("PROXSYNTH_CACHE_ENABLED", "0").strip() in ("1", "true", "yes")
+                or any(k.lower() == "x-proxsynth-cache" for k in fwd_headers.keys())
+            )
+            cached_res = http_cache.get(method, full_url, body_text) if cache_enabled else None
+            if cached_res:
+                status_code = cached_res["status_code"]
+                res_headers = dict(cached_res["headers"])
+                res_headers["X-Proxsynth-Cache"] = "HIT"
+                res_body_text = cached_res["body"]
                 res_bytes = res_body_text.encode("utf-8")
+            else:
+                upstream_p = _get_upstream_proxy(target_project)
+                proxy_kwargs = {"proxy": upstream_p} if upstream_p else {"proxy": None, "trust_env": False}
+
+                try:
+                    async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=30.0, **proxy_kwargs) as client:
+                        res = await client.request(
+                            method=method,
+                            url=full_url,
+                            headers=fwd_headers,
+                            content=body_text.encode("utf-8") if body_text else None
+                        )
+                        status_code = res.status_code
+                        res_headers = dict(res.headers)
+                        try:
+                            res_body_text = res.text
+                        except Exception:
+                            res_body_text = f"<Binary response: {len(res.content)} bytes>"
+                        res_bytes = res.content
+                        if cache_enabled and 200 <= status_code < 400:
+                            http_cache.set(method, full_url, status_code, res_headers, res_body_text, req_body=body_text)
+                except Exception as ex:
+                    status_code = 502
+                    res_body_text = f"Gateway Connection Error: {str(ex)}"
+                    res_bytes = res_body_text.encode("utf-8")
 
         # Apply Interception Response Modification Rules
         try:

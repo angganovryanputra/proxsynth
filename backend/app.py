@@ -1329,6 +1329,17 @@ async def create_finding_api(data: CreateFindingRequest, db: Session = Depends(g
     except Exception:
         pass
 
+    # Closed-Loop Reactive Autonomous Trigger:
+    # High/Critical findings immediately trigger background synthesis of multi-hop exploit chains
+    if sev in ["HIGH", "CRITICAL"]:
+        try:
+            from backend.exploit_chainer import synthesize_exploit_chains
+            asyncio.create_task(
+                asyncio.to_thread(synthesize_exploit_chains, project=log_entry.project)
+            )
+        except Exception:
+            pass
+
     return {
         "status": "created",
         "id": finding.id,
@@ -3896,6 +3907,19 @@ def health_check():
         "proxy_running": proxy_up,
         "proxy_port": proxy_p
     }
+
+@app.get("/api/cache/stats")
+def get_cache_stats():
+    """Returns in-memory HTTP response cache metrics and hit ratio."""
+    from backend.cache_manager import http_cache
+    return http_cache.stats()
+
+@app.post("/api/cache/clear")
+def clear_cache():
+    """Clears in-memory HTTP response cache."""
+    from backend.cache_manager import http_cache
+    http_cache.clear()
+    return {"status": "success", "message": "In-memory request cache cleared."}
 
 @app.get("/api/info")
 def platform_info():

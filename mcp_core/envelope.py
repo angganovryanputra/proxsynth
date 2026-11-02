@@ -6,6 +6,7 @@ injects outputSchema for read-only tools, and provides dual-channel execution:
 - FastMCP / MCP JSON-RPC protocol callers receive CallToolResult with structuredContent and text content fallback (<=400 chars).
 """
 
+import os
 import json
 import functools
 import inspect
@@ -18,7 +19,8 @@ from mcp_core.tool_meta import (
     meta,
     STRUCTURED_READ_ONLY_TOOLS,
     STRUCTURED_OUTPUT_SCHEMAS,
-    TOOL_PERMS
+    TOOL_PERMS,
+    POWER_MODE_TOOLS
 )
 
 # Per-call structured payload. A ContextVar is isolated per asyncio task, so concurrent
@@ -60,6 +62,14 @@ def register_tool(server, name: Optional[str] = None, description: Optional[str]
     """
     def decorator(fn: Callable) -> Callable:
         tool_name = name or fn.__name__
+
+        # Dual-Mode Registry Check:
+        # When PROXSYNTH_TOOL_MODE="power", FastMCP only registers the 10 consolidated power & context tools,
+        # cutting token consumption by ~87.5% while direct Python callers retain full access to all 90 tools.
+        tool_mode = os.getenv("PROXSYNTH_TOOL_MODE", "full").strip().lower()
+        if tool_mode == "power" and tool_name not in POWER_MODE_TOOLS:
+            return fn
+
         ann = meta(tool_name)
         tool_desc = description or fn.__doc__ or f"Proxsynth tool: {tool_name}"
 

@@ -105,10 +105,14 @@
 <body class="bg-[#0B0F17] text-slate-200 font-sans antialiased h-screen overflow-hidden flex flex-row select-none"
   x-data="proxsynthApp()" x-init="initApp()">
 
+  <!-- ACCESSIBILITY: WCAG 2.4.1 Skip Link Landmark -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
   <!-- ========================================================================= -->
   <!-- LEFT SIDEBAR (COLLAPSIBLE NAVIGATION RAIL)                                -->
   <!-- ========================================================================= -->
   <aside :class="sidebarExpanded ? 'w-64' : 'w-16'"
+    aria-label="Application Navigation Rail"
     class="h-screen bg-[#111827] border-r border-[#1E293B] flex flex-col shrink-0 z-40 transition-all duration-200 select-none shadow-xl">
 
     <!-- Sidebar Header: Brand & Collapse Toggle -->
@@ -654,8 +658,9 @@
     </header>
 
     <!-- ========================================================================= -->
-    <!-- MAIN WORKSPACE VIEWS                                                      -->
+    <!-- MAIN WORKSPACE VIEWS (WCAG 2.2 MAIN LANDMARK)                            -->
     <!-- ========================================================================= -->
+    <main id="main-content" role="main" tabindex="-1" class="flex-1 flex flex-col min-h-0 overflow-hidden relative">
 
     <!-- VIEW 1: PROXY TRAFFIC HISTORY & DEEP INSPECTOR -->
     <div x-show="currentAppTab === 'proxy'" id="proxySplitPane" class="flex-1 min-h-0 overflow-hidden"
@@ -4987,6 +4992,7 @@
       </div>
     </div>
   </div>
+  </main>
 
   <!-- MODALS -->
   <!-- Create Project Modal -->
@@ -5647,80 +5653,237 @@
       </div>
     </div>
 
-    <!-- MODAL: ATTACK PATH & KILL CHAIN GRAPH -->
+        <!-- MODAL: ATTACK PATH & KILL CHAIN GRAPH (PILAR 1 & 4 ENHANCED) -->
     <div x-show="showAttackPathsModal"
-      class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 select-text" x-cloak>
+      role="dialog" aria-modal="true" aria-labelledby="attack-paths-modal-title"
+      class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 select-text" x-cloak>
       <div @click.away="showAttackPathsModal = false"
-        class="bg-[#111827] border border-rose-900/60 rounded-xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden font-mono text-xs">
-        <div class="p-4 bg-[#0B0F17] border-b border-[#1E293B] flex items-center justify-between">
-          <div class="flex items-center space-x-2.5">
-            <div class="p-2 bg-rose-950 border border-rose-800 rounded-lg text-rose-400">
-              <i data-lucide="git-merge" class="w-5 h-5"></i>
+        class="bg-[#0f172a] border border-cyan-500/40 rounded-xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden font-mono text-xs">
+        
+        <!-- Modal Header -->
+        <div class="p-4 bg-[#06090e] border-b border-[#1E293B] flex items-center justify-between">
+          <div class="flex items-center space-x-3">
+            <div class="p-2.5 bg-cyan-950/80 border border-cyan-800 rounded-lg text-cyan-400">
+              <i data-lucide="network" class="w-5 h-5"></i>
             </div>
             <div>
               <div class="font-bold text-slate-100 flex items-center space-x-2">
-                <span>Attack Path &amp; Kill Chain Synthesizer</span>
+                <span id="attack-paths-modal-title" class="text-sm">Interactive Attack Graph &amp; Kill Chain Synthesizer</span>
                 <span class="px-2 py-0.5 rounded text-[10px] bg-rose-950 text-rose-300 border border-rose-800 font-bold"
                   x-text="(attackPathsData ? attackPathsData.total_chains : 0) + ' Exploit Chains'"></span>
+                <span x-show="interactiveGraphData && interactiveGraphData.summary"
+                  class="px-2 py-0.5 rounded text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-800 font-bold"
+                  x-text="(interactiveGraphData?.summary?.total_nodes || 0) + ' Nodes / ' + (interactiveGraphData?.summary?.total_edges || 0) + ' Edges'"></span>
               </div>
-              <p class="text-[10px] text-slate-400 mt-0.5">Automated causal correlation linking Entry Assets &rarr;
-                Endpoints &rarr; Vulnerabilities &rarr; Crown Jewels</p>
+              <p class="text-[10px] text-slate-400 mt-0.5">Autonomous causal multi-hop correlation: Entry Points &rarr; Endpoints &rarr; Vulnerabilities &rarr; Crown Jewels</p>
             </div>
           </div>
-          <button @click="showAttackPathsModal = false"
-            class="p-1 hover:bg-[#1E293B] rounded text-slate-400 hover:text-white transition">
-            <i data-lucide="x" class="w-5 h-5"></i>
-          </button>
+          
+          <div class="flex items-center space-x-2">
+            <button @click="synthesizeExploitChainsNow()"
+              class="px-3 py-1.5 bg-rose-950/80 hover:bg-rose-900 border border-rose-800 text-rose-300 rounded font-bold transition flex items-center space-x-1.5 shadow"
+              title="Trigger autonomous multi-hop exploit synthesis across all findings">
+              <i data-lucide="zap" class="w-3.5 h-3.5 text-rose-400"></i>
+              <span>Synthesize Chains</span>
+            </button>
+            <button @click="showAttackPathsModal = false"
+              aria-label="Close attack paths modal"
+              class="p-1.5 hover:bg-[#1E293B] rounded-lg text-slate-400 hover:text-white transition">
+              <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+          </div>
         </div>
 
+        <!-- View Navigation Sub-Bar -->
+        <div class="px-4 py-2 bg-[#0B0F17] border-b border-[#1E293B] flex items-center justify-between">
+          <div class="flex items-center space-x-1" role="tablist" aria-label="Attack Graph View Tabs">
+            <button @click="attackGraphViewMode = 'visual'"
+              role="tab" :aria-selected="attackGraphViewMode === 'visual'"
+              :class="attackGraphViewMode === 'visual' ? 'bg-cyan-950 text-cyan-300 border-cyan-800' : 'text-slate-400 border-transparent hover:text-slate-200'"
+              class="px-3 py-1 rounded border font-semibold transition flex items-center space-x-1.5">
+              <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
+              <span>Visual Topology</span>
+            </button>
+            <button @click="attackGraphViewMode = 'chains'"
+              role="tab" :aria-selected="attackGraphViewMode === 'chains'"
+              :class="attackGraphViewMode === 'chains' ? 'bg-rose-950 text-rose-300 border-rose-800' : 'text-slate-400 border-transparent hover:text-slate-200'"
+              class="px-3 py-1 rounded border font-semibold transition flex items-center space-x-1.5">
+              <i data-lucide="git-merge" class="w-3.5 h-3.5"></i>
+              <span>Causal Chains (<span x-text="attackPathsData?.chains?.length || 0"></span>)</span>
+            </button>
+            <button @click="attackGraphViewMode = 'mermaid'"
+              role="tab" :aria-selected="attackGraphViewMode === 'mermaid'"
+              :class="attackGraphViewMode === 'mermaid' ? 'bg-indigo-950 text-indigo-300 border-indigo-800' : 'text-slate-400 border-transparent hover:text-slate-200'"
+              class="px-3 py-1 rounded border font-semibold transition flex items-center space-x-1.5">
+              <i data-lucide="code" class="w-3.5 h-3.5"></i>
+              <span>Mermaid Architecture</span>
+            </button>
+          </div>
+
+          <!-- Controls for Visual Mode -->
+          <div x-show="attackGraphViewMode === 'visual'" class="flex items-center space-x-2">
+            <label class="text-[10px] text-slate-400 font-bold">Severity Filter:</label>
+            <select x-model="interactiveGraphFilter" @change="fetchInteractiveAttackGraph()"
+              aria-label="Filter graph by severity"
+              class="bg-[#111827] text-slate-300 border border-[#1E293B] rounded px-2 py-0.5 text-[11px] focus:outline-none focus:border-cyan-500">
+              <option value="ALL">ALL LEVELS</option>
+              <option value="CRITICAL">CRITICAL ONLY</option>
+              <option value="HIGH">HIGH &amp; CRITICAL</option>
+              <option value="MEDIUM">MEDIUM &amp; ABOVE</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Modal Body Content -->
         <div class="p-4 flex-1 overflow-y-auto space-y-4">
-          <template x-if="!attackPathsData || !attackPathsData.chains || attackPathsData.chains.length === 0">
-            <div class="p-8 text-center text-slate-500 bg-[#0B0F17] rounded-xl border border-[#1E293B]">
-              <i data-lucide="shield-check" class="w-8 h-8 mx-auto opacity-30 text-emerald-400 mb-2"></i>
-              <p class="text-sm font-bold text-slate-300">No Multi-Stage Kill Chains Detected Yet</p>
-              <p class="text-xs text-slate-500 mt-1">Run active scans, fuzzing, or AI agent pentest scripts against
-                target endpoints to correlate exploit paths.</p>
-            </div>
-          </template>
 
-          <template x-for="(chain, cIdx) in (attackPathsData?.chains || [])" :key="cIdx">
-            <div class="p-4 bg-[#0B0F17] border border-rose-900/50 rounded-xl space-y-3">
-              <div class="flex items-center justify-between">
-                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-800"
-                  x-text="'CHAIN #' + (cIdx + 1)"></span>
-                <span class="text-xs font-bold text-amber-300" x-text="chain.target_impact"></span>
+          <!-- VIEW MODE 1: VISUAL TOPOLOGY -->
+          <div x-show="attackGraphViewMode === 'visual'" class="space-y-4">
+            <template x-if="!interactiveGraphData || !interactiveGraphData.nodes || interactiveGraphData.nodes.length === 0">
+              <div class="p-8 text-center text-slate-500 bg-[#0B0F17] rounded-xl border border-[#1E293B]">
+                <i data-lucide="shield-check" class="w-8 h-8 mx-auto opacity-30 text-emerald-400 mb-2"></i>
+                <p class="text-sm font-bold text-slate-300">No Graph Nodes Recorded Yet</p>
+                <p class="text-xs text-slate-500 mt-1">Ingest target assets, crawl endpoints, or run vulnerability scanners to populate the attack topology.</p>
               </div>
+            </template>
 
-              <div class="space-y-1.5 pt-1">
-                <template x-for="step in chain.steps" :key="step.step">
-                  <div class="flex items-center space-x-2 text-[11px]">
-                    <span
-                      class="w-5 h-5 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-slate-300 shrink-0"
-                      x-text="step.step"></span>
-                    <span class="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase shrink-0"
-                      :class="step.type === 'ENTRY' ? 'bg-sky-950 text-sky-300 border border-sky-800' : (step.type === 'VULNERABILITY' ? 'bg-rose-950 text-rose-300 border border-rose-800' : (step.type === 'IMPACT' ? 'bg-purple-950 text-purple-300 border border-purple-800' : 'bg-slate-800 text-slate-300 border border-slate-700'))"
-                      x-text="step.type"></span>
-                    <span class="font-bold text-slate-200" x-text="step.label"></span>
-                    <span class="text-slate-400 truncate max-w-md" x-text="step.detail"></span>
+            <!-- Layered Topology Container -->
+            <div x-show="interactiveGraphData && interactiveGraphData.layers" class="space-y-4">
+              <template x-for="layer in (interactiveGraphData?.layers || [])" :key="layer.layer">
+                <div class="bg-[#0B0F17]/90 border border-[#1E293B] rounded-xl p-3 space-y-2">
+                  <div class="flex items-center justify-between pb-1.5 border-b border-[#1E293B]/60">
+                    <div class="flex items-center space-x-2">
+                      <span class="w-2.5 h-2.5 rounded-full"
+                        :class="layer.layer === 'ENTRY_POINT' ? 'bg-sky-400' : (layer.layer === 'FINDING' ? 'bg-rose-500' : (layer.layer === 'CROWN_JEWEL' ? 'bg-amber-400' : (layer.layer === 'EXPLOIT_CHAIN' ? 'bg-purple-400' : 'bg-emerald-400')))"></span>
+                      <span class="font-bold text-slate-200 text-xs" x-text="layer.layer"></span>
+                      <span class="text-[10px] text-slate-500" x-text="'(' + layer.node_count + ' nodes)'"></span>
+                    </div>
                   </div>
-                </template>
-              </div>
-            </div>
-          </template>
 
-          <div x-show="attackPathsData?.mermaid_diagram" class="pt-2">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
+                    <template x-for="node in layer.nodes" :key="node.id">
+                      <div @click="selectGraphNode(node)"
+                        :class="selectedGraphNode?.id === node.id ? 'border-cyan-400 bg-cyan-950/40 ring-1 ring-cyan-400' : 'border-[#1E293B] bg-[#111827]/70 hover:border-slate-600'"
+                        class="p-2.5 border rounded-lg cursor-pointer transition text-[11px] space-y-1">
+                        <div class="flex items-center justify-between">
+                          <span class="font-bold text-slate-200 truncate" x-text="node.label"></span>
+                          <span x-show="node.severity"
+                            class="px-1.5 py-0.2 rounded text-[9px] font-bold"
+                            :class="node.severity === 'CRITICAL' ? 'bg-rose-950 text-rose-300 border border-rose-800' : (node.severity === 'HIGH' ? 'bg-orange-950 text-orange-300 border border-orange-800' : 'bg-slate-800 text-slate-300')"
+                            x-text="node.severity"></span>
+                        </div>
+                        <p class="text-[10px] text-slate-400 truncate" x-text="node.detail"></p>
+                        <div class="flex items-center justify-between text-[9px] text-slate-500 pt-0.5">
+                          <span x-text="node.type"></span>
+                          <span x-show="node.confidence_score" x-text="'Conf: ' + (node.confidence_score * 100).toFixed(0) + '%'"></span>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <!-- Selected Node Inspector Drawer -->
+            <div x-show="selectedGraphNode" class="p-3 bg-[#111827] border border-cyan-500/50 rounded-xl space-y-2">
+              <div class="flex items-center justify-between border-b border-[#1E293B] pb-2">
+                <div class="flex items-center space-x-2">
+                  <i data-lucide="info" class="w-4 h-4 text-cyan-400"></i>
+                  <span class="font-bold text-slate-200 text-xs">Node Inspector:</span>
+                  <span class="text-cyan-300 font-bold" x-text="selectedGraphNode?.label"></span>
+                </div>
+                <button @click="selectedGraphNode = null" class="text-slate-400 hover:text-white" aria-label="Close node inspector">
+                  <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+              </div>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+                <div><span class="text-slate-500">Node ID:</span> <span class="text-slate-300 font-mono" x-text="selectedGraphNode?.id"></span></div>
+                <div><span class="text-slate-500">Type:</span> <span class="text-cyan-300" x-text="selectedGraphNode?.type"></span></div>
+                <div><span class="text-slate-500">Severity:</span> <span class="text-rose-300 font-bold" x-text="selectedGraphNode?.severity || 'N/A'"></span></div>
+                <div><span class="text-slate-500">Confidence:</span> <span class="text-emerald-300" x-text="selectedGraphNode?.confidence_score ? ((selectedGraphNode.confidence_score * 100).toFixed(0) + '%') : '100%'"></span></div>
+              </div>
+              <div class="text-[11px] text-slate-300 bg-[#0B0F17] p-2 rounded border border-[#1E293B]" x-text="selectedGraphNode?.detail"></div>
+            </div>
+          </div>
+
+          <!-- VIEW MODE 2: CAUSAL EXPLOIT CHAINS -->
+          <div x-show="attackGraphViewMode === 'chains'" class="space-y-4">
+            <template x-if="!attackPathsData || !attackPathsData.chains || attackPathsData.chains.length === 0">
+              <div class="p-8 text-center text-slate-500 bg-[#0B0F17] rounded-xl border border-[#1E293B]">
+                <i data-lucide="shield-check" class="w-8 h-8 mx-auto opacity-30 text-emerald-400 mb-2"></i>
+                <p class="text-sm font-bold text-slate-300">No Multi-Stage Kill Chains Detected Yet</p>
+                <p class="text-xs text-slate-500 mt-1">Click "Synthesize Chains" above or run automated security scans to generate causal attack paths.</p>
+              </div>
+            </template>
+
+            <template x-for="(chain, cIdx) in (attackPathsData?.chains || [])" :key="cIdx">
+              <div class="p-4 bg-[#0B0F17] border border-rose-900/50 rounded-xl space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center space-x-2">
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-800"
+                      x-text="'CHAIN #' + (cIdx + 1)"></span>
+                    <span class="text-xs font-bold text-amber-300" x-text="chain.target_impact"></span>
+                  </div>
+                  <div class="flex items-center space-x-2">
+                    <button @click="executeExploitChain(chain.id, false)"
+                      :disabled="isExecutingChain"
+                      class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded text-[10px] font-bold transition flex items-center space-x-1">
+                      <i data-lucide="play" class="w-3 h-3"></i>
+                      <span>Simulate</span>
+                    </button>
+                    <button @click="executeExploitChain(chain.id, true)"
+                      :disabled="isExecutingChain"
+                      class="px-2 py-1 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 rounded text-[10px] font-bold transition flex items-center space-x-1">
+                      <i data-lucide="zap" class="w-3 h-3"></i>
+                      <span>Live Exec</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="space-y-1.5 pt-1">
+                  <template x-for="step in chain.steps" :key="step.step">
+                    <div class="flex items-center space-x-2 text-[11px]">
+                      <span
+                        class="w-5 h-5 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-slate-300 shrink-0"
+                        x-text="step.step"></span>
+                      <span class="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase shrink-0"
+                        :class="step.type === 'ENTRY' ? 'bg-sky-950 text-sky-300 border border-sky-800' : (step.type === 'VULNERABILITY' ? 'bg-rose-950 text-rose-300 border border-rose-800' : (step.type === 'IMPACT' ? 'bg-purple-950 text-purple-300 border border-purple-800' : 'bg-slate-800 text-slate-300 border border-slate-700'))"
+                        x-text="step.type"></span>
+                      <span class="font-bold text-slate-200" x-text="step.label"></span>
+                      <span class="text-slate-400 truncate max-w-md" x-text="step.detail"></span>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- Simulation Execution Result Box -->
+                <div x-show="chainExecutionResult && chainExecutionResult.chain_id === chain.id"
+                  class="mt-3 p-3 bg-[#06090e] border border-cyan-800 rounded-lg text-[10px] space-y-1">
+                  <div class="flex items-center justify-between text-cyan-400 font-bold">
+                    <span>Execution Result (Simulated / Verified):</span>
+                    <span x-text="chainExecutionResult?.status"></span>
+                  </div>
+                  <pre class="text-slate-300 whitespace-pre-wrap font-mono text-[10px]"
+                    x-text="JSON.stringify(chainExecutionResult, null, 2)"></pre>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- VIEW MODE 3: MERMAID CODE -->
+          <div x-show="attackGraphViewMode === 'mermaid'" class="space-y-2">
             <div class="flex items-center justify-between mb-1.5">
               <span class="text-xs font-bold text-slate-300">Mermaid Kill Chain Architecture</span>
-              <button @click="copyText(attackPathsData.mermaid_diagram)"
-                class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] font-semibold flex items-center space-x-1">
+              <button @click="copyText(attackPathsData?.mermaid_diagram || '')"
+                class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] font-semibold flex items-center space-x-1">
                 <i data-lucide="copy" class="w-3 h-3"></i>
                 <span>Copy Mermaid</span>
               </button>
             </div>
             <pre
               class="p-3 bg-[#0B0F17] border border-[#1E293B] rounded-lg text-indigo-300 overflow-x-auto whitespace-pre text-[11px] leading-relaxed"
-              x-text="attackPathsData?.mermaid_diagram || ''"></pre>
+              x-text="attackPathsData?.mermaid_diagram || 'graph TD\n    A[No Chains Detected] --> B[Run Recon]'"></pre>
           </div>
+
         </div>
       </div>
     </div>
@@ -6894,6 +7057,7 @@
             this.checkForUpdates();
             setInterval(() => this.checkForUpdates(), 15 * 60 * 1000);
             this.connectWebSocket();
+            this.connectTerminalWebSocket();
             this.$nextTick(() => lucide.createIcons());
           },
 
@@ -6913,6 +7077,38 @@
               return null;
             }
             return clean;
+          },
+
+          
+          termSocket: null,
+          termWsConnected: false,
+          terminalEvents: [],
+
+          connectTerminalWebSocket() {
+            if (this.termSocket && (this.termSocket.readyState === WebSocket.OPEN || this.termSocket.readyState === WebSocket.CONNECTING)) {
+              return;
+            }
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const termUrl = `${protocol}//${window.location.host}/ws/terminal`;
+            try {
+              this.termSocket = new WebSocket(termUrl);
+              this.termSocket.onopen = () => { this.termWsConnected = true; };
+              this.termSocket.onmessage = (event) => {
+                try {
+                  const msg = JSON.parse(event.data);
+                  if (msg.type === 'INITIAL_HISTORY') {
+                    this.terminalEvents = msg.history || [];
+                  } else if (msg.type === 'TERMINAL_STREAM') {
+                    this.terminalEvents.unshift(msg.data);
+                    if (this.terminalEvents.length > 200) this.terminalEvents.pop();
+                  }
+                } catch (e) { }
+              };
+              this.termSocket.onclose = () => {
+                this.termWsConnected = false;
+                setTimeout(() => this.connectTerminalWebSocket(), 3000);
+              };
+            } catch (e) { }
           },
 
           connectWebSocket() {

@@ -1,5 +1,5 @@
 /**
- * Proxsynth - Attack Surface Knowledge Graph Component
+ * Proxsynth - Attack Surface Knowledge Graph & Interactive Kill Chain Component
  */
 
 window.AttackSurfaceModule = {
@@ -29,6 +29,13 @@ window.AttackSurfaceModule = {
       attackPathsData: null,
       showAttackPathsModal: false,
       isGeneratingAttackPaths: false,
+      attackGraphViewMode: 'visual', // 'visual' | 'chains' | 'mermaid'
+      interactiveGraphData: null,
+      interactiveGraphFilter: 'ALL',
+      interactiveGraphCluster: 'asset',
+      selectedGraphNode: null,
+      isExecutingChain: false,
+      chainExecutionResult: null,
       showPocModal: false,
       pocModalData: null,
       pocActiveTab: 'python', // 'python' | 'curl' | 'dossier'
@@ -273,18 +280,95 @@ window.AttackSurfaceModule = {
       this.isGeneratingAttackPaths = true;
       const proj = this.selectedProject === 'ALL' ? 'all' : (this.selectedProject || 'default');
       try {
-        const resp = await fetch(`/api/attack-path?project=${encodeURIComponent(proj)}`);
+        const [pathsResp, graphResp] = await Promise.all([
+          fetch(`/api/attack-path?project=${encodeURIComponent(proj)}`),
+          fetch(`/api/attack-graph/interactive?project=${encodeURIComponent(proj)}`)
+        ]);
+
+        if (pathsResp.ok) {
+          this.attackPathsData = await pathsResp.json();
+        }
+        if (graphResp.ok) {
+          this.interactiveGraphData = await graphResp.json();
+        }
+
+        this.showAttackPathsModal = true;
+        this.$nextTick(() => {
+          if (window.lucide) lucide.createIcons();
+        });
+      } catch (err) {
+        alert('Failed to generate attack paths: ' + err);
+      } finally {
+        this.isGeneratingAttackPaths = false;
+      }
+    },
+
+    async fetchInteractiveAttackGraph() {
+      const proj = this.selectedProject === 'ALL' ? 'all' : (this.selectedProject || 'default');
+      const sevParam = this.interactiveGraphFilter !== 'ALL' ? `&min_severity=${this.interactiveGraphFilter}` : '';
+      const clusterParam = `&cluster_by=${this.interactiveGraphCluster || 'asset'}`;
+      try {
+        const resp = await fetch(`/api/attack-graph/interactive?project=${encodeURIComponent(proj)}${sevParam}${clusterParam}`);
         if (resp.ok) {
-          this.attackPathsData = await resp.json();
-          this.showAttackPathsModal = true;
+          this.interactiveGraphData = await resp.json();
           this.$nextTick(() => {
             if (window.lucide) lucide.createIcons();
           });
         }
       } catch (err) {
-        alert('Failed to generate attack paths: ' + err);
+        console.error('Failed to fetch interactive attack graph:', err);
+      }
+    },
+
+    selectGraphNode(node) {
+      this.selectedGraphNode = node;
+      this.$nextTick(() => {
+        if (window.lucide) lucide.createIcons();
+      });
+    },
+
+    async synthesizeExploitChainsNow() {
+      const proj = this.selectedProject === 'ALL' ? 'default' : (this.selectedProject || 'default');
+      try {
+        const resp = await fetch('/api/exploit-chains/synthesize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: proj, min_confidence: 0.5 })
+        });
+        if (resp.ok) {
+          const res = await resp.json();
+          if (this.showToast) {
+            this.showToast({
+              title: 'Exploit Chains Synthesized',
+              message: `Synthesized ${res.synthesized_chains || 0} multi-hop attack chains.`
+            });
+          }
+          await this.viewAttackPaths();
+        }
+      } catch (err) {
+        alert('Failed to synthesize exploit chains: ' + err);
+      }
+    },
+
+    async executeExploitChain(chainId, live = false) {
+      const proj = this.selectedProject === 'ALL' ? 'default' : (this.selectedProject || 'default');
+      this.isExecutingChain = true;
+      this.chainExecutionResult = null;
+      try {
+        const resp = await fetch('/api/exploit-chains/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chain_id: chainId, live_execution: live, project: proj })
+        });
+        if (resp.ok) {
+          this.chainExecutionResult = await resp.json();
+        } else {
+          alert('Failed to execute exploit chain');
+        }
+      } catch (err) {
+        alert('Execution failed: ' + err);
       } finally {
-        this.isGeneratingAttackPaths = false;
+        this.isExecutingChain = false;
       }
     },
 

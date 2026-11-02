@@ -1,26 +1,184 @@
 /*
- * Proxynth / AetherGate - Custom SOC Theme & High-Density Stylesheet
+ * PROXSYNTH // Autonomous Security Testing Gateway & Observability Platform
+ * Enterprise SOC Theme, WCAG 2.2 Accessibility & Tiered Motion Stylesheet
  */
 
+:root {
+  --bg-canvas: #06090e;
+  --bg-surface: #0b0f17;
+  --bg-panel: #111827;
+  --border-subtle: #1e293b;
+  --border-strong: #334155;
+  --accent-cyan: #00f0ff;
+  --accent-emerald: #10b981;
+  --accent-amber: #f59e0b;
+  --accent-rose: #f43f5e;
+  --accent-purple: #a855f7;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* ========================================================================= */
+/* ACCESSIBILITY: SKIP LINK & SCREEN READER UTILITIES (WCAG 2.4.1)          */
+/* ========================================================================= */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 1rem;
+  z-index: 1000;
+  padding: 0.6rem 1.2rem;
+  background: var(--accent-cyan);
+  color: #06090e;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 6px;
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.5);
+  text-decoration: none;
+  transition: top 0.15s ease-in-out;
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  top: 1rem;
+  outline: 3px solid #ffffff;
+  outline-offset: 3px;
+}
+
+.visually-hidden,
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* ========================================================================= */
+/* ACCESSIBILITY: HIGH-CONTRAST FOCUS INDICATORS (WCAG 2.4.7 & 1.4.11)       */
+/* ========================================================================= */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-cyan) !important;
+  outline-offset: 2px !important;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible {
+  outline: 2px solid var(--accent-cyan) !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.4) !important;
+}
+
+/* Minimum interactive touch/click targets (WCAG 2.5.8) */
+button,
+[role="button"],
+input,
+select,
+textarea {
+  min-height: 28px;
+}
+
+/* ========================================================================= */
+/* TIERED REDUCED MOTION (WCAG 2.3.3 & C39)                                  */
+/* ========================================================================= */
+@media (prefers-reduced-motion: reduce) {
+  /* Global safety net: stop infinite churn, keep 0.01ms so JS callbacks fire */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Tier 1: Neutralize aggressive displacement, pulses & transforms */
+  aside nav button:hover {
+    transform: none !important;
+  }
+
+  .animate-ping,
+  .animate-pulse,
+  .animate-spin {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+
+  /* Tier 2: Shorten purposeful state transitions to gentle 150ms opacity fades */
+  aside,
+  aside nav button,
+  .status-pill,
+  button,
+  input,
+  .modal-container {
+    transform: none !important;
+    transition: opacity 150ms ease, background-color 150ms ease, border-color 150ms ease !important;
+  }
+
+  /* Tier 3: Essential indicators remain visible without motion */
+  .radar-sweep,
+  .glow-pulse {
+    filter: none !important;
+    box-shadow: 0 0 8px rgba(0, 240, 255, 0.3) !important;
+  }
+}
+
+/* ========================================================================= */
+/* WINDOWS HIGH CONTRAST MODE (FORCED COLORS)                                */
+/* ========================================================================= */
+@media (forced-colors: active) {
+  :focus-visible,
+  button:focus-visible,
+  a:focus-visible,
+  [role="tab"]:focus-visible {
+    outline: 3px solid Highlight !important;
+    outline-offset: 3px !important;
+  }
+
+  .status-pill,
+  [role="tab"][aria-selected="true"] {
+    border: 2px solid Highlight !important;
+  }
+}
+
+/* ========================================================================= */
+/* SCROLLBAR & DATA TABLE CONTAINERS                                         */
+/* ========================================================================= */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0B0F17;
+  background: var(--bg-surface);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1E293B;
+  background: var(--border-subtle);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: var(--border-strong);
 }
 
-/* Universal smooth scrolling & flex min-height fix for data tables */
 #logsTableContainer,
 .smooth-scroll,
 .overflow-y-auto,
@@ -32,6 +190,21 @@
   overscroll-behavior: contain;
 }
 
+/* ========================================================================= */
+/* NEON TELEMETRY ACCENT GLOWS                                               */
+/* ========================================================================= */
+.glow-cyan {
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.35);
+}
+
+.glow-emerald {
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.3);
+}
+
+.glow-amber {
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
+}
+
 .glow-rose {
   box-shadow: 0 0 15px rgba(244, 63, 94, 0.35);
 }
@@ -40,32 +213,13 @@
   box-shadow: 0 0 12px rgba(14, 165, 233, 0.3);
 }
 
-.glow-amber {
-  box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
-}
-
-.glow-cyan {
-  box-shadow: 0 0 12px rgba(6, 182, 212, 0.35);
-}
-
 .glow-orange {
   box-shadow: 0 0 12px rgba(249, 115, 22, 0.35);
 }
 
-.glow-emerald {
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.3);
-}
-
-/* Custom badge transitions */
-.status-pill {
-  transition: all 0.15s ease-in-out;
-}
-
-.status-pill:hover {
-  filter: brightness(1.15);
-}
-
-/* Sidebar Rail & Micro-Animation Enhancements */
+/* ========================================================================= */
+/* SIDEBAR RAIL & INTERACTION STATES                                         */
+/* ========================================================================= */
 aside {
   transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   will-change: width;
@@ -81,4 +235,84 @@ aside nav button:hover {
 
 aside nav button:active {
   transform: translateX(0);
+}
+
+.status-pill {
+  transition: all 0.15s ease-in-out;
+}
+
+.status-pill:hover {
+  filter: brightness(1.15);
+}
+
+/* ========================================================================= */
+/* INTERACTIVE ATTACK GRAPH CANVAS (PILAR 4)                                 */
+/* ========================================================================= */
+.attack-graph-wrapper {
+  background: radial-gradient(circle at 50% 50%, #0d1527 0%, #06090e 100%);
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.75rem;
+}
+
+.attack-graph-grid {
+  background-image: 
+    linear-gradient(rgba(30, 41, 59, 0.3) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 41, 59, 0.3) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.attack-node-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  backdrop-filter: blur(8px);
+}
+
+.attack-node-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
+/* ========================================================================= */
+/* LIVE TERMINAL TELEMETRY STREAM                                            */
+/* ========================================================================= */
+.terminal-stream-box {
+  background: #050810;
+  border: 1px solid #1a2333;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+.terminal-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.125rem 0;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.2);
+}
+
+.terminal-line:hover {
+  background: rgba(30, 41, 59, 0.4);
+}
+
+.terminal-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  background: var(--accent-cyan);
+  vertical-align: middle;
+  animation: terminal-blink 1s infinite;
+}
+
+@keyframes terminal-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-cursor {
+    animation: none;
+    opacity: 1;
+  }
 }
