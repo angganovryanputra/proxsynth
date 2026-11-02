@@ -127,3 +127,4 @@ class InMemoryRequestCache:
 
 # Global singleton instance
 http_cache = InMemoryRequestCache()
+
