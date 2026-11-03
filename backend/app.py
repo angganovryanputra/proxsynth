@@ -9,9 +9,10 @@ import json
 import asyncio
 import time
 import secrets
+import hashlib
 import warnings
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 
 warnings.filterwarnings("ignore", message=r".*eof_received.*")
 warnings.filterwarnings("ignore", message=r".*Duplicate Operation ID.*")
@@ -104,6 +105,15 @@ def record_idempotency_result(key: str, result: Any):
     if key in _IDEMPOTENCY_STORE:
         _IDEMPOTENCY_STORE[key]["status"] = "succeeded"
         _IDEMPOTENCY_STORE[key]["result"] = result
+
+
+def get_payload_hash(obj: Any) -> str:
+    """Computes SHA-256 hash of a Pydantic model or request dictionary."""
+    try:
+        raw = json.dumps(obj.dict() if hasattr(obj, "dict") else obj, sort_keys=True)
+    except Exception:
+        raw = str(obj)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -1162,8 +1172,20 @@ def list_fuzzer_payloads():
 
 
 @app.post("/api/fuzzer/run")
-async def run_fuzzer_attack_endpoint(req: RunFuzzRequest, db: Session = Depends(get_db)):
+async def run_fuzzer_attack_endpoint(req: RunFuzzRequest, request: Request, db: Session = Depends(get_db)):
     """Executes multi-threaded parameter fuzzing with automated baseline differential analysis."""
+    idempotency_key = request.headers.get("idempotency-key")
+    if idempotency_key:
+        payload_hash = get_payload_hash(req)
+        is_dup, prev_result = check_idempotency_key(idempotency_key, payload_hash)
+        if is_dup:
+            if prev_result == "IN_PROGRESS":
+                raise HTTPException(status_code=409, detail="A request with this Idempotency-Key is currently in progress")
+            elif prev_result == "PAYLOAD_MISMATCH":
+                raise HTTPException(status_code=422, detail="Idempotency-Key reuse with conflicting request payload")
+            else:
+                return prev_result
+
     import re
     clean_url = re.sub(r"§[^§]*§", "", req.url)
     is_allowed, block_reason = await async_check_scope(req.project, clean_url, db)
@@ -1199,6 +1221,8 @@ async def run_fuzzer_attack_endpoint(req: RunFuzzRequest, db: Session = Depends(
         "total": results.get("total_payloads", 0),
         "anomalies": results.get("anomalies_detected", 0)
     })
+    if idempotency_key:
+        record_idempotency_result(idempotency_key, results)
     return results
 
 
@@ -3920,28 +3944,44 @@ class CampaignRunRequest(BaseModel):
 
 
 @app.post("/api/campaign/run")
-async def run_campaign_endpoint(req: CampaignRunRequest, db: Session = Depends(get_db)):
+async def run_campaign_endpoint(req: CampaignRunRequest, request: Request, db: Session = Depends(get_db)):
     """Executes full autonomous unified security campaign pipeline (Classic Pipeline or Cognitive Hexagon)."""
+    idempotency_key = request.headers.get("idempotency-key")
+    if idempotency_key:
+        payload_hash = get_payload_hash(req)
+        is_dup, prev_result = check_idempotency_key(idempotency_key, payload_hash)
+        if is_dup:
+            if prev_result == "IN_PROGRESS":
+                raise HTTPException(status_code=409, detail="A request with this Idempotency-Key is currently in progress")
+            elif prev_result == "PAYLOAD_MISMATCH":
+                raise HTTPException(status_code=422, detail="Idempotency-Key reuse with conflicting request payload")
+            else:
+                return prev_result
+
     proj = req.project.strip().lower()
 
     if req.engine == "hexagon":
         from backend.cognitive_hexagon import run_cognitive_hexagon_campaign
-        return await run_cognitive_hexagon_campaign(
+        res = await run_cognitive_hexagon_campaign(
             target_url=req.target_url,
             project=proj,
             max_steps=req.max_steps or 5
         )
+    else:
+        from backend.campaign_orchestrator import run_autonomous_security_campaign
+        res = await run_autonomous_security_campaign(
+            target_url=req.target_url,
+            modes=req.modes,
+            project=proj,
+            max_pages=req.max_pages,
+            deep_verify=req.deep_verify,
+            ports_profile=req.ports_profile,
+            enable_spa=req.enable_spa
+        )
 
-    from backend.campaign_orchestrator import run_autonomous_security_campaign
-    return await run_autonomous_security_campaign(
-        target_url=req.target_url,
-        modes=req.modes,
-        project=proj,
-        max_pages=req.max_pages,
-        deep_verify=req.deep_verify,
-        ports_profile=req.ports_profile,
-        enable_spa=req.enable_spa
-    )
+    if idempotency_key:
+        record_idempotency_result(idempotency_key, res)
+    return res
 
 
 class NetworkScanRequest(BaseModel):

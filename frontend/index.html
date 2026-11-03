@@ -1876,9 +1876,26 @@
                             title="Copy Response Body">Copy</button>
                         </div>
                       </div>
+
+                      <!-- Search In Response Body Bar -->
+                      <div class="flex items-center space-x-2 bg-[#090D16] border border-[#1E293B] rounded px-2.5 py-1 text-xs">
+                        <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 shrink-0"></i>
+                        <input type="text" x-model="responseSearchQuery" placeholder="Search inside response body..."
+                          class="bg-transparent text-slate-200 placeholder-slate-500 text-[11px] focus:outline-none flex-1 font-mono">
+                        <template x-if="responseSearchQuery">
+                          <div class="flex items-center space-x-1.5 text-[10px]">
+                            <span class="px-1.5 py-0.2 rounded bg-sky-950 text-sky-400 border border-sky-800 font-mono font-bold"
+                              x-text="getResponseSearchMatchCount() + ' match' + (getResponseSearchMatchCount() === 1 ? '' : 'es')"></span>
+                            <button @click="responseSearchQuery = ''" class="text-slate-400 hover:text-slate-200" title="Clear search">
+                              <i data-lucide="x" class="w-3 h-3"></i>
+                            </button>
+                          </div>
+                        </template>
+                      </div>
+
                       <div class="bg-[#0B0F17] border border-[#1E293B] rounded-md p-3 select-text overflow-y-auto whitespace-pre-wrap text-slate-200 font-mono text-xs leading-relaxed"
                         :class="resBodyExpanded ? 'max-h-none' : 'max-h-[600px]'"
-                        x-text="resBodyBeautified ? beautifyText(selectedLogDetail.response_body, null, selectedLogDetail.response_headers) : (selectedLogDetail.response_body || '[Empty Response Body]')">
+                        x-html="getHighlightedResponseBody(selectedLogDetail.response_body, selectedLogDetail.response_headers, resBodyBeautified)">
                       </div>
                     </div>
 
@@ -8466,6 +8483,26 @@
 
           filterLogs() {
             this.filteredLogs = this.logs.filter(log => {
+              // Quick Filter Preset Checks
+              if (this.proxyFilterPreset === 'in_scope') {
+                if (log.flag_status === 'BLOCKED') return false;
+                if (log.in_scope === false) return false;
+              } else if (this.proxyFilterPreset === 'api') {
+                const reqH = typeof log.request_headers === 'string' ? log.request_headers : JSON.stringify(log.request_headers || {});
+                const resH = typeof log.response_headers === 'string' ? log.response_headers : JSON.stringify(log.response_headers || {});
+                const isJson = reqH.toLowerCase().includes('application/json') ||
+                               resH.toLowerCase().includes('application/json') ||
+                               (log.path && (log.path.toLowerCase().includes('/api') || log.path.toLowerCase().includes('.json')));
+                if (!isJson) return false;
+              } else if (this.proxyFilterPreset === 'errors') {
+                const sc = log.status_code;
+                if (!sc || sc < 400) return false;
+              } else if (this.proxyFilterPreset === 'hide_static') {
+                const p = (log.path || '').toLowerCase().split('?')[0];
+                const staticExts = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.css', '.js', '.woff', '.woff2', '.ttf', '.eot', '.map'];
+                if (staticExts.some(ext => p.endsWith(ext))) return false;
+              }
+
               // Global text search query
               if (this.searchQuery) {
                 const q = this.searchQuery.toLowerCase();
@@ -8515,8 +8552,9 @@
                 else if (fs === '3xx' && (sc < 300 || sc >= 400)) return false;
                 else if (fs === '4xx' && (sc < 400 || sc >= 500)) return false;
                 else if (fs === '5xx' && (sc < 500 || sc >= 600)) return false;
-                else if (fs === 'ERR' && (sc !== null && sc !== 0 && sc !== undefined)) return false;
-                else if (!isNaN(parseInt(fs)) && sc !== parseInt(fs)) return false;
+                else if (fs === '4xx/5xx' && (sc < 400 || sc >= 600)) return false;
+                else if (fs === 'ERR' && (sc !== null && sc !== 0 && sc !== undefined && sc < 400)) return false;
+                else if (/^\d+$/.test(fs.trim()) && sc !== parseInt(fs.trim(), 10)) return false;
               }
 
               // Column 4: Host Filter
@@ -9181,15 +9219,6 @@
             if (preset === 'all') {
               this.searchQuery = '';
               this.clearAllColFilters();
-            } else if (preset === 'in_scope') {
-              this.colFilters.flag = 'ALL';
-              this.searchQuery = '';
-            } else if (preset === 'api') {
-              this.searchQuery = 'json';
-            } else if (preset === 'errors') {
-              this.colFilters.status = '4xx/5xx';
-            } else if (preset === 'hide_static') {
-              this.searchQuery = '!(\.png|\.jpg|\.css|\.js|\.ico|\.woff)';
             }
             this.filterLogs();
           },
@@ -10805,6 +10834,48 @@
               return this.beautifyForm(content);
             }
             return content;
+          },
+
+          escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#039;');
+          },
+
+          getResponseSearchMatchCount() {
+            if (!this.responseSearchQuery || !this.selectedLogDetail?.response_body) return 0;
+            const content = this.resBodyBeautified ? 
+              this.beautifyText(this.selectedLogDetail.response_body, null, this.selectedLogDetail.response_headers) : 
+              this.selectedLogDetail.response_body;
+            try {
+              const escaped = this.responseSearchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const matches = content.match(new RegExp(escaped, 'gi'));
+              return matches ? matches.length : 0;
+            } catch (e) {
+              return 0;
+            }
+          },
+
+          getHighlightedResponseBody(body, headers, isBeautified) {
+            let content = isBeautified ? this.beautifyText(body, null, headers) : (body || '[Empty Response Body]');
+            if (!content || content === '[Empty Response Body]') {
+              return '<span class="text-slate-500 italic">[Empty Response Body]</span>';
+            }
+            const safeContent = this.escapeHtml(content);
+            if (!this.responseSearchQuery) {
+              return safeContent;
+            }
+            try {
+              const escaped = this.responseSearchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const regex = new RegExp(`(${escaped})`, 'gi');
+              return safeContent.replace(regex, '<mark class="bg-amber-400/30 text-amber-200 px-0.5 rounded font-bold border-b border-amber-400">$1</mark>');
+            } catch (e) {
+              return safeContent;
+            }
           },
 
           formatRawHeaders(headers) {

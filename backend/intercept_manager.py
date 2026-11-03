@@ -98,9 +98,8 @@ def pop_intercept_result(intercept_id: str) -> Optional[Dict[str, Any]]:
 DANGEROUS_ROUTE_PATTERNS = [
     r"/(?:auth/)?logout(?:\b|/|\?)",
     r"/(?:auth/)?signout(?:\b|/|\?)",
-    r"/delete-account(?:\b|/|\?)",
-    r"/reset-password(?:\b|/|\?)",
-    r"/reset-db(?:\b|/|\?)",
+    r"/(?:delete|terminate)[-_](?:account|user)(?:\b|/|\?)",
+    r"/reset[-_](?:password|db)(?:\b|/|\?)",
     r"/destroy(?:\b|/|\?)",
     r"/purge(?:\b|/|\?)",
     r"/deactivate(?:\b|/|\?)"
@@ -156,6 +155,7 @@ def _get_project_scope_data(project_name: str, db: Session) -> Optional[Dict[str
         scope_data = {
             "scope_enabled": bool(project.scope_enabled),
             "allow_internal_networks": bool(getattr(project, "allow_internal_networks", False)),
+            "block_dangerous_routes": bool(getattr(project, "block_dangerous_routes", True)),
             "blocked_patterns": blocked_list,
             "allowed_hosts": allowed_list
         }
@@ -201,6 +201,12 @@ def _evaluate_scope_rules(project_name: str, url: str, scope_data: Optional[Dict
         full_path = (parsed.path or "/") + (f"?{parsed.query}" if parsed.query else "")
     except Exception as ex:
         return False, f"Malformed target URL: {str(ex)}"
+
+    # 0. Check Dangerous Route Blacklist (Destructive / Account deletion / Purge routes)
+    if scope_data.get("block_dangerous_routes", True):
+        is_danger, danger_reason = is_dangerous_route(url)
+        if is_danger:
+            return False, f"Blocked by guardrail: {danger_reason}"
 
     # 1. Check Blocked Regex Patterns (Anti-destructive / Out-of-bounds keywords)
     for pattern in scope_data.get("blocked_patterns", []):

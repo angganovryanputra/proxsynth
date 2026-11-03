@@ -454,182 +454,183 @@ async def run_fuzz_attack(
     job_key = f"{project.lower()}_{int(time.time() * 1000)}"
     abort_event = register_fuzzer_job(job_key)
 
-    limits = httpx.Limits(max_keepalive_connections=concurrency, max_connections=concurrency * 2, keepalive_expiry=30.0)
-    async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=20.0, limits=limits, **proxy_kwargs) as client:
-        # 1. Baseline Request
-        try:
-            t0 = time.time()
-            content_bytes = baseline_body.encode("utf-8") if baseline_body else None
-            res = await client.request(
-                method=method,
-                url=baseline_url,
-                headers=baseline_headers,
-                content=content_bytes
-            )
-            dur = int((time.time() - t0) * 1000)
-            baseline_result = {
-                "status_code": res.status_code,
-                "length": len(res.content),
-                "duration_ms": dur,
-                "response_body_preview": res.text[:500] if res.text else ""
-            }
-        except Exception as ex:
-            baseline_result["error"] = str(ex)
-
-        # 2. Concurrently execute attacks
-        async def _fuzz_worker(index: int, payload: str):
-            if abort_event.is_set():
-                return
-            req_url = replace_markers(base_url, payload)
-            req_body = replace_markers(body, payload)
-            req_headers = {k: replace_markers(str(v), payload) for k, v in headers.items()}
-            apply_rotating_user_agent(req_headers)
-
-            async with sem:
+    try:
+        limits = httpx.Limits(max_keepalive_connections=concurrency, max_connections=concurrency * 2, keepalive_expiry=30.0)
+        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=20.0, limits=limits, **proxy_kwargs) as client:
+            # 1. Baseline Request
+            try:
+                t0 = time.time()
+                content_bytes = baseline_body.encode("utf-8") if baseline_body else None
+                res = await client.request(
+                    method=method,
+                    url=baseline_url,
+                    headers=baseline_headers,
+                    content=content_bytes
+                )
+                dur = int((time.time() - t0) * 1000)
+                baseline_result = {
+                    "status_code": res.status_code,
+                    "length": len(res.content),
+                    "duration_ms": dur,
+                    "response_body_preview": res.text[:500] if res.text else ""
+                }
+            except Exception as ex:
+                baseline_result["error"] = str(ex)
+    
+            # 2. Concurrently execute attacks
+            async def _fuzz_worker(index: int, payload: str):
                 if abort_event.is_set():
                     return
-                # Rate Limiting & Anti-Ban Pacing
-                if eff_delay > 0 or eff_jitter > 0:
-                    jit = random.uniform(0, max(0.0, eff_jitter)) if eff_jitter > 0 else 0.0
-                    sleep_time = max(0.0, (eff_delay + jit) / 1000.0)
-                    if sleep_time > 0:
-                        await asyncio.sleep(sleep_time)
-                item = {
-                    "id": index + 1,
-                    "payload": payload,
-                    "status_code": None,
-                    "duration_ms": 0,
-                    "length": 0,
-                    "delta": 0,
-                    "anomalies": [],
-                    "error": None,
-                    "preview": ""
-                }
-                try:
-                    t0 = time.time()
-                    b_bytes = req_body.encode("utf-8") if req_body else None
-                    resp = await client.request(
-                        method=method,
-                        url=req_url,
-                        headers=req_headers,
-                        content=b_bytes
-                    )
-                    dur = int((time.time() - t0) * 1000)
-                    resp_len = len(resp.content)
-                    delta = resp_len - baseline_result["length"]
-                    item["status_code"] = resp.status_code
-                    item["duration_ms"] = dur
-                    item["length"] = resp_len
-                    item["delta"] = delta
-                    text = resp.text or ""
-                    item["preview"] = text[:600]
-
-                    # Anomaly Heuristics (delegated to the pure, unit-testable helper)
-                    lower_text = text.lower()
-                    anomalies = detect_anomalies(
-                        payload=payload,
-                        response_text=text,
-                        baseline_text=baseline_result.get("response_body_preview", ""),
-                        status=resp.status_code,
-                        baseline_status=baseline_result["status_code"],
-                        duration_ms=dur,
-                        baseline_duration_ms=baseline_result["duration_ms"],
-                    )
-
-                    # 7. Adaptive WAF Auto-Evasion Engine
-                    if auto_evade_waf and (resp.status_code == 403 or any(w in lower_text for w in ["blocked by cloudflare", "access denied", "waf", "imperva", "security violation"])):
-                        anomalies.append("WAF_BLOCKED")
-                        evasion_variants = generate_waf_evasion_variants(payload)
-                        for ev in evasion_variants:
-                            ev_url = replace_markers(base_url, ev["payload"])
-                            ev_body = replace_markers(body, ev["payload"])
-                            ev_hdrs = dict(req_headers)
-                            ev_hdrs.update(ev.get("headers", {}))
+                req_url = replace_markers(base_url, payload)
+                req_body = replace_markers(body, payload)
+                req_headers = {k: replace_markers(str(v), payload) for k, v in headers.items()}
+                apply_rotating_user_agent(req_headers)
+    
+                async with sem:
+                    if abort_event.is_set():
+                        return
+                    # Rate Limiting & Anti-Ban Pacing
+                    if eff_delay > 0 or eff_jitter > 0:
+                        jit = random.uniform(0, max(0.0, eff_jitter)) if eff_jitter > 0 else 0.0
+                        sleep_time = max(0.0, (eff_delay + jit) / 1000.0)
+                        if sleep_time > 0:
+                            await asyncio.sleep(sleep_time)
+                    item = {
+                        "id": index + 1,
+                        "payload": payload,
+                        "status_code": None,
+                        "duration_ms": 0,
+                        "length": 0,
+                        "delta": 0,
+                        "anomalies": [],
+                        "error": None,
+                        "preview": ""
+                    }
+                    try:
+                        t0 = time.time()
+                        b_bytes = req_body.encode("utf-8") if req_body else None
+                        resp = await client.request(
+                            method=method,
+                            url=req_url,
+                            headers=req_headers,
+                            content=b_bytes
+                        )
+                        dur = int((time.time() - t0) * 1000)
+                        resp_len = len(resp.content)
+                        delta = resp_len - baseline_result["length"]
+                        item["status_code"] = resp.status_code
+                        item["duration_ms"] = dur
+                        item["length"] = resp_len
+                        item["delta"] = delta
+                        text = resp.text or ""
+                        item["preview"] = text[:600]
+    
+                        # Anomaly Heuristics (delegated to the pure, unit-testable helper)
+                        lower_text = text.lower()
+                        anomalies = detect_anomalies(
+                            payload=payload,
+                            response_text=text,
+                            baseline_text=baseline_result.get("response_body_preview", ""),
+                            status=resp.status_code,
+                            baseline_status=baseline_result["status_code"],
+                            duration_ms=dur,
+                            baseline_duration_ms=baseline_result["duration_ms"],
+                        )
+    
+                        # 7. Adaptive WAF Auto-Evasion Engine
+                        if auto_evade_waf and (resp.status_code == 403 or any(w in lower_text for w in ["blocked by cloudflare", "access denied", "waf", "imperva", "security violation"])):
+                            anomalies.append("WAF_BLOCKED")
+                            evasion_variants = generate_waf_evasion_variants(payload)
+                            for ev in evasion_variants:
+                                ev_url = replace_markers(base_url, ev["payload"])
+                                ev_body = replace_markers(body, ev["payload"])
+                                ev_hdrs = dict(req_headers)
+                                ev_hdrs.update(ev.get("headers", {}))
+                                try:
+                                    ev_resp = await client.request(
+                                        method=method,
+                                        url=ev_url,
+                                        headers=ev_hdrs,
+                                        content=ev_body.encode("utf-8") if ev_body else None
+                                    )
+                                    if ev_resp.status_code != 403 and ev_resp.status_code != resp.status_code and ev_resp.status_code < 400:
+                                        anomalies.append(f"WAF_BYPASS_CONFIRMED_{ev['type']}")
+                                        item["evasion_success"] = {
+                                            "technique": ev["type"],
+                                            "evasion_payload": ev["payload"],
+                                            "status_code": ev_resp.status_code
+                                        }
+                                        break
+                                except Exception:
+                                    pass
+    
+                        item["anomalies"] = anomalies
+    
+                        if anomalies:
                             try:
-                                ev_resp = await client.request(
-                                    method=method,
-                                    url=ev_url,
-                                    headers=ev_hdrs,
-                                    content=ev_body.encode("utf-8") if ev_body else None
-                                )
-                                if ev_resp.status_code != 403 and ev_resp.status_code != resp.status_code and ev_resp.status_code < 400:
-                                    anomalies.append(f"WAF_BYPASS_CONFIRMED_{ev['type']}")
-                                    item["evasion_success"] = {
-                                        "technique": ev["type"],
-                                        "evasion_payload": ev["payload"],
-                                        "status_code": ev_resp.status_code
-                                    }
-                                    break
+                                from backend.forward_proxy import _dispatch_log
+                                from backend.database import SessionLocal, CapturedPayload
+                                import urllib.parse
+                                parsed_fz = urllib.parse.urlparse(req_url)
+                                is_critical = any(a in ["SQL_ERROR_LEAK", "SSTI_EVALUATED_49", "SSTI_EVALUATED", "NOSQL_ERROR_LEAK", "CMDI_EVIDENCE"] for a in anomalies)
+                                await _dispatch_log({
+                                    "project": project,
+                                    "agent_id": agent_id,
+                                    "source": "FUZZER",
+                                    "method": method,
+                                    "url": req_url,
+                                    "host": parsed_fz.netloc,
+                                    "path": parsed_fz.path or "/",
+                                    "status_code": resp.status_code,
+                                    "duration_ms": dur,
+                                    "request_headers": req_headers,
+                                    "request_body": req_body,
+                                    "response_headers": dict(resp.headers),
+                                    "response_body": text,
+                                    "reasoning": f"[Parameter Fuzzer Anomaly: {', '.join(anomalies)}] Payload: {payload}",
+                                    "flag_status": "CONFIRMED" if is_critical else "POTENTIAL",
+                                    "finding_title": f"Fuzzing Anomaly Detected: {', '.join(anomalies)}",
+                                    "finding_severity": "HIGH" if is_critical else "MEDIUM",
+                                    "payload_hint": payload
+                                })
+    
+                                # Directly persist to Payload Vault (CapturedPayload)
+                                db = SessionLocal()
+                                try:
+                                    cap = CapturedPayload(
+                                        project=project,
+                                        agent_id=agent_id,
+                                        vuln_type=payload_type.upper() if payload_type else "CUSTOM",
+                                        target_param="fuzzy_parameter",
+                                        raw_payload=payload,
+                                        mutation_type="FUZZ_ANOMALY",
+                                        target_url=req_url,
+                                        http_method=method,
+                                        outcome="ANOMALY",
+                                        http_status=resp.status_code,
+                                        response_signature=",".join(anomalies)[:255],
+                                        notes=f"Detected anomaly: {', '.join(anomalies)} (Status: {resp.status_code})"
+                                    )
+                                    db.add(cap)
+                                    db.commit()
+                                    db.refresh(cap)
+                                    item["captured_payload_id"] = cap.id
+                                finally:
+                                    db.close()
                             except Exception:
-                                pass
-
-                    item["anomalies"] = anomalies
-
-                    if anomalies:
-                        try:
-                            from backend.forward_proxy import _dispatch_log
-                            from backend.database import SessionLocal, CapturedPayload
-                            import urllib.parse
-                            parsed_fz = urllib.parse.urlparse(req_url)
-                            is_critical = any(a in ["SQL_ERROR_LEAK", "SSTI_EVALUATED_49", "SSTI_EVALUATED", "NOSQL_ERROR_LEAK", "CMDI_EVIDENCE"] for a in anomalies)
-                            await _dispatch_log({
-                                "project": project,
-                                "agent_id": agent_id,
-                                "source": "FUZZER",
-                                "method": method,
-                                "url": req_url,
-                                "host": parsed_fz.netloc,
-                                "path": parsed_fz.path or "/",
-                                "status_code": resp.status_code,
-                                "duration_ms": dur,
-                                "request_headers": req_headers,
-                                "request_body": req_body,
-                                "response_headers": dict(resp.headers),
-                                "response_body": text,
-                                "reasoning": f"[Parameter Fuzzer Anomaly: {', '.join(anomalies)}] Payload: {payload}",
-                                "flag_status": "CONFIRMED" if is_critical else "POTENTIAL",
-                                "finding_title": f"Fuzzing Anomaly Detected: {', '.join(anomalies)}",
-                                "finding_severity": "HIGH" if is_critical else "MEDIUM",
-                                "payload_hint": payload
-                            })
-
-                            # Directly persist to Payload Vault (CapturedPayload)
-                            db = SessionLocal()
-                            try:
-                                cap = CapturedPayload(
-                                    project=project,
-                                    agent_id=agent_id,
-                                    vuln_type=payload_type.upper() if payload_type else "CUSTOM",
-                                    target_param="fuzzy_parameter",
-                                    raw_payload=payload,
-                                    mutation_type="FUZZ_ANOMALY",
-                                    target_url=req_url,
-                                    http_method=method,
-                                    outcome="ANOMALY",
-                                    http_status=resp.status_code,
-                                    response_signature=",".join(anomalies)[:255],
-                                    notes=f"Detected anomaly: {', '.join(anomalies)} (Status: {resp.status_code})"
-                                )
-                                db.add(cap)
-                                db.commit()
-                                db.refresh(cap)
-                                item["captured_payload_id"] = cap.id
-                            finally:
-                                db.close()
-                        except Exception:
-                            from mcp_core import diag
-                            diag.exc("fuzzer: anomaly logging / Payload Vault persistence failed")
-                except Exception as e:
-                    item["error"] = str(e)
-                    item["anomalies"] = ["TRANSPORT_ERROR"]
-
-                results.append(item)
-
-        tasks = [_fuzz_worker(i, p) for i, p in enumerate(payloads)]
-        await asyncio.gather(*tasks)
-
-    was_aborted = abort_event.is_set()
-    unregister_fuzzer_job(job_key)
+                                from mcp_core import diag
+                                diag.exc("fuzzer: anomaly logging / Payload Vault persistence failed")
+                    except Exception as e:
+                        item["error"] = str(e)
+                        item["anomalies"] = ["TRANSPORT_ERROR"]
+    
+                    results.append(item)
+    
+            tasks = [_fuzz_worker(i, p) for i, p in enumerate(payloads)]
+            await asyncio.gather(*tasks)
+    finally:
+        was_aborted = abort_event.is_set()
+        unregister_fuzzer_job(job_key)
 
     # Sort results by ID
     results.sort(key=lambda x: x["id"])
