@@ -68,6 +68,7 @@ TOOL_PERMS: Dict[str, Dict[str, Any]] = {
     "test_bola_idor": {"read_only": False, "destructive": True, "category": "bola"},
     "get_bola_access_matrix": {"read_only": True, "destructive": False, "category": "bola"},
     "run_bola_matrix_scan": {"read_only": False, "destructive": True, "category": "bola"},
+    "run_two_tier_access_control_orchestrator": {"read_only": False, "destructive": False, "category": "authz"},
 
     # 7. API, GraphQL & WebSocket (6 tools)
     "inspect_graphql_endpoint": {"read_only": False, "destructive": False, "category": "graphql"},

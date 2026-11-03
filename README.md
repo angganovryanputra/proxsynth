@@ -5,11 +5,12 @@
 
 [![Release](https://img.shields.io/badge/Release-v0.2.0--beta-orange.svg)](#-overview)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
-[![FastMCP Tools](https://img.shields.io/badge/FastMCP%20Tools-97%20Registered%20(Full%20Mode)-8b5cf6.svg)](#-complete-fastmcp-tools-reference-97-tools)
+[![FastMCP Tools](https://img.shields.io/badge/FastMCP%20Tools-98%20Registered%20(Full%20Mode)-8b5cf6.svg)](#-complete-fastmcp-tools-reference-98-tools)
 [![Dual Mode](https://img.shields.io/badge/Dual--Mode-Power%20Mode%20(11%20Tools%20%7C%2087.5%25%20Token%20Cut)-10b981.svg)](#-dual-mode-fastmcp-registry-power-mode-vs-full-mode)
+[![Two-Tier Orchestrator](https://img.shields.io/badge/Access%20Control-Two--Tier%20Orchestrator%20(3--Way%20Swap)-ec4899.svg)](#-two-tier-hybrid-access-control--business-logic-orchestrator)
 [![FastAPI](https://img.shields.io/badge/FastAPI-High%20Performance-009688.svg)](https://fastapi.tiangolo.com)
 [![Auto-Pilot](https://img.shields.io/badge/Auto--Pilot-7--Phase%20Closed%20Loop-e11d48.svg)](#1-autonomous-closed-loop-auto-pilot-state-machine)
-[![Worker Swarm](https://img.shields.io/badge/Worker%20Swarm-Distributed%20Multi--Agent-f59e0b.svg)](#2-distributed-multi-agent-swarm-worker-pool)
+[![Worker Swarm](https://img.shields.io/badge/Worker%20Swarm-Distributed%20%2B%20Adaptive%20Rate%20Limit-f59e0b.svg)](#2-distributed-multi-agent-swarm-worker-pool)
 [![In-House OAST](https://img.shields.io/badge/In--House%20OAST-HTTP%20%7C%20DNS%20%3A5353%20%7C%20LDAP%20%3A1390-38bdf8.svg)](#3-in-house-out-of-band-oast-listener--webhook-dispatcher)
 [![WAF Auto-Heal](https://img.shields.io/badge/Proxy%20Auto--Heal-X--Proxsynth--AutoHealed-a855f7.svg)](#6-dynamic-waf-evasion--rate-limit-backoff-in-forward-proxy-8088)
 [![CLI Wrappers](https://img.shields.io/badge/CLI%20Wrappers-proxsynth--exec-0ea5e9.svg)](#-agentic-cli-execution-wrappers-proxsynth-exec)
@@ -51,7 +52,7 @@ Traditional penetration testing proxies (*Burp Suite*, *Caido*, *mitmproxy*, *OW
  │  ┌──────────────────────────────────────────┐┌─────────────────────────────┐  │
  │  │      FastMCP Dual-Mode Tool Registry     ││      Forward MITM Proxy     │  │
  │  │ - Power Mode: 11 Consolidated Meta-Tools ││ - Port 8088 (TLS MITM)      │  │
- │  │ - Full Mode: 97 Modular Granular Tools   ││ - Dynamic WAF Evasion       │  │
+ │  │ - Full Mode: 98 Modular Granular Tools   ││ - Dynamic WAF Evasion       │  │
  │  │ - FastMCP 2.0+ Standard ToolAnnotations  ││ - Session Auto-Refresher    │  │
  │  └────────────────────┬─────────────────────┘└──────────────┬──────────────┘  │
  │                       │                                     │                 │
@@ -240,6 +241,7 @@ For large attack surfaces with multiple root domains or dozens of subdomains, Pr
 * **Concurrent Worker Architecture:** Manages an asynchronous queue (`asyncio.Queue`) distributing targets across N parallel workers (configurable concurrency from 1 to 10).
 * **Shared State Deduplication:** Centralized locking prevents duplicate crawling or redundant fuzzing across overlapping assets.
 * **Real-Time Telemetry:** Streams per-worker progress, targets, and discovery metrics over WebSocket (`/ws/terminal`) to the SOC Console.
+* **Adaptive Domain Token-Bucket Rate Limiter:** Built-in `AdaptiveDomainRateLimiter` (`backend/adaptive_limiter.py`) dynamically governs worker concurrency per target domain. Automatically backs off on HTTP 429 / 503 responses with exponential jitter, preventing WAF IP bans during heavy swarm audits.
 
 ---
 
@@ -325,10 +327,11 @@ Rather than spraying generic fuzz lists, Proxsynth utilizes **Target Context-Awa
 
 ---
 
-### 9. Deep AST Inline Script Ingestion
+### 9. Deep AST Inline Script Ingestion & Kernel-Event Workspace Watchdog
 * **Modules:** [`backend/payload_vault.py`](file:///D:/0x13%20PROJECT/Proxsynth/backend/payload_vault.py) & [`backend/script_snooper.py`](file:///D:/0x13%20PROJECT/Proxsynth/backend/script_snooper.py)
 
 Autonomous agents frequently write custom Python, Bash, or Node scripts to test endpoints. Proxsynth captures these payloads automatically without requiring manual registration:
+* **Real-Time Kernel Watchdog (`watchdog`):** `WorkspaceKernelWatcher` leverages OS-level file system notifications (`FileSystemEventHandler`) to detect and parse newly created/modified test scripts (`.py`, `.js`, `.sh`, `.ps1`) in the workspace the instant the LLM writes them.
 * **Inline Shell Command Parsing:** Intercepts inline executions such as:
   ```bash
   python -c "import requests; requests.post('http://target/api', data={'user': 'admin\'--'})"
@@ -338,12 +341,50 @@ Autonomous agents frequently write custom Python, Bash, or Node scripts to test 
 
 ---
 
-### 10. Autonomous Multi-Step Exploit Chainer & Wildcard Scope Recon
-* **Modules:** [`backend/exploit_chainer.py`](file:///D:/0x13%20PROJECT/Proxsynth/backend/exploit_chainer.py) & [`backend/scope_recon.py`](file:///D:/0x13%20PROJECT/Proxsynth/backend/scope_recon.py)
+### 10. Autonomous Multi-Step Exploit Chainer & Multi-Step Nuclei Exporter
+* **Modules:** [`backend/exploit_chainer.py`](file:///D:/0x13%20PROJECT/Proxsynth/backend/exploit_chainer.py), [`backend/nuclei_exporter.py`](file:///D:/0x13%20PROJECT/Proxsynth/backend/nuclei_exporter.py), & [`backend/scope_recon.py`](file:///D:/0x13%20PROJECT/Proxsynth/backend/scope_recon.py)
 
 * **SSRF ➔ Cloud Metadata Pivot:** Automatically constructs probes targeting AWS IMDSv1 (`http://169.254.169.254/latest/meta-data/iam/security-credentials/`), GCP Metadata (`metadata.google.internal`), Azure IMDS, and internal microservices.
-* **BOLA/IDOR ➔ Privilege Escalation:** Tests administrative ID swap (`0`, `1`, `admin`) and role manipulation (`{"role": "admin"}`).
+* **Multi-Step Nuclei Template Exporter:** Generates complex, multi-request ProjectDiscovery Nuclei v2/v3 templates (`generate_multistep_nuclei_template()`) that extract dynamic session tokens, CSRF tokens, or object IDs from Step 1 (`internal: true`) and interpolate them into subsequent exploit steps using `{{token}}` variables.
 * **Wildcard Recon & CNAME Takeover:** Queries `crt.sh` and tests DNS CNAME entries for dangling cloud resources (AWS S3 `NoSuchBucket`, Heroku `No such app`, Azure `404 Web Site not found`, Shopify).
+
+---
+
+### 11. Two-Tier Hybrid Access Control & Business Logic Orchestrator
+* **Module:** [`backend/access_control_orchestrator.py`](file:///D:/0x13%20PROJECT/Proxsynth/backend/access_control_orchestrator.py)
+* **FastMCP Tools:** `run_two_tier_access_control_orchestrator` / `manage_session_vault(action="audit_access_matrix")`
+
+Solves the critical problem of broken access control (BOLA, BFLA, Broken ACL, and Unauthenticated endpoints) and business logic flaws without requiring manual script orchestration:
+
+```text
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │                   TIER 1: HEURISTIC AUDIT PLANNER                      │
+  │  - Discovers candidate routes from HttpLog & OpenAPI schema             │
+  │  - Classifies endpoints: BOLA_CANDIDATE, BFLA_ADMIN, BUSINESS_LOGIC     │
+  └───────────────────────────────────┬────────────────────────────────────┘
+                                      │
+                                      ▼
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │               DETERMINISTIC 3-WAY REPLAY & STATE DIFF                  │
+  │  1. Baseline Replay (User A credentials)                               │
+  │  2. Swapped Identity Replay (User B credentials)                       │
+  │  3. Unauthenticated Replay (Stripped Auth headers / cookies)           │
+  │  - Calculates Structural Similarity & Soft-Error / Generic 200 Deltas   │
+  │  - Secondary State Re-Verification (Confirms state persistence)        │
+  └───────────────────────────────────┬────────────────────────────────────┘
+                                      │
+                                      ▼
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │                 TIER 2: COGNITIVE ANOMALY EVALUATOR                    │
+  │  - Evaluates anomalies, eliminates false positives, assigns CWE & CVSS │
+  │  - Auto-commits verified findings to database                          │
+  │  - Synthesizes 1-click multi-step Nuclei exploit templates             │
+  └────────────────────────────────────────────────────────────────────────┘
+```
+
+* **Automated 3-Way Identity Swapping:** Automatically compares the response of User A (victim), User B (attacker/swapped), and Anonymous (unauthenticated) to pinpoint unauthorized data disclosures and privileged actions.
+* **Soft Error & SPA 200 OK Detection:** Avoids naive HTTP 200 false positives by evaluating response body content length, structural JSON key similarity, and soft error markers (`access denied`, `unauthorized`, `login required`).
+* **Multi-Step PoC Template Synthesis:** Every confirmed finding automatically synthesizes a reproducible Nuclei YAML template for instant regression verification.
 
 ---
 
@@ -481,6 +522,7 @@ Proxsynth registers **97 FastMCP tools** equipped with standardized `ToolAnnotat
 | 95 | `manage_session_vault` | `session` | No | No | Unified session vault: manages multi-role identities (Attacker, Victim, Admin) and CSRF tokens. |
 | 96 | `manage_oast_and_tunnels` | `oast` | No | No | Unified Out-of-Band operations: sprays canaries, polls HTTP/DNS/LDAP events & manages tunnels. |
 | 97 | `manage_testing_agenda` | `agenda` | No | No | Unified working memory hub: hypothesis tracking, status transitions & agenda synthesis. |
+| 98 | `run_two_tier_access_control_orchestrator` | `authz` | No | No | Two-Tier Orchestrator: automated candidate discovery, 3-way identity replay (User A vs User B vs Unauth), secondary state verification, and Nuclei PoC export. |
 
 </details>
 

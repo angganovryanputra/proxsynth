@@ -642,7 +642,7 @@ async def manage_interception_rules(
 # ==============================================================================
 @proxsynth_tool(name="manage_session_vault")
 async def manage_session_vault(
-    action: Literal["get_csrf", "set_csrf", "clear_csrf", "set_role_session", "list_identities", "get_identities"] = "get_csrf",
+    action: Literal["get_csrf", "set_csrf", "clear_csrf", "set_role_session", "list_identities", "get_identities", "audit_access_matrix", "audit_access_control"] = "get_csrf",
     domain: Optional[str] = None,
     role: str = "primary",
     token_name: Optional[str] = None,
@@ -714,6 +714,25 @@ async def manage_session_vault(
             return json.dumps({"status": "SUCCESS", "role": role, "domain": domain}, indent=2)
         finally:
             db.close()
+
+    elif action in ["audit_access_matrix", "audit_access_control"]:
+        from backend.access_control_orchestrator import AccessControlOrchestrator
+        target_base = domain or "http://127.0.0.1:8000"
+        if "://" not in target_base:
+            target_base = f"https://{target_base}"
+
+        sess_a = {"token": token_value, "raw_cookie_str": cookies}
+        sess_b = {"token": token_name}
+
+        orchestrator = AccessControlOrchestrator(project=target_project)
+        res = await orchestrator.execute_full_campaign(
+            target_base=target_base,
+            session_a=sess_a,
+            session_b=sess_b,
+            test_unauthenticated=True,
+            export_nuclei=True
+        )
+        return json.dumps(res, indent=2)
 
     return json.dumps({"status": "FAILED", "error": f"Unknown action '{action}'"})
 

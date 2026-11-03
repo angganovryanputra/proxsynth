@@ -266,3 +266,52 @@ async def audit_numeric_business_logic(
     proj = _resolve_project(project, allow_all=False)
     res = await audit_numeric_business_logic(log_id=log_id, target_param=target_param, project=proj)
     return json.dumps(res, indent=2)
+
+
+@proxsynth_tool(name="run_two_tier_access_control_orchestrator")
+async def run_two_tier_access_control_orchestrator(
+    target_base: str,
+    token_a: Optional[str] = None,
+    token_b: Optional[str] = None,
+    cookies_a: Optional[str] = None,
+    cookies_b: Optional[str] = None,
+    auth_headers_a: Optional[Dict[str, str]] = None,
+    auth_headers_b: Optional[Dict[str, str]] = None,
+    endpoints: Optional[List[Dict[str, Any]]] = None,
+    project: Optional[str] = None,
+    test_unauthenticated: bool = True,
+    export_nuclei: bool = True
+) -> str:
+    """
+    [AUTONOMOUS: HIGH-LEVERAGE TWO-TIER ORCHESTRATOR]
+    Executes the comprehensive Two-Tier Access Control & Business Logic Orchestrator:
+    - Tier 1: Maps target endpoints, classifies sensitivity (BOLA, BFLA, Logic Flaws, Public).
+    - Deterministic Core: Executes 3-Way Replay (Original Token A, Swapped Token B, Stripped No-Auth),
+      computes semantic structural diff, detects soft-errors, and verifies state mutations.
+    - Tier 2: Evaluates anomalies, eliminates false positives, persists confirmed findings to database,
+      and automatically synthesizes reproducible ProjectDiscovery Nuclei YAML templates.
+    """
+    from backend.access_control_orchestrator import AccessControlOrchestrator
+    proj = _resolve_project(project, allow_all=False)
+
+    sess_a = {
+        "token": token_a,
+        "raw_cookie_str": cookies_a,
+        "auth_headers": auth_headers_a or {}
+    }
+    sess_b = {
+        "token": token_b,
+        "raw_cookie_str": cookies_b,
+        "auth_headers": auth_headers_b or {}
+    }
+
+    orchestrator = AccessControlOrchestrator(project=proj)
+    res = await orchestrator.execute_full_campaign(
+        target_base=target_base,
+        session_a=sess_a,
+        session_b=sess_b,
+        endpoints=endpoints,
+        test_unauthenticated=test_unauthenticated,
+        export_nuclei=export_nuclei
+    )
+    return json.dumps(res, indent=2)

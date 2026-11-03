@@ -3,7 +3,7 @@
 
 > **Release Version**: `v0.2.0-beta` (Autonomous Cognitive Testing Release)  
 > **Protocol**: Model Context Protocol (FastMCP 2.0+)  
-> **Registered Tools**: **97 Active FastMCP Security Tools (Full Mode) | 11 High-Leverage Meta-Tools (Power Mode ~87.5% Token Reduction)**  
+> **Registered Tools**: **98 Active FastMCP Security Tools (Full Mode) | 11 High-Leverage Meta-Tools (Power Mode ~87.5% Token Reduction)**  
 > **Default Ports**: FastAPI Dashboard & API `:8000` | Forward Interception Proxy `:8088` | DNS OAST `:5353` | LDAP OAST `:1390`  
 
 This operational document specifies how autonomous AI agents interface with the **Proxynth Security Testing Gateway**, autonomously navigate attack surfaces across Web, REST/GraphQL APIs, and Network Infrastructure, make deterministic testing decisions, and execute zero-human-intervention security campaigns.
@@ -258,10 +258,12 @@ If executing independently, the agent must evaluate the following deterministic 
     Passive compliance analyzer providing objective 0–100 scores, letter grades (A+ to F), and SARIF 2.1.0 exports.
 20. **Transparent Runtime Auto-Enforcement (`sitecustomize.py`)**:
     Intercepts and decrypts all Python subprocess network traffic through port 8088 without manual proxy configuration.
+21. **Two-Tier Hybrid Access Control & Business Logic Orchestrator (`run_two_tier_access_control_orchestrator`)**:
+    End-to-end autonomous engine for BOLA/IDOR, BFLA, Broken ACL, and Business Logic flaws. Automatically categorizes endpoints into testing profiles (Tier 1), executes deterministic 3-way replays (User A baseline, User B swapped, Unauthenticated stripped), checks secondary state persistence, filters soft-error / generic 200 false positives via structural JSON similarity (Tier 2), commits confirmed findings with CVSS v4.0 / CWE, and synthesizes reproducible multi-step Nuclei exploit YAML templates.
 
 ---
 
-## 5. Complete 97 FastMCP Tools Reference Specification (Full Mode)
+## 5. Complete 98 FastMCP Tools Reference Specification (Full Mode)
 
 | # | Tool Name | Subsystem | Key Arguments | Description |
 | :---: | :--- | :--- | :--- | :--- |
@@ -362,6 +364,7 @@ If executing independently, the agent must evaluate the following deterministic 
 | **95** | `export_nuclei_template` | Template Exporter | `finding_id`, `payload_id` | Exports verified finding or payload to standard ProjectDiscovery Nuclei v2/v3 YAML. |
 | **96** | `configure_session_refresher` | Session Refresher | `domain`, `login_url`, `payload` | Configures automated login recipe for transparent 401 re-authentication in proxy. |
 | **97** | `test_session_refresh` | Session Refresher | `domain`, `project` | Tests re-authentication recipe to verify credential extraction and token refresh. |
+| **98** | `run_two_tier_access_control_orchestrator` | Access Control | `project`, `user_a_role`, `user_b_role`, `auto_exploit` | End-to-end 3-way identity swapping, anomaly evaluation, secondary state verification, and Nuclei PoC export for BOLA, BFLA, and Broken ACL. |
 
 ---
 
@@ -390,3 +393,47 @@ graph TD
    For uncovered endpoints, check the `suggested_next_actions` from `send_http_request` or call `get_autonomous_attack_guidance(project="...")` to prioritize testing high-risk business logic and access control boundaries.
 4. **Deterministic Verification & Deliverables:**
    Pass candidates to `verify_vulnerability_candidate` to eliminate false positives. Finally, generate standalone exploit scripts with `generate_exploit_poc` and automated regression templates with `generate_nuclei_template`.
+
+
+## 7. Two-Tier Access Control & Multi-Privilege Autonomous Playbook
+
+When an operator provides a target prompt containing multiple credentials (e.g., User A vs User B, or Admin vs Regular User) or requests auditing for **Broken Access Control, BOLA/IDOR, BFLA, or Business Logic Flaws**, agents MUST follow this playbook:
+
+### Step 1: Register Multi-Role Sessions
+First, register both identities into the Proxynth Session Vault:
+```python
+# Register User A (e.g. Regular User / Victim)
+manage_session_vault(action="set_session", domain="target.com", role="user_a", headers={"Authorization": "Bearer <user_a_token>"})
+
+# Register User B (e.g. Attacker / Second Tenant or Admin)
+manage_session_vault(action="set_session", domain="target.com", role="user_b", headers={"Authorization": "Bearer <user_b_token>"})
+```
+
+### Step 2: Trigger the Two-Tier Orchestrator
+Execute the complete two-tier audit loop with one tool call:
+```python
+# Full Mode Tool:
+run_two_tier_access_control_orchestrator(
+    project="client-alpha",
+    user_a_role="user_a",
+    user_b_role="user_b",
+    auto_exploit=True
+)
+
+# Power Mode Meta-Tool:
+manage_session_vault(
+    action="audit_access_matrix",
+    project="client-alpha",
+    role="user_a"
+)
+```
+
+### Step 3: What the Engine Executes Autonomously
+1. **Tier 1 Heuristic Profiler:** Mines observed `HttpLogs` and OpenAPI specs for IDOR identifiers (`/api/users/{id}`, `?account_id=`), privileged function routes (`/admin`, `/roles`, `DELETE`), and business logic parameters (`price`, `quantity`, `status`).
+2. **Deterministic 3-Way Replay:**
+   - **Baseline:** Executes request with User A's identity to record the authorized baseline.
+   - **Swapped Identity:** Replaces headers/cookies with User B's identity to test horizontal privilege escalation (BOLA) or vertical privilege escalation (BFLA).
+   - **Unauthenticated Probe:** Strips all auth headers and cookies to test unauthenticated access to the endpoint.
+3. **Secondary State Verification:** For mutation endpoints (POST/PUT/PATCH/DELETE), re-queries the resource with a GET request to verify whether unauthorized state changes actually persisted on the server.
+4. **Tier 2 Anomaly Evaluator:** Analyzes status codes, structural response key similarity (Jaccard similarity on JSON schemas), and soft-error indicators (e.g., 200 OK containing "access denied") to eliminate false positives.
+5. **Finding & Nuclei Generation:** Automatically commits confirmed findings to the SQLite database with CVSS v4.0 scores, CWE identifiers, and synthesizes ready-to-run multi-step Nuclei exploit templates.
