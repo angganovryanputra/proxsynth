@@ -19,6 +19,28 @@ POWER_MODE_TOOLS: Set[str] = {
     "manage_testing_agenda",
     "run_autonomous_autopilot",
     "run_autopilot_swarm",
+    # 6 Cognitive Pentest Hexagon Super-Tools
+    "proxsynth_recon",
+    "proxsynth_traffic",
+    "proxsynth_audit",
+    "proxsynth_session",
+    "proxsynth_verify_and_export",
+    "proxsynth_autonomous_step",
+    # Essential Project Workspace Context & Security Harness Manifest
+    "set_active_project",
+    "get_active_project",
+    "get_tool_harness_manifest",
+}
+
+# Hexagon-Mode Registry: FastMCP Cognitive Pentest Hexagon active tool set (~95% prompt token reduction)
+HEXAGON_MODE_TOOLS: Set[str] = {
+    # 6 Cognitive Pentest Hexagon Super-Tools
+    "proxsynth_recon",
+    "proxsynth_traffic",
+    "proxsynth_audit",
+    "proxsynth_session",
+    "proxsynth_verify_and_export",
+    "proxsynth_autonomous_step",
     # Essential Project Workspace Context & Security Harness Manifest
     "set_active_project",
     "get_active_project",
@@ -156,6 +178,13 @@ TOOL_PERMS: Dict[str, Dict[str, Any]] = {
     "manage_oast_and_tunnels": {"read_only": False, "destructive": False, "category": "oast"},
     "manage_testing_agenda": {"read_only": False, "destructive": False, "category": "agenda"},
 
+    # 17. Cognitive Pentest Hexagon Super-Tools (6 tools)
+    "proxsynth_recon": {"read_only": False, "destructive": False, "category": "recon"},
+    "proxsynth_traffic": {"read_only": False, "destructive": False, "category": "traffic"},
+    "proxsynth_audit": {"read_only": False, "destructive": False, "category": "audit"},
+    "proxsynth_session": {"read_only": False, "destructive": False, "category": "session"},
+    "proxsynth_verify_and_export": {"read_only": False, "destructive": False, "category": "export"},
+    "proxsynth_autonomous_step": {"read_only": False, "destructive": False, "category": "autonomous"},
 }
 
 # Alias for backward compatibility

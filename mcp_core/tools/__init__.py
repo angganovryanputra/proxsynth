@@ -19,6 +19,7 @@ import mcp_core.tools.session
 import mcp_core.tools.report
 import mcp_core.tools.audit_new
 import mcp_core.tools.powertools
+import mcp_core.tools.hexagon
 
 __all__ = [
     "context",
@@ -36,5 +37,6 @@ __all__ = [
     "session",
     "report",
     "audit_new",
-    "powertools"
+    "powertools",
+    "hexagon"
 ]

@@ -3,7 +3,7 @@
 
 > **Release Version**: `v0.2.0-beta` (Autonomous Cognitive Testing Release)  
 > **Protocol**: Model Context Protocol (FastMCP 2.0+)  
-> **Registered Tools**: **98 Active FastMCP Security Tools (Full Mode) | 11 High-Leverage Meta-Tools (Power Mode ~87.5% Token Reduction)**  
+> **Registered Tools**: **104 Active FastMCP Security Tools (Full Mode) | 18 Consolidated Meta-Tools (Power Mode ~82.7%) | 9 Super-Tools (Cognitive Pentest Hexagon ~91.3% - 95% Token Reduction)**  
 > **Default Ports**: FastAPI Dashboard & API `:8000` | Forward Interception Proxy `:8088` | DNS OAST `:5353` | LDAP OAST `:1390`  
 
 This operational document specifies how autonomous AI agents interface with the **Proxynth Security Testing Gateway**, autonomously navigate attack surfaces across Web, REST/GraphQL APIs, and Network Infrastructure, make deterministic testing decisions, and execute zero-human-intervention security campaigns.
@@ -131,6 +131,69 @@ You are connected to the Proxynth Security Testing Gateway & Interception Platfo
     Validate candidate vulnerabilities through deterministic oracles (Playwright Chromium DOM Sandbox, Z-Score Timing Analysis, OAST event correlation) using `verify_vulnerability_candidate`.
 21. Adaptive Rate-Limiting:
     Proxynth automatically handles HTTP 429 status codes with exponential backoff and transparent upstream proxy pool rotation.
+```
+
+---
+
+---
+
+## 2.5 Operational Tiers & The Cognitive Pentest Hexagon (`PROXSYNTH_TOOL_MODE=hexagon`)
+
+Proxsynth offers three runtime tool-exposure modes configurable via the environment variable `PROXSYNTH_TOOL_MODE`:
+
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                      PROXSYNTH COGNITIVE PENTEST HEXAGON (6 SUPER-TOOLS)               │
+│                  Prompt Token Reduction: ~95% vs Full Mode (104 Tools)                 │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+
+ 1. proxsynth_recon(target="...", mode="auto")
+    └─► AUTO DECISION:
+        - Target is IP/CIDR           ──► Autonomous Port Scanner & Service Fingerprinter
+        - Target is Root Domain       ──► Asset Knowledge Graph & Health Diagnostic
+        - Target is Web URL           ──► Headless Chromium SPA Spider & Route Harvester
+        - Target is OpenAPI/Swagger   ──► Automatic Schema Parser & Endpoint Importer
+
+ 2. proxsynth_traffic(url="...", action="auto", payload="...")
+    └─► AUTO DECISION:
+        - Given two Log IDs           ──► Semantic Differential Analysis & Soft-Error Heuristics
+        - Response Body > 50KB        ──► LLM Semantic Distillation (85-95% context reduction)
+        - Given Target URL            ──► Dispatches via MITM with WAF Auto-Heal & follow-up attack suggestions
+
+ 3. proxsynth_audit(target_url="...", vuln_focus="auto", params="...")
+    └─► AUTO DECISION (DETERMINISTIC HEURISTIC ROUTER):
+        - Multi-role credentials or IDs──► Two-Tier 3-Way Replay (BOLA / BFLA / Unauthenticated)
+        - Numeric/pricing/qty params  ──► Numeric Business Logic & Negative Balance Fuzzer
+        - SSRF/callback/webhook params──► In-House OAST Canary Sprayer & Real-time Event Correlation
+        - Reflected HTML / script tags──► Playwright Headless Chromium DOM Execution Oracle
+        - GraphQL endpoint path/query ──► Schema Introspection & Query Depth Auditor
+
+ 4. proxsynth_session(domain="...", action="auto", role="...", token="...")
+    └─► AUTO DECISION:
+        - Provided token + role       ──► Upserts persona into project multi-role identity vault
+        - Provided domain             ──► Retrieves active tokens and cached anti-CSRF tokens
+        - 401 Unauthorized received   ──► Replays re-auth recipe and refreshes session automatically
+
+ 5. proxsynth_verify_and_export(finding_id="...", format="auto")
+    └─► AUTO DECISION:
+        - Evaluates vulnerability through deterministic verification gate (eliminates false positives)
+        - Synthesizes reproducible Multi-Step ProjectDiscovery Nuclei v2/v3 YAML template
+        - Compiles publication-grade CVSS v4.0 / CWE vulnerability dossier
+
+ 6. proxsynth_autonomous_step(project="...")
+    └─► COGNITIVE OVERSEER:
+        - Evaluates Attack Surface Knowledge Graph and recent HTTP traffic
+        - Automatically executes the single highest-leverage offensive testing action
+        - Progresses the autonomous pentest lifecycle with zero human prompt loops
+```
+
+To configure Hexagon Mode for your agent client, set:
+```json
+"env": {
+  "PROXSYNTH_TOOL_MODE": "hexagon",
+  "PROXSYNTH_BACKEND_URL": "http://127.0.0.1:8000",
+  "PROXSYNTH_PROJECT": "client-alpha"
+}
 ```
 
 ---

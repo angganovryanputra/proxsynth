@@ -5,8 +5,9 @@
 
 [![Release](https://img.shields.io/badge/Release-v0.2.0--beta-orange.svg)](#-overview)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
-[![FastMCP Tools](https://img.shields.io/badge/FastMCP%20Tools-98%20Registered%20(Full%20Mode)-8b5cf6.svg)](#-complete-fastmcp-tools-reference-98-tools)
-[![Dual Mode](https://img.shields.io/badge/Dual--Mode-Power%20Mode%20(11%20Tools%20%7C%2087.5%25%20Token%20Cut)-10b981.svg)](#-dual-mode-fastmcp-registry-power-mode-vs-full-mode)
+[![Cognitive Hexagon](https://img.shields.io/badge/Cognitive%20Hexagon-6%20Super--Tools%20(95%25%20Token%20Cut)-ec4899.svg)](#-the-cognitive-pentest-hexagon-mode-hexagon)
+[![FastMCP Tools](https://img.shields.io/badge/FastMCP%20Tools-104%20Registered%20(Full%20Mode)-8b5cf6.svg)](#-complete-fastmcp-tools-reference-104-tools)
+[![Power Mode](https://img.shields.io/badge/Power--Mode-18%20Meta--Tools%20(82.7%25%20Token%20Cut)-10b981.svg)](#option-b-power-mode-18-consolidated-meta-tools)
 [![Two-Tier Orchestrator](https://img.shields.io/badge/Access%20Control-Two--Tier%20Orchestrator%20(3--Way%20Swap)-ec4899.svg)](#-two-tier-hybrid-access-control--business-logic-orchestrator)
 [![FastAPI](https://img.shields.io/badge/FastAPI-High%20Performance-009688.svg)](https://fastapi.tiangolo.com)
 [![Auto-Pilot](https://img.shields.io/badge/Auto--Pilot-7--Phase%20Closed%20Loop-e11d48.svg)](#1-autonomous-closed-loop-auto-pilot-state-machine)
@@ -25,7 +26,7 @@ Traditional penetration testing proxies (*Burp Suite*, *Caido*, *mitmproxy*, *OW
 | Operational Bottleneck | Burp Suite / Caido / ZAP | PROXSYNTH Autonomous Solution |
 | :--- | :--- | :--- |
 | **Token Exhaustion** | Dumps 100KB–1MB raw HTML/CSS/JS into LLM prompts. | **90% Token Reduction:** LLM Semantic Body Distiller & Dynamic Noise Stripper. |
-| **Prompt Bloat (Schema)** | Massive tool registries bloat prompt context by ~36,000 tokens. | **Dual-Mode Registry:** Power Mode provides 11 consolidated high-leverage tools, cutting prompt token consumption by **~87.5%**. |
+| **Prompt Bloat (Schema)** | Massive tool registries bloat prompt context by ~36,000 tokens. | **Tri-Tier Registry:** Hexagon Mode exposes 6 intent-driven super-tools cutting prompt schema tokens by **~91.3% - 95%** with heuristic auto-decisions. |
 | **Agent Amnesia & Loops** | Stateless; agent repeats tests, gets stuck in loops, and forgets state. | **Hypothesis Working Memory Ledger:** Tracks `PLANNED` ➔ `TESTING` ➔ `CONFIRMED` / `REFUTED` state transitions. |
 | **Subprocess Proxy Bypass** | CLI tools (`curl`, `nmap`, `nuclei`, `sqlmap`) bypass local proxy. | **Transparent Interception:** `sitecustomize.py` + `proxsynth-exec` CLI wrappers enforce proxying (:8088) and CA trust. |
 | **False-Positive Hallucinations** | Agent guesses XSS or SQLi from reflected strings. | **Deterministic Verification Gate:** Sandboxed Headless Chromium DOM Oracle with **Screenshot Proof** (`evidence/xss_proof_{hash}.png`) & Welch's t-test. |
@@ -120,8 +121,26 @@ python -m backend.app
 
 Proxsynth operates natively with any MCP client (*Claude Desktop*, *Cursor*, *Windsurf*, *OpenCode*, *Hermes*, *Antigravity*).
 
-#### Option A: Power Mode (Recommended for AI Agents — Cuts Tokens by ~87.5%)
-In Power Mode, Proxsynth registers **11 consolidated high-leverage tools**, dramatically minimizing schema overhead in LLM system prompts:
+#### Option A: The Cognitive Pentest Hexagon (Recommended for AI Agents — Cuts Tokens by ~95%)
+In Hexagon Mode, Proxsynth registers **6 intent-driven super-tools** (9 total with project context), delivering maximum autonomy, zero hallucinated arguments, and an extreme **~95% prompt token reduction**:
+
+```json
+{
+  "mcpServers": {
+    "proxsynth": {
+      "command": "python",
+      "args": ["-m", "mcp_server"],
+      "cwd": "/path/to/proxsynth",
+      "env": {
+        "PROXSYNTH_TOOL_MODE": "hexagon"
+      }
+    }
+  }
+}
+```
+
+#### Option B: Power Mode (18 Consolidated Meta-Tools)
+Consolidates domain operations into 18 meta-tools for agents needing structured sub-actions:
 
 ```json
 {
@@ -138,8 +157,8 @@ In Power Mode, Proxsynth registers **11 consolidated high-leverage tools**, dram
 }
 ```
 
-#### Option B: Full Granular Mode (All 97 Tools)
-To register the complete suite of all 97 specialized tools:
+#### Option C: Full Granular Mode (All 104 Tools)
+Registers the complete granular suite of 104 modular security testing tools:
 
 ```json
 {

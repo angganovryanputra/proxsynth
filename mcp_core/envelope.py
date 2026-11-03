@@ -20,7 +20,8 @@ from mcp_core.tool_meta import (
     STRUCTURED_READ_ONLY_TOOLS,
     STRUCTURED_OUTPUT_SCHEMAS,
     TOOL_PERMS,
-    POWER_MODE_TOOLS
+    POWER_MODE_TOOLS,
+    HEXAGON_MODE_TOOLS
 )
 
 # Per-call structured payload. A ContextVar is isolated per asyncio task, so concurrent
@@ -68,6 +69,8 @@ def register_tool(server, name: Optional[str] = None, description: Optional[str]
         # cutting token consumption by ~87.5% while direct Python callers retain full access to all 90 tools.
         tool_mode = os.getenv("PROXSYNTH_TOOL_MODE", "full").strip().lower()
         if tool_mode == "power" and tool_name not in POWER_MODE_TOOLS:
+            return fn
+        if tool_mode == "hexagon" and tool_name not in HEXAGON_MODE_TOOLS:
             return fn
 
         ann = meta(tool_name)

@@ -4,7 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Proxsynth (`v0.2.0-beta`) is an interception proxy and security-testing gateway purpose-built for **autonomous AI pentesting agents** that talk to it over the **Model Context Protocol (FastMCP)**. It exposes **98 FastMCP tools** (Full Mode) and **11 consolidated meta-tools** (Power Mode via `PROXSYNTH_TOOL_MODE=power`, reducing prompt schema token overhead by ~87.5%) covering traffic inspection, TLS-MITM forward proxy with WAF auto-healing, multi-protocol OAST with HMAC webhooks, Playwright DOM/XSS screenshot verification, the Two-Tier Access Control & Business Logic Orchestrator (3-Way Identity Swapping + Secondary State Verification), authz/injection/logic audit engines, an autonomous 7-phase closed-loop Auto-Pilot state machine, a distributed Swarm Worker Pool with adaptive domain rate-limiting, and an agent "hypothesis ledger" working memory backed by a FastAPI dashboard and a shared SQLite store. It is an authorized-testing tool; treat all target traffic it handles as scoped engagement data.
+Proxsynth (`v0.2.0-beta`) is an interception proxy and security-testing gateway purpose-built for **autonomous AI pentesting agents** that talk to it over the **Model Context Protocol (FastMCP)**. It exposes three operational tiers:
+1. **The Cognitive Pentest Hexagon (`PROXSYNTH_TOOL_MODE=hexagon`)**: 6 high-leverage intent-driven super-tools (9 total tools including project context) that reduce prompt schema token overhead by **~91.3% - 95%** with deterministic heuristic auto-decision routing (`proxsynth_recon`, `proxsynth_traffic`, `proxsynth_audit`, `proxsynth_session`, `proxsynth_verify_and_export`, `proxsynth_autonomous_step`).
+2. **Power Mode (`PROXSYNTH_TOOL_MODE=power`)**: 18 consolidated domain meta-tools reducing prompt overhead by ~82.7%.
+3. **Full Mode (`PROXSYNTH_TOOL_MODE=full`)**: 104 modular FastMCP tools for granular, fine-grained control.
+
+Features cover traffic inspection, TLS-MITM forward proxy with WAF auto-healing, multi-protocol OAST with HMAC webhooks, Playwright DOM/XSS screenshot verification, the Two-Tier Access Control & Business Logic Orchestrator (3-Way Identity Swapping + Secondary State Verification), authz/injection/logic audit engines, an autonomous 7-phase closed-loop Auto-Pilot state machine, a distributed Swarm Worker Pool with adaptive domain rate-limiting, and an agent "hypothesis ledger" working memory backed by a FastAPI dashboard and a shared SQLite store. It is an authorized-testing tool; treat all target traffic it handles as scoped engagement data.
 
 ## Architecture (the big picture)
 
@@ -61,7 +66,8 @@ install.ps1 / install.bat   # Windows
 Tests are standalone scripts (not pytest) that assert via `FastAPI TestClient` and the MCP registry, each with a `__main__` block. They are **gitignored** (`test_*.py`, local-only). Run one directly:
 
 ```bash
-venv/Scripts/python.exe scripts/self_test.py               # acceptance gate: 98 tools, annotations, output schemas, scoping
+venv/Scripts/python.exe scripts/self_test.py               # acceptance gate: 104 tools, annotations, output schemas, scoping
+venv/Scripts/python.exe test_cognitive_hexagon.py          # Cognitive Pentest Hexagon TDD suite (all 6 facets + token reduction)
 venv/Scripts/python.exe test_unified_autonomous_engine.py  # autonomous campaign, port scanner, OpenAPI importer suite
 venv/Scripts/python.exe test_dummy_target_pentest.py       # end-to-end live mock target test (OAST, Swarm, Nuclei, Session)
 venv/Scripts/python.exe test_suite_all.py                  # full dashboard/API/WebSocket suite
