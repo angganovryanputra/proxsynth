@@ -2336,6 +2336,49 @@ def update_oast_config_endpoint(req: OastConfigRequest):
     return {"status": "updated", "callback_url": get_base_callback_url()}
 
 
+class OastWebhookConfigRequest(BaseModel):
+    webhook_url: str
+    secret: Optional[str] = None
+    forward_all: bool = True
+
+
+class OastSimulateRequest(BaseModel):
+    token: str
+    client_ip: str = "127.0.0.1"
+    method: str = "GET"
+    body: str = ""
+    project: str = "default"
+
+
+@app.get("/api/oast/webhook/status")
+def get_oast_webhook_status_endpoint():
+    """Returns current status and URL of the OAST event webhook forwarder."""
+    from backend.oast_listener import get_oast_webhook_config
+    return get_oast_webhook_config()
+
+
+@app.post("/api/oast/webhook/config")
+def update_oast_webhook_config_endpoint(req: OastWebhookConfigRequest):
+    """Configures the external webhook URL for real-time OAST event dispatching."""
+    from backend.oast_listener import set_oast_webhook_url
+    return set_oast_webhook_url(url=req.webhook_url, secret=req.secret, forward_all=req.forward_all)
+
+
+@app.post("/api/oast/simulate")
+def simulate_oast_hit_endpoint(req: OastSimulateRequest):
+    """Simulates an incoming OAST hit and forwards it to webhook and listeners."""
+    from backend.oast_listener import simulate_local_oast_hit
+    hit = simulate_local_oast_hit(
+        token=req.token,
+        client_ip=req.client_ip,
+        method=req.method,
+        body=req.body,
+        project=req.project
+    )
+    return {"status": "success", "event": hit}
+
+
+
 # ==============================================================================
 # Advanced Offensive Capabilities Endpoints (BOLA, OAST, WAF, Attack Path, PoC, WS)
 # ==============================================================================
@@ -3913,12 +3956,137 @@ async def start_autopilot_endpoint(req: AutopilotStartRequest):
     }
 
 
+class AutopilotSwarmRequest(BaseModel):
+    targets: List[str]
+    project: str = "default"
+    concurrency: int = 3
+    goal: str = "high_risk_vulnerabilities"
+    max_depth: int = 2
+
+
+@app.post("/api/autopilot/swarm")
+async def start_autopilot_swarm_endpoint(req: AutopilotSwarmRequest):
+    """Spawns a distributed multi-agent swarm worker pool to audit multiple targets/subdomains."""
+    from backend.worker_swarm import WorkerSwarm
+    swarm = WorkerSwarm(
+        targets=req.targets,
+        project=req.project,
+        concurrency=req.concurrency,
+        goal=req.goal,
+        max_depth=req.max_depth
+    )
+    asyncio.create_task(swarm.run())
+    return {
+        "status": "LAUNCHED",
+        "swarm_id": swarm.swarm_id,
+        "targets_count": len(req.targets),
+        "concurrency": req.concurrency,
+        "project": req.project,
+        "message": f"Swarm #{swarm.swarm_id} initiated with {req.concurrency} concurrent workers. Telemetry streaming to /ws/terminal."
+    }
+
+
+
 @app.api_route("/api/health", methods=["GET", "HEAD", "POST", "OPTIONS"])
 @app.api_route("/api/health/", methods=["GET", "HEAD", "POST", "OPTIONS"])
 @app.api_route("/health", methods=["GET", "HEAD", "POST", "OPTIONS"])
 @app.api_route("/health/", methods=["GET", "HEAD", "POST", "OPTIONS"])
 @app.api_route("/healthz", methods=["GET", "HEAD", "POST", "OPTIONS"])
 @app.api_route("/api/healthz", methods=["GET", "HEAD", "POST", "OPTIONS"])
+class NucleiExportRequest(BaseModel):
+    finding_id: Optional[int] = None
+    payload_id: Optional[int] = None
+    template_id: Optional[str] = None
+    name: Optional[str] = None
+    severity: str = "high"
+
+
+@app.post("/api/nuclei/export")
+def export_nuclei_template_endpoint(req: NucleiExportRequest):
+    """Exports a Finding or CapturedPayload to standard Nuclei YAML format."""
+    from backend.nuclei_exporter import export_finding_to_nuclei, export_payload_to_nuclei
+    if req.finding_id:
+        yaml_str = export_finding_to_nuclei(
+            finding_id=req.finding_id,
+            template_id=req.template_id,
+            name=req.name,
+            severity=req.severity
+        )
+        return {"status": "success", "finding_id": req.finding_id, "template_yaml": yaml_str}
+    elif req.payload_id:
+        yaml_str = export_payload_to_nuclei(payload_id=req.payload_id)
+        return {"status": "success", "payload_id": req.payload_id, "template_yaml": yaml_str}
+    raise HTTPException(status_code=400, detail="Either finding_id or payload_id must be provided.")
+
+
+@app.get("/api/nuclei/templates/{finding_id}")
+def get_finding_nuclei_template_endpoint(finding_id: int):
+    """Retrieves standard Nuclei YAML for a specific finding."""
+    from backend.nuclei_exporter import export_finding_to_nuclei
+    try:
+        yaml_str = export_finding_to_nuclei(finding_id=finding_id)
+        return Response(content=yaml_str, media_type="text/yaml")
+    except Exception as ex:
+        raise HTTPException(status_code=404, detail=str(ex))
+
+
+class SessionRefresherConfigRequest(BaseModel):
+    domain: str
+    login_url: str
+    login_method: str = "POST"
+    login_headers: Optional[Dict[str, str]] = None
+    login_payload: Optional[str] = None
+    token_extractor: str = "access_token"
+    extractor_type: str = "json"
+    target_auth_header: str = "Authorization: Bearer {token}"
+    target_cookie_name: Optional[str] = None
+    expiry_indicators: Optional[List[str]] = None
+    project: str = "default"
+
+
+class SessionRefresherTestRequest(BaseModel):
+    domain: str
+    project: str = "default"
+
+
+@app.post("/api/session/refresher/config")
+def configure_session_refresher_endpoint(req: SessionRefresherConfigRequest):
+    """Registers automated login re-auth recipe for auto-healing expired sessions."""
+    from backend.session_refresher import configure_session_refresher
+    cfg = configure_session_refresher(
+        domain=req.domain,
+        login_url=req.login_url,
+        login_method=req.login_method,
+        login_headers=req.login_headers,
+        login_payload=req.login_payload,
+        token_extractor=req.token_extractor,
+        extractor_type=req.extractor_type,
+        target_auth_header=req.target_auth_header,
+        target_cookie_name=req.target_cookie_name,
+        expiry_indicators=req.expiry_indicators,
+        project=req.project
+    )
+    return {"status": "success", "config": cfg}
+
+
+@app.get("/api/session/refresher/status")
+def get_session_refresher_status_endpoint(domain: Optional[str] = None, project: str = "default"):
+    """Returns active session refresher configuration for domain/project."""
+    from backend.session_refresher import get_session_refresher_config, list_session_refreshers
+    if domain:
+        cfg = get_session_refresher_config(domain=domain, project=project)
+        return {"configured": cfg is not None, "config": cfg}
+    return {"configured_count": len(list_session_refreshers()), "refreshers": list_session_refreshers()}
+
+
+@app.post("/api/session/refresher/test")
+async def test_session_refresher_endpoint(req: SessionRefresherTestRequest):
+    """Executes a test re-authentication workflow to verify login recipe."""
+    from backend.session_refresher import execute_session_refresh
+    res = await execute_session_refresh(domain=req.domain, project=req.project)
+    return res
+
+
 def health_check():
     proxy_up = False
     proxy_p = 8088

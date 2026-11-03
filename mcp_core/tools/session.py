@@ -193,3 +193,55 @@ async def clear_csrf_tokens(domain: Optional[str] = None, project: Optional[str]
 # ==============================================================================
 # MCP Tools: Advanced Multi-Dimensional Traffic Search
 # ==============================================================================
+
+
+
+@proxsynth_tool(name="configure_session_refresher")
+async def configure_session_refresher_tool(
+    domain: str,
+    login_url: str,
+    login_method: str = "POST",
+    login_headers: Optional[Dict[str, str]] = None,
+    login_payload: Optional[str] = None,
+    token_extractor: str = "access_token",
+    extractor_type: str = "json",
+    target_auth_header: str = "Authorization: Bearer {token}",
+    target_cookie_name: Optional[str] = None,
+    expiry_indicators: Optional[List[str]] = None,
+    project: Optional[str] = None
+) -> str:
+    """
+    Configures an automated re-authentication recipe for a target domain.
+    When forward proxy encounters HTTP 401 or token expired indicators, it replays this login workflow,
+    extracts the fresh token/cookie, and transparently retries the request with X-Proxsynth-Session-Refreshed.
+    """
+    from backend.session_refresher import configure_session_refresher
+    proj = _resolve_project(project, allow_all=False)
+    res = configure_session_refresher(
+        domain=domain,
+        login_url=login_url,
+        login_method=login_method,
+        login_headers=login_headers,
+        login_payload=login_payload,
+        token_extractor=token_extractor,
+        extractor_type=extractor_type,
+        target_auth_header=target_auth_header,
+        target_cookie_name=target_cookie_name,
+        expiry_indicators=expiry_indicators,
+        project=proj
+    )
+    return json.dumps({"status": "success", "config": res}, indent=2)
+
+
+@proxsynth_tool(name="test_session_refresh")
+async def test_session_refresh_tool(
+    domain: str,
+    project: Optional[str] = None
+) -> str:
+    """
+    Executes a test re-authentication workflow for a domain to verify credentials and token extraction.
+    """
+    from backend.session_refresher import execute_session_refresh
+    proj = _resolve_project(project, allow_all=False)
+    res = await execute_session_refresh(domain=domain, project=proj)
+    return json.dumps(res, indent=2)

@@ -241,3 +241,27 @@ async def analyze_waf_response(
 # ==============================================================================
 # MCP Tool 19: infer_hidden_endpoints (Semantic API Spec Reconstructor)
 # ==============================================================================
+
+
+
+@proxsynth_tool(name="export_nuclei_template")
+async def export_nuclei_template_tool(
+    finding_id: Optional[int] = None,
+    payload_id: Optional[int] = None,
+    template_id: Optional[str] = None,
+    name: Optional[str] = None,
+    severity: str = "high"
+) -> str:
+    """
+    Exports a confirmed vulnerability Finding or CapturedPayload into standard ProjectDiscovery
+    Nuclei v2/v3 YAML template format for automated regression testing and CI/CD security gating.
+    """
+    from backend.nuclei_exporter import export_finding_to_nuclei, export_payload_to_nuclei
+    if finding_id:
+        yaml_str = export_finding_to_nuclei(finding_id=finding_id, template_id=template_id, name=name, severity=severity)
+        return json.dumps({"status": "success", "finding_id": finding_id, "template_yaml": yaml_str}, indent=2)
+    elif payload_id:
+        yaml_str = export_payload_to_nuclei(payload_id=payload_id)
+        return json.dumps({"status": "success", "payload_id": payload_id, "template_yaml": yaml_str}, indent=2)
+    else:
+        return json.dumps({"status": "error", "message": "Either finding_id or payload_id is required."}, indent=2)

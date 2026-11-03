@@ -507,6 +507,17 @@ def record_oast_hit(
         if clean_token in _active_waiters:
             _active_waiters[clean_token].set()
 
+        # Dispatch to configured webhook forwarder asynchronously
+        try:
+            from backend.oast_listener import dispatch_oast_webhook
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(dispatch_oast_webhook(event_dict))
+            else:
+                loop.run_until_complete(dispatch_oast_webhook(event_dict))
+        except Exception:
+            pass
+
         return event_dict
     except Exception:
         db.rollback()

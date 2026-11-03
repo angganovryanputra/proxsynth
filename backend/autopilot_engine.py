@@ -169,7 +169,32 @@ class AutonomousAutoPilot:
         await self._emit_telemetry("Phase 5: Executing targeted security audits (BOLA, BFLA, Mass Assignment, Logic)...")
         executed_audits = 0
         seen_targets = set()
+        sem = asyncio.Semaphore(3)
 
+        async def _execute_single_audit(action):
+            nonlocal executed_audits
+            tool = action.get("recommended_mcp_tool")
+            args = action.get("tool_arguments", {})
+            focus = action.get("vulnerability_focus")
+            async with sem:
+                await self._emit_telemetry(f"Testing vector: [{tool}] -> {focus}...")
+                try:
+                    if tool == "test_bola_idor" and args.get("log_id"):
+                        await asyncio.to_thread(execute_bola_shadow_replay, log_id=args["log_id"])
+                        executed_audits += 1
+                    elif tool == "audit_bfla_permissions" and args.get("url"):
+                        await asyncio.to_thread(audit_bfla_endpoint, url=args["url"], method=args.get("method", "GET"), log_id=args.get("log_id"))
+                        executed_audits += 1
+                    elif tool == "audit_mass_assignment" and args.get("log_id"):
+                        await asyncio.to_thread(audit_mass_assignment, log_id=args["log_id"])
+                        executed_audits += 1
+                    elif tool == "audit_numeric_business_logic" and args.get("log_id"):
+                        await asyncio.to_thread(audit_numeric_business_logic, log_id=args["log_id"], param_name=args.get("target_param", "qty"))
+                        executed_audits += 1
+                except Exception as ex:
+                    logger.debug(f"Audit step error: {ex}")
+
+        audit_tasks = []
         for action in prioritized_actions[:15]:  # Execute top 15 highest-priority vectors
             tool = action.get("recommended_mcp_tool")
             args = action.get("tool_arguments", {})
@@ -177,24 +202,10 @@ class AutonomousAutoPilot:
             if target_id in seen_targets:
                 continue
             seen_targets.add(target_id)
+            audit_tasks.append(_execute_single_audit(action))
 
-            focus = action.get("vulnerability_focus")
-            await self._emit_telemetry(f"Testing vector: [{tool}] -> {focus}...")
-            try:
-                if tool == "test_bola_idor" and args.get("log_id"):
-                    await asyncio.to_thread(execute_bola_shadow_replay, log_id=args["log_id"])
-                    executed_audits += 1
-                elif tool == "audit_bfla_permissions" and args.get("url"):
-                    await asyncio.to_thread(audit_bfla_endpoint, url=args["url"], method=args.get("method", "GET"), log_id=args.get("log_id"))
-                    executed_audits += 1
-                elif tool == "audit_mass_assignment" and args.get("log_id"):
-                    await asyncio.to_thread(audit_mass_assignment, log_id=args["log_id"])
-                    executed_audits += 1
-                elif tool == "audit_numeric_business_logic" and args.get("log_id"):
-                    await asyncio.to_thread(audit_numeric_business_logic, log_id=args["log_id"], param_name=args.get("target_param", "qty"))
-                    executed_audits += 1
-            except Exception as ex:
-                logger.debug(f"Audit step error: {ex}")
+        if audit_tasks:
+            await asyncio.gather(*audit_tasks, return_exceptions=True)
 
         await self._emit_telemetry(f"Phase 5 complete: Executed {executed_audits} targeted security audits.")
 

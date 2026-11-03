@@ -18,6 +18,7 @@ POWER_MODE_TOOLS: Set[str] = {
     "manage_oast_and_tunnels",
     "manage_testing_agenda",
     "run_autonomous_autopilot",
+    "run_autopilot_swarm",
     # Essential Project Workspace Context & Security Harness Manifest
     "set_active_project",
     "get_active_project",
@@ -52,6 +53,7 @@ TOOL_PERMS: Dict[str, Dict[str, Any]] = {
     "get_captured_payloads": {"read_only": True, "destructive": False, "category": "vault"},
     "mutate_payload": {"read_only": False, "destructive": False, "category": "waf"},
     "analyze_waf_response": {"read_only": False, "destructive": False, "category": "waf"},
+    "export_nuclei_template": {"read_only": True, "destructive": False, "category": "export"},
 
     # 5. Injection & Concurrency (3 tools)
     "fuzz_endpoint": {"read_only": False, "destructive": True, "category": "fuzzing"},
@@ -79,13 +81,15 @@ TOOL_PERMS: Dict[str, Dict[str, Any]] = {
     "scan_network_ports": {"read_only": False, "destructive": False, "category": "network"},
     "get_target_health": {"read_only": True, "destructive": False, "category": "recon"},
 
-    # 9. Out-of-Band (OAST) Engine & Tunnels (6 tools)
+    # 9. Out-of-Band (OAST) Engine & Tunnels (8 tools)
     "generate_oast_token": {"read_only": False, "destructive": False, "category": "oast"},
     "poll_oast_events": {"read_only": True, "destructive": False, "category": "oast"},
     "spray_oast_canaries": {"read_only": False, "destructive": False, "category": "oast"},
     "setup_public_tunnel": {"read_only": False, "destructive": False, "category": "tunnel"},
     "get_tunnel_status": {"read_only": True, "destructive": False, "category": "tunnel"},
     "close_public_tunnel": {"read_only": False, "destructive": False, "category": "tunnel"},
+    "configure_oast_webhook": {"read_only": False, "destructive": False, "category": "oast"},
+    "simulate_oast_callback": {"read_only": False, "destructive": False, "category": "oast"},
 
     # 10. Interception Rules & Certificates (5 tools)
     "add_interception_rule": {"read_only": False, "destructive": False, "category": "intercept"},
@@ -102,6 +106,7 @@ TOOL_PERMS: Dict[str, Dict[str, Any]] = {
     # 12. Autonomous Campaign & Cognitive Guidance (5 tools)
     "run_autonomous_security_campaign": {"read_only": False, "destructive": True, "category": "orchestration"},
     "run_autonomous_autopilot": {"read_only": False, "destructive": True, "category": "orchestration"},
+    "run_autopilot_swarm": {"read_only": False, "destructive": True, "category": "orchestration"},
     "get_campaign_status": {"read_only": True, "destructive": False, "category": "orchestration"},
     "list_campaigns": {"read_only": True, "destructive": False, "category": "orchestration"},
     "get_autonomous_attack_guidance": {"read_only": True, "destructive": False, "category": "advisor"},
@@ -111,6 +116,8 @@ TOOL_PERMS: Dict[str, Dict[str, Any]] = {
     "set_identity_session": {"read_only": False, "destructive": False, "category": "auth"},
     "register_auth_recipe": {"read_only": False, "destructive": False, "category": "auth"},
     "execute_reauthentication": {"read_only": False, "destructive": False, "category": "auth"},
+    "configure_session_refresher": {"read_only": False, "destructive": False, "category": "auth"},
+    "test_session_refresh": {"read_only": False, "destructive": False, "category": "auth"},
     "get_csrf_tokens": {"read_only": True, "destructive": False, "category": "session"},
     "set_csrf_token": {"read_only": False, "destructive": False, "category": "session"},
     "clear_csrf_tokens": {"read_only": False, "destructive": True, "category": "session"},

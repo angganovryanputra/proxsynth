@@ -238,6 +238,41 @@ async def close_public_tunnel() -> str:
     return json.dumps(res, indent=2)
 
 
-# ==============================================================================
-# MCP Tools: Autonomous Interception & Match/Replace Rules
-# ==============================================================================
+@proxsynth_tool(name="configure_oast_webhook")
+async def configure_oast_webhook(
+    webhook_url: str,
+    secret: Optional[str] = None,
+    forward_all: bool = True
+) -> str:
+    """
+    Configures an external webhook endpoint to receive real-time HTTP POST notifications
+    whenever an out-of-band interaction (Blind SSRF, XXE, RCE, DNS hit) is captured by Proxsynth.
+    Includes HMAC-SHA256 signature header 'X-Proxsynth-Signature' if secret is provided.
+    """
+    from backend.oast_listener import set_oast_webhook_url
+    res = set_oast_webhook_url(url=webhook_url, secret=secret, forward_all=forward_all)
+    return json.dumps({"status": "success", "config": res}, indent=2)
+
+
+@proxsynth_tool(name="simulate_oast_callback")
+async def simulate_oast_callback(
+    token: str,
+    client_ip: str = "127.0.0.1",
+    method: str = "GET",
+    body: str = "",
+    project: Optional[str] = None
+) -> str:
+    """
+    Directly triggers or simulates an OAST callback hit in the database and dispatches it
+    to any configured webhook or waiting agents. Useful for testing out-of-band detection pipelines.
+    """
+    from backend.oast_listener import simulate_local_oast_hit
+    target_project = _resolve_project(project, allow_all=False)
+    res = simulate_local_oast_hit(
+        token=token,
+        client_ip=client_ip,
+        method=method,
+        body=body,
+        project=target_project
+    )
+    return json.dumps({"status": "success", "event": res}, indent=2)

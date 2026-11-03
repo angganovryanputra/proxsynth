@@ -812,6 +812,40 @@ async def _handle_decrypted_tls_session(
                                                 res_body_text = f"<Binary response: {len(res_bytes)} bytes>"
                                 except Exception:
                                     pass
+                            # Session State Auto-Refresher Layer (Handle 401 or Token Expiry)
+                            try:
+                                from backend.session_refresher import is_session_expired_response, execute_session_refresh
+                                target_domain = urllib.parse.urlparse(full_url).hostname or "target"
+                                if is_session_expired_response(status_code, res_headers, res_body_text, domain=target_domain, project=target_project):
+                                    refresh_res = await execute_session_refresh(domain=target_domain, project=target_project, proxy_kwargs=proxy_kwargs)
+                                    if refresh_res.get("status") == "SUCCESS":
+                                        refreshed_headers = dict(fwd_headers)
+                                        refreshed_headers.update(refresh_res.get("refreshed_auth_headers", {}))
+                                        new_cookies = refresh_res.get("extracted_cookies", {})
+                                        if new_cookies:
+                                            existing_c = refreshed_headers.get("Cookie") or refreshed_headers.get("cookie") or ""
+                                            c_parts = [c.strip() for c in existing_c.split(";") if c.strip()]
+                                            for k_c, v_c in new_cookies.items():
+                                                c_parts.append(f"{k_c}={v_c}")
+                                            refreshed_headers["Cookie"] = "; ".join(c_parts)
+                                        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=30.0, **proxy_kwargs) as reauth_client:
+                                            reauth_resp = await reauth_client.request(
+                                                method=sub_method if "sub_method" in locals() else method,
+                                                url=full_url,
+                                                headers=refreshed_headers,
+                                                content=body_text.encode("utf-8") if body_text else None
+                                            )
+                                            if reauth_resp.status_code < 400 or reauth_resp.status_code != status_code:
+                                                status_code = reauth_resp.status_code
+                                                res_headers = dict(reauth_resp.headers)
+                                                res_headers["X-Proxsynth-Session-Refreshed"] = "TRUE"
+                                                res_bytes = reauth_resp.content
+                                                try:
+                                                    res_body_text = reauth_resp.text
+                                                except Exception:
+                                                    res_body_text = f"<Binary response: {len(res_bytes)} bytes>"
+                            except Exception:
+                                pass
                     except Exception as ex:
                         status_code = 502
                         res_body_text = f"Target Connection Error: {str(ex)}"
@@ -1243,6 +1277,40 @@ async def _handle_client_connection(reader: asyncio.StreamReader, writer: asynci
                                             res_body_text = retry_resp.text
                                         except Exception:
                                             res_body_text = f"<Binary response: {len(res_bytes)} bytes>"
+                            except Exception:
+                                pass
+                            # Session State Auto-Refresher Layer (Handle 401 or Token Expiry)
+                            try:
+                                from backend.session_refresher import is_session_expired_response, execute_session_refresh
+                                target_domain = urllib.parse.urlparse(full_url).hostname or "target"
+                                if is_session_expired_response(status_code, res_headers, res_body_text, domain=target_domain, project=target_project):
+                                    refresh_res = await execute_session_refresh(domain=target_domain, project=target_project, proxy_kwargs=proxy_kwargs)
+                                    if refresh_res.get("status") == "SUCCESS":
+                                        refreshed_headers = dict(fwd_headers)
+                                        refreshed_headers.update(refresh_res.get("refreshed_auth_headers", {}))
+                                        new_cookies = refresh_res.get("extracted_cookies", {})
+                                        if new_cookies:
+                                            existing_c = refreshed_headers.get("Cookie") or refreshed_headers.get("cookie") or ""
+                                            c_parts = [c.strip() for c in existing_c.split(";") if c.strip()]
+                                            for k_c, v_c in new_cookies.items():
+                                                c_parts.append(f"{k_c}={v_c}")
+                                            refreshed_headers["Cookie"] = "; ".join(c_parts)
+                                        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=30.0, **proxy_kwargs) as reauth_client:
+                                            reauth_resp = await reauth_client.request(
+                                                method=sub_method if "sub_method" in locals() else method,
+                                                url=full_url,
+                                                headers=refreshed_headers,
+                                                content=body_text.encode("utf-8") if body_text else None
+                                            )
+                                            if reauth_resp.status_code < 400 or reauth_resp.status_code != status_code:
+                                                status_code = reauth_resp.status_code
+                                                res_headers = dict(reauth_resp.headers)
+                                                res_headers["X-Proxsynth-Session-Refreshed"] = "TRUE"
+                                                res_bytes = reauth_resp.content
+                                                try:
+                                                    res_body_text = reauth_resp.text
+                                                except Exception:
+                                                    res_body_text = f"<Binary response: {len(res_bytes)} bytes>"
                             except Exception:
                                 pass
                 except Exception as ex:

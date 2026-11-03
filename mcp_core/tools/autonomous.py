@@ -244,3 +244,29 @@ async def run_autonomous_autopilot_tool(
     )
     result = await pilot.run()
     return json.dumps(result, indent=2)
+
+
+
+@proxsynth_tool(name="run_autopilot_swarm")
+async def run_autopilot_swarm_tool(
+    targets: List[str],
+    concurrency: int = 3,
+    goal: str = "high_risk_vulnerabilities",
+    project: Optional[str] = None,
+    max_depth: int = 2
+) -> str:
+    """
+    [AUTONOMOUS: HIGH-LEVERAGE]
+    Launches a distributed Multi-Agent Swarm Worker Pool to audit multiple targets/subdomains concurrently.
+    Distributes targets across parallel worker tasks with shared state deduplication and real-time telemetry.
+    """
+    from backend.worker_swarm import run_autopilot_swarm
+    proj = _resolve_project(project, allow_all=False)
+    result = await run_autopilot_swarm(
+        targets=targets,
+        project=proj,
+        concurrency=concurrency,
+        goal=goal,
+        max_depth=max_depth
+    )
+    return json.dumps(result, indent=2)
