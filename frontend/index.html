@@ -1228,46 +1228,99 @@
       <section
         :style="maximizedPanel === 'inspector' ? (layoutOrientation === 'vertical' ? 'height: 100%' : 'width: 100%') : (maximizedPanel === 'table' ? 'display: none' : (layoutOrientation === 'vertical' ? 'height: ' + (100 - tableSplitPct) + '%; min-height: 140px;' : 'width: ' + (100 - tableSplitPct) + '%; min-width: 300px;'))"
         class="flex flex-col bg-[#111827]/90 overflow-hidden min-h-0">
-        <!-- Tab Header -->
-        <div class="h-10 bg-[#0B0F17] border-b border-[#1E293B] px-3 flex items-center justify-between shrink-0">
-          <div class="flex space-x-1 text-xs font-mono">
-            <button @click="inspectorTab = 'request'"
-              :class="inspectorTab === 'request' ? 'border-b-2 border-sky-400 text-sky-300 font-semibold bg-[#111827]' : 'text-slate-400 hover:text-slate-200'"
-              class="px-3 py-2 transition">Request</button>
-            <button @click="inspectorTab = 'response'"
-              :class="inspectorTab === 'response' ? 'border-b-2 border-sky-400 text-sky-300 font-semibold bg-[#111827]' : 'text-slate-400 hover:text-slate-200'"
-              class="px-3 py-2 transition">Response</button>
-            <button @click="inspectorTab = 'triage'"
-              :class="inspectorTab === 'triage' ? 'border-b-2 border-rose-500 text-rose-300 font-semibold bg-[#111827]' : 'text-slate-400 hover:text-slate-200'"
-              class="px-3 py-2 transition flex items-center">
-              <span>Triage & Vulns</span>
+        <!-- Inspector Top Header & Control Bar -->
+        <div class="h-10 bg-[#0B0F17] border-b border-[#1E293B] px-3 flex items-center justify-between shrink-0 select-none">
+          <!-- Left: View Mode Segmented Switcher -->
+          <div class="flex items-center space-x-1 text-xs font-mono">
+            <button @click="setInspectorViewMode('split')"
+              :class="inspectorViewMode === 'split' ? 'border-b-2 border-indigo-400 text-indigo-300 font-semibold bg-[#111827]' : 'text-slate-400 hover:text-slate-200'"
+              class="px-2.5 py-2 transition flex items-center space-x-1.5"
+              title="Dual-Pane Synchronized Request & Response Split View (Alt+3)">
+              <i data-lucide="columns" class="w-3.5 h-3.5 text-indigo-400"></i>
+              <span>Split View</span>
+            </button>
+            <button @click="setInspectorViewMode('request')"
+              :class="inspectorViewMode === 'request' ? 'border-b-2 border-sky-400 text-sky-300 font-semibold bg-[#111827]' : 'text-slate-400 hover:text-slate-200'"
+              class="px-2.5 py-2 transition flex items-center space-x-1.5"
+              title="Focus Request Only (Alt+1)">
+              <i data-lucide="arrow-up-right" class="w-3.5 h-3.5 text-sky-400"></i>
+              <span>Request</span>
+            </button>
+            <button @click="setInspectorViewMode('response')"
+              :class="inspectorViewMode === 'response' ? 'border-b-2 border-emerald-400 text-emerald-300 font-semibold bg-[#111827]' : 'text-slate-400 hover:text-slate-200'"
+              class="px-2.5 py-2 transition flex items-center space-x-1.5"
+              title="Focus Response Only (Alt+2)">
+              <i data-lucide="arrow-down-left" class="w-3.5 h-3.5 text-emerald-400"></i>
+              <span>Response</span>
+            </button>
+            <button @click="setInspectorViewMode('triage')"
+              :class="inspectorViewMode === 'triage' ? 'border-b-2 border-rose-500 text-rose-300 font-semibold bg-[#111827]' : 'text-slate-400 hover:text-slate-200'"
+              class="px-2.5 py-2 transition flex items-center space-x-1.5"
+              title="Security Triage & Vuln Findings (Alt+4)">
+              <i data-lucide="shield-alert" class="w-3.5 h-3.5 text-rose-400"></i>
+              <span>Triage &amp; Vulns</span>
               <span x-show="selectedLogDetail && selectedLogDetail.findings && selectedLogDetail.findings.length > 0"
-                class="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] bg-rose-600 text-white font-bold"
+                class="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-rose-600 text-white font-bold"
                 x-text="selectedLogDetail ? selectedLogDetail.findings.length : 0"></span>
             </button>
           </div>
 
-          <div class="flex items-center space-x-2">
+          <!-- Center: Split Specific Controls (Visible in Split Mode) -->
+          <div x-show="inspectorViewMode === 'split'" class="hidden md:flex items-center space-x-1 text-[11px] font-mono text-slate-400 border-l border-r border-[#1E293B] px-2 py-0.5">
+            <!-- Orientation Toggle -->
+            <button @click="toggleInspectorOrientation()"
+              class="px-2 py-0.5 rounded hover:bg-slate-800 text-slate-300 flex items-center space-x-1 transition"
+              :title="inspectorSplitOrientation === 'horizontal' ? 'Switch to Stacked (Top/Bottom)' : 'Switch to Side-by-Side (Left/Right)'">
+              <i :data-lucide="inspectorSplitOrientation === 'horizontal' ? 'layout-list' : 'columns'" class="w-3 h-3 text-indigo-400"></i>
+              <span x-text="inspectorSplitOrientation === 'horizontal' ? 'Side-by-Side' : 'Stacked'"></span>
+            </button>
+            <!-- Preset Buttons -->
+            <button @click="setInspectorSplitPct(50)"
+              :class="inspectorSplitPct === 50 ? 'bg-indigo-950 text-indigo-300 border border-indigo-700/60 font-bold' : 'hover:bg-slate-800 text-slate-400'"
+              class="px-1.5 py-0.5 rounded text-[10px] transition" title="50:50 Balanced Split">50:50</button>
+            <button @click="setInspectorSplitPct(35)"
+              :class="inspectorSplitPct === 35 ? 'bg-indigo-950 text-indigo-300 border border-indigo-700/60 font-bold' : 'hover:bg-slate-800 text-slate-400'"
+              class="px-1.5 py-0.5 rounded text-[10px] transition" title="Focus Response (35:65)">35:65</button>
+            <button @click="setInspectorSplitPct(65)"
+              :class="inspectorSplitPct === 65 ? 'bg-indigo-950 text-indigo-300 border border-indigo-700/60 font-bold' : 'hover:bg-slate-800 text-slate-400'"
+              class="px-1.5 py-0.5 rounded text-[10px] transition" title="Focus Request (65:35)">65:35</button>
+          </div>
+
+          <!-- Right: Quick Actions -->
+          <div class="flex items-center space-x-1.5">
+            <!-- Copy Raw HTTP Button -->
+            <button x-show="selectedLogDetail" @click="copyRawHttpRequest()"
+              class="px-2 py-1 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 text-[11px] font-mono flex items-center transition"
+              title="Copy Full HTTP Request in RFC wire format">
+              <i data-lucide="file-code" class="w-3 h-3 mr-1 text-sky-400"></i>
+              <span x-text="copiedRawHttp ? 'Copied Raw!' : 'Raw HTTP'"></span>
+            </button>
+
+            <!-- Copy cURL -->
+            <button x-show="selectedLogDetail" @click="copyCurl()"
+              class="px-2 py-1 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 text-[11px] font-mono flex items-center transition"
+              title="Copy as cURL command">
+              <i data-lucide="terminal" class="w-3 h-3 mr-1 text-amber-400"></i>
+              <span x-text="copiedCurl ? 'Copied cURL!' : 'cURL'"></span>
+            </button>
+
             <!-- Send to Repeater Button -->
             <button x-show="selectedLogDetail" @click="sendSelectedToRepeater()"
-              class="px-2 py-1 rounded bg-amber-950/80 border border-amber-700/60 hover:bg-amber-900 text-amber-300 text-[11px] font-mono flex items-center transition">
+              class="px-2 py-1 rounded bg-amber-950/80 border border-amber-700/60 hover:bg-amber-900 text-amber-300 text-[11px] font-mono flex items-center transition"
+              title="Send to Repeater (Ctrl+R)">
               <i data-lucide="repeat" class="w-3 h-3 mr-1"></i>
               <span>Repeater</span>
             </button>
 
             <!-- Send to Fuzzer Button -->
             <button x-show="selectedLogDetail" @click="sendSelectedToFuzzer()"
-              class="px-2 py-1 rounded bg-purple-950/80 border border-purple-700/60 hover:bg-purple-900 text-purple-300 text-[11px] font-mono flex items-center transition">
+              class="px-2 py-1 rounded bg-purple-950/80 border border-purple-700/60 hover:bg-purple-900 text-purple-300 text-[11px] font-mono flex items-center transition"
+              title="Send to Fuzzer (Ctrl+F)">
               <i data-lucide="zap" class="w-3 h-3 mr-1"></i>
               <span>Fuzzer</span>
             </button>
 
-            <!-- Copy cURL -->
-            <button x-show="inspectorTab === 'request' && selectedLogDetail" @click="copyCurl()"
-              class="px-2 py-1 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 text-[11px] font-mono flex items-center transition">
-              <i data-lucide="copy" class="w-3 h-3 mr-1"></i>
-              <span x-text="copiedCurl ? 'Copied cURL!' : 'Copy cURL'"></span>
-            </button>
+            <!-- Nuclei -->
             <button x-show="selectedLogDetail" @click="openNucleiFromLog(selectedLogDetail.id)"
               class="px-2 py-1 rounded bg-purple-950/70 hover:bg-purple-900 border border-purple-700/60 text-purple-300 text-[11px] font-mono flex items-center transition shadow-sm"
               title="Generate Nuclei v3 Exploit / Regression Template">
@@ -1285,375 +1338,19 @@
         </div>
 
         <!-- Inspector Body -->
-        <div class="flex-1 min-h-0 overflow-y-auto p-4 font-mono text-xs text-slate-300 smooth-scroll">
+        <div class="flex-1 min-h-0 overflow-hidden font-mono text-xs text-slate-300">
+          <template x-if="!selectedLogDetail">
+            <div class="h-full flex flex-col items-center justify-center p-8 text-center text-slate-500">
+              <i data-lucide="mouse-pointer-click" class="w-10 h-10 mb-3 text-slate-600 animate-pulse"></i>
+              <p class="text-sm font-semibold text-slate-400">No Request Selected</p>
+              <p class="text-xs text-slate-500 max-w-sm mt-1">Select an HTTP transaction from the traffic table above to inspect headers, payload, JWT tokens, and automated vulnerability findings.</p>
+            </div>
+          </template>
+
           <template x-if="selectedLogDetail">
-            <div>
-              <!-- TAB 1: REQUEST -->
-              <div x-show="inspectorTab === 'request'" class="space-y-4">
-                <!-- AI Reasoning Card -->
-                <div x-show="selectedLogDetail.reasoning"
-                  class="p-3 rounded-lg bg-indigo-950/40 border border-indigo-700/60">
-                  <div class="text-[11px] font-bold text-indigo-300 mb-1 flex items-center justify-between">
-                    <div class="flex items-center">
-                      <i data-lucide="brain" class="w-4 h-4 mr-1.5 text-indigo-400"></i>
-                      <span>AI Agent Hypothesis & Reasoning</span>
-                    </div>
-                    <template x-if="selectedLogDetail.source === 'BROWSER_RENDER'">
-                      <span class="px-1.5 py-0.2 rounded text-[10px] font-semibold"
-                        :class="selectedLogDetail.reasoning && selectedLogDetail.reasoning.includes('Synthetic') ? 'bg-amber-950 text-amber-300 border border-amber-800' : 'bg-cyan-950 text-cyan-300 border border-cyan-800'"
-                        x-text="selectedLogDetail.reasoning && selectedLogDetail.reasoning.includes('Synthetic') ? 'Synthetic Asset Marker' : 'SPA Intercepted Asset'"></span>
-                    </template>
-                  </div>
-                  <div class="text-xs text-slate-200 select-text" x-text="selectedLogDetail.reasoning"></div>
-                </div>
-
-                <!-- URL Bar & Smart In-Line Decoders -->
-                <div class="p-2.5 bg-[#0B0F17] rounded-md border border-[#1E293B] break-all">
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <span class="text-sky-400 font-bold mr-2" x-text="selectedLogDetail.method"></span>
-                      <span class="text-slate-100 font-mono" x-text="selectedLogDetail.url"></span>
-                    </div>
-                    <div class="flex items-center space-x-1.5 shrink-0 ml-2">
-                      <button @click="copyText(selectedLogDetail.url)" class="p-1 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 transition" title="Copy Full URL">
-                        <i data-lucide="copy" class="w-3.5 h-3.5"></i>
-                      </button>
-                      <button @click="window.open(selectedLogDetail.url, '_blank')" class="p-1 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 transition" title="Open in New Tab">
-                        <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- In-line Decoded Query Parameters (if present) -->
-                  <template x-if="selectedLogDetail.url && selectedLogDetail.url.includes('?') && parseQueryParams(selectedLogDetail.url).length > 0">
-                    <div class="mt-2.5 pt-2 border-t border-[#1E293B]">
-                      <div class="flex items-center justify-between">
-                        <button @click="queryParamsExpanded = !queryParamsExpanded" class="flex items-center space-x-1.5 text-[11px] text-sky-400 hover:text-sky-300 font-semibold transition">
-                          <i :data-lucide="queryParamsExpanded ? 'chevron-down' : 'chevron-right'" class="w-3.5 h-3.5"></i>
-                          <span>Decoded Query Parameters</span>
-                          <span class="px-1.5 py-0.2 rounded text-[9px] bg-sky-950 text-sky-300 border border-sky-800" x-text="parseQueryParams(selectedLogDetail.url).length"></span>
-                        </button>
-                        <button x-show="queryParamsExpanded" @click="copyText(JSON.stringify(parseQueryParams(selectedLogDetail.url), null, 2))" class="text-[10px] text-slate-400 hover:text-slate-200">
-                          Copy JSON
-                        </button>
-                      </div>
-                      <div x-show="queryParamsExpanded" class="mt-2 bg-[#111827] border border-[#1E293B] rounded overflow-hidden">
-                        <table class="w-full text-left text-[11px] font-mono">
-                          <thead class="bg-[#0B0F17] text-slate-400 uppercase text-[9px] border-b border-[#1E293B]">
-                            <tr>
-                              <th class="px-2.5 py-1 w-1/3">Key</th>
-                              <th class="px-2.5 py-1">Decoded Value</th>
-                            </tr>
-                          </thead>
-                          <tbody class="divide-y divide-[#1E293B]/60">
-                            <template x-for="p in parseQueryParams(selectedLogDetail.url)" :key="p.key">
-                              <tr class="hover:bg-slate-800/30">
-                                <td class="px-2.5 py-1 font-semibold text-sky-300 select-text" x-text="p.key"></td>
-                                <td class="px-2.5 py-1 text-slate-200 break-all select-text" x-text="p.value"></td>
-                              </tr>
-                            </template>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </template>
-                </div>
-
-                <!-- In-Line Smart JWT Decoder Card (Request) -->
-                <template x-if="extractJwtFromDetail(selectedLogDetail, 'request')">
-                  <div class="p-2.5 bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-[#0B0F17] border border-purple-500/40 rounded-lg shadow-sm font-mono text-xs space-y-2">
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center space-x-2">
-                        <span class="p-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center justify-center">
-                          <i data-lucide="key" class="w-3.5 h-3.5 text-purple-400"></i>
-                        </span>
-                        <div class="flex items-center space-x-1.5 flex-wrap">
-                          <span class="font-bold text-purple-300">JWT Token Detected</span>
-                          <span class="text-[10px] text-slate-400" x-text="'(' + extractJwtFromDetail(selectedLogDetail, 'request').location + ')'"></span>
-                          <span class="px-1.5 py-0.2 rounded text-[10px] font-bold"
-                            :class="extractJwtFromDetail(selectedLogDetail, 'request').isExpired ? 'bg-rose-950 text-rose-300 border border-rose-800' : 'bg-emerald-950 text-emerald-300 border border-emerald-800'"
-                            x-text="extractJwtFromDetail(selectedLogDetail, 'request').expiryStatus"></span>
-                        </div>
-                      </div>
-                      <div class="flex items-center space-x-1.5">
-                        <button @click="jwtDecodedExpanded = !jwtDecodedExpanded"
-                          class="px-2 py-0.5 rounded bg-purple-900/60 hover:bg-purple-800 text-purple-200 border border-purple-700/60 text-[11px] font-semibold transition flex items-center space-x-1">
-                          <span x-text="jwtDecodedExpanded ? 'Hide Claims' : 'Inspect Claims'"></span>
-                          <i :data-lucide="jwtDecodedExpanded ? 'chevron-up' : 'chevron-down'" class="w-3 h-3"></i>
-                        </button>
-                      </div>
-                    </div>
-                    <!-- Expanded Claims View -->
-                    <div x-show="jwtDecodedExpanded" class="pt-2 border-t border-purple-900/40 space-y-2">
-                      <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
-                        <div class="bg-[#0B0F17] p-2 rounded border border-[#1E293B]">
-                          <div class="text-[10px] uppercase text-purple-400 font-bold mb-1 flex items-center justify-between">
-                            <span>Header (Alg: <span x-text="extractJwtFromDetail(selectedLogDetail, 'request').alg"></span>)</span>
-                            <button @click="copyText(extractJwtFromDetail(selectedLogDetail, 'request').headerJson)" class="text-slate-400 hover:text-slate-200 text-[9px]">Copy</button>
-                          </div>
-                          <pre class="text-slate-300 overflow-x-auto whitespace-pre-wrap" x-text="extractJwtFromDetail(selectedLogDetail, 'request').headerJson"></pre>
-                        </div>
-                        <div class="bg-[#0B0F17] p-2 rounded border border-[#1E293B]">
-                          <div class="text-[10px] uppercase text-emerald-400 font-bold mb-1 flex items-center justify-between">
-                            <span>Payload Claims (Sub: <span x-text="extractJwtFromDetail(selectedLogDetail, 'request').sub || 'N/A'"></span>)</span>
-                            <button @click="copyText(extractJwtFromDetail(selectedLogDetail, 'request').payloadJson)" class="text-slate-400 hover:text-slate-200 text-[9px]">Copy</button>
-                          </div>
-                          <pre class="text-slate-300 overflow-x-auto whitespace-pre-wrap max-h-48" x-text="extractJwtFromDetail(selectedLogDetail, 'request').payloadJson"></pre>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-
-                <!-- Request Headers -->
-                <div>
-                  <div class="flex items-center justify-between mb-1.5">
-                    <div class="text-[11px] uppercase text-slate-400 font-semibold flex items-center">
-                      <span>Request Headers</span>
-                      <span class="ml-1.5 px-1.5 py-0.2 rounded text-[10px] bg-slate-800 text-sky-300 font-mono"
-                        x-text="Object.keys(selectedLogDetail.request_headers || {}).length"></span>
-                    </div>
-                    <div class="flex items-center space-x-1.5 text-[10px]">
-                      <button @click="reqHeadersView = 'table'"
-                        :class="reqHeadersView === 'table' ? 'bg-[#1E293B] text-sky-400 font-bold' : 'text-slate-400 hover:text-slate-200'"
-                        class="px-2 py-0.5 rounded border border-[#1E293B] transition">Table</button>
-                      <button @click="reqHeadersView = 'raw'"
-                        :class="reqHeadersView === 'raw' ? 'bg-[#1E293B] text-sky-400 font-bold' : 'text-slate-400 hover:text-slate-200'"
-                        class="px-2 py-0.5 rounded border border-[#1E293B] transition">Raw</button>
-                      <button @click="copyText(formatRawHeaders(selectedLogDetail.request_headers))"
-                        class="px-2 py-0.5 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 transition"
-                        title="Copy Headers">Copy</button>
-                    </div>
-                  </div>
-                  <!-- Table View -->
-                  <div x-show="reqHeadersView === 'table'"
-                    class="bg-[#0B0F17] border border-[#1E293B] rounded-md overflow-hidden max-h-[350px] overflow-y-auto">
-                    <table class="w-full text-left border-collapse">
-                      <tbody>
-                        <template x-for="(val, header) in selectedLogDetail.request_headers" :key="header">
-                          <tr class="border-b border-[#1E293B]/60 hover:bg-[#1E293B]/40">
-                            <td class="px-3 py-1.5 text-sky-300 font-semibold w-1/3 select-text align-top"
-                              x-text="header"></td>
-                            <td class="px-3 py-1.5 text-slate-300 break-all select-text font-mono" x-text="val"></td>
-                          </tr>
-                        </template>
-                      </tbody>
-                    </table>
-                  </div>
-                  <!-- Raw View -->
-                  <div x-show="reqHeadersView === 'raw'"
-                    class="bg-[#0B0F17] border border-[#1E293B] rounded-md p-3 select-text font-mono text-xs text-sky-200 whitespace-pre-wrap max-h-[350px] overflow-y-auto"
-                    x-text="formatRawHeaders(selectedLogDetail.request_headers)"></div>
-                </div>
-
-                <!-- Request Body -->
-                <div>
-                  <div class="flex items-center justify-between mb-1.5">
-                    <div class="text-[11px] uppercase text-slate-400 font-semibold flex items-center space-x-2">
-                      <span>Request Body</span>
-                      <span class="px-2 py-0.2 rounded text-[10px] font-bold" :class="{
-                            'bg-emerald-950 text-emerald-300 border border-emerald-800': detectContentType(selectedLogDetail.request_body, selectedLogDetail.request_headers) === 'JSON',
-                            'bg-orange-950 text-orange-300 border border-orange-800': detectContentType(selectedLogDetail.request_body, selectedLogDetail.request_headers) === 'HTML' || detectContentType(selectedLogDetail.request_body, selectedLogDetail.request_headers) === 'XML',
-                            'bg-indigo-950 text-indigo-300 border border-indigo-800': detectContentType(selectedLogDetail.request_body, selectedLogDetail.request_headers) === 'FORM',
-                            'bg-slate-800 text-slate-400': !['JSON', 'HTML', 'XML', 'FORM'].includes(detectContentType(selectedLogDetail.request_body, selectedLogDetail.request_headers))
-                          }"
-                        x-text="detectContentType(selectedLogDetail.request_body, selectedLogDetail.request_headers)"></span>
-                      <span class="text-[10px] text-slate-500"
-                        x-text="'(' + formatBytes((selectedLogDetail.request_body || '').length) + ')'"></span>
-                    </div>
-                    <div class="flex items-center space-x-1.5 text-[10px]">
-                      <button @click="reqBodyBeautified = true"
-                        :class="reqBodyBeautified ? 'bg-sky-950 text-sky-300 border-sky-700 font-bold' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
-                        class="px-2 py-0.5 rounded border transition flex items-center">
-                        <i data-lucide="sparkles" class="w-2.5 h-2.5 mr-1 text-sky-400"></i>
-                        <span>✨ Beautified</span>
-                      </button>
-                      <button @click="reqBodyBeautified = false"
-                        :class="!reqBodyBeautified ? 'bg-[#1E293B] text-slate-200 font-bold' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
-                        class="px-2 py-0.5 rounded border transition">Raw</button>
-                      <button @click="reqBodyExpanded = !reqBodyExpanded"
-                        :class="reqBodyExpanded ? 'bg-sky-950 text-sky-300 font-bold border-sky-700' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
-                        class="px-2 py-0.5 rounded border transition"
-                        :title="reqBodyExpanded ? 'Collapse Height' : 'Expand Full Body'">
-                        <span x-text="reqBodyExpanded ? 'Collapse' : 'Expand All'"></span>
-                      </button>
-                      <button
-                        @click="copyText(reqBodyBeautified ? beautifyText(selectedLogDetail.request_body, null, selectedLogDetail.request_headers) : selectedLogDetail.request_body)"
-                        class="px-2 py-0.5 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 transition"
-                        title="Copy Body">Copy</button>
-                    </div>
-                  </div>
-                  <div
-                    class="bg-[#0B0F17] border border-[#1E293B] rounded-md p-3 select-text overflow-y-auto whitespace-pre-wrap text-slate-200 font-mono text-xs leading-relaxed"
-                    :class="reqBodyExpanded ? 'max-h-none' : 'max-h-[500px]'"
-                    x-text="reqBodyBeautified ? beautifyText(selectedLogDetail.request_body, null, selectedLogDetail.request_headers) : (selectedLogDetail.request_body || '[Empty Request Body]')">
-                  </div>
-                </div>
-              </div>
-
-              <!-- TAB 2: RESPONSE (FULL HEADERS & FULL BEAUTIFIED BODY) -->
-              <div x-show="inspectorTab === 'response'" class="space-y-4">
-                <!-- In-Line Smart JWT Decoder Card (Response) -->
-                <template x-if="extractJwtFromDetail(selectedLogDetail, 'response')">
-                  <div class="p-2.5 bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-[#0B0F17] border border-purple-500/40 rounded-lg shadow-sm font-mono text-xs space-y-2">
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center space-x-2">
-                        <span class="p-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center justify-center">
-                          <i data-lucide="key" class="w-3.5 h-3.5 text-purple-400"></i>
-                        </span>
-                        <div class="flex items-center space-x-1.5 flex-wrap">
-                          <span class="font-bold text-purple-300">JWT Token Detected in Response</span>
-                          <span class="text-[10px] text-slate-400" x-text="'(' + extractJwtFromDetail(selectedLogDetail, 'response').location + ')'"></span>
-                          <span class="px-1.5 py-0.2 rounded text-[10px] font-bold"
-                            :class="extractJwtFromDetail(selectedLogDetail, 'response').isExpired ? 'bg-rose-950 text-rose-300 border border-rose-800' : 'bg-emerald-950 text-emerald-300 border border-emerald-800'"
-                            x-text="extractJwtFromDetail(selectedLogDetail, 'response').expiryStatus"></span>
-                        </div>
-                      </div>
-                      <div class="flex items-center space-x-1.5">
-                        <button @click="jwtDecodedExpanded = !jwtDecodedExpanded"
-                          class="px-2 py-0.5 rounded bg-purple-900/60 hover:bg-purple-800 text-purple-200 border border-purple-700/60 text-[11px] font-semibold transition flex items-center space-x-1">
-                          <span x-text="jwtDecodedExpanded ? 'Hide Claims' : 'Inspect Claims'"></span>
-                          <i :data-lucide="jwtDecodedExpanded ? 'chevron-up' : 'chevron-down'" class="w-3 h-3"></i>
-                        </button>
-                      </div>
-                    </div>
-                    <!-- Expanded Claims View -->
-                    <div x-show="jwtDecodedExpanded" class="pt-2 border-t border-purple-900/40 space-y-2">
-                      <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
-                        <div class="bg-[#0B0F17] p-2 rounded border border-[#1E293B]">
-                          <div class="text-[10px] uppercase text-purple-400 font-bold mb-1 flex items-center justify-between">
-                            <span>Header (Alg: <span x-text="extractJwtFromDetail(selectedLogDetail, 'response').alg"></span>)</span>
-                            <button @click="copyText(extractJwtFromDetail(selectedLogDetail, 'response').headerJson)" class="text-slate-400 hover:text-slate-200 text-[9px]">Copy</button>
-                          </div>
-                          <pre class="text-slate-300 overflow-x-auto whitespace-pre-wrap" x-text="extractJwtFromDetail(selectedLogDetail, 'response').headerJson"></pre>
-                        </div>
-                        <div class="bg-[#0B0F17] p-2 rounded border border-[#1E293B]">
-                          <div class="text-[10px] uppercase text-emerald-400 font-bold mb-1 flex items-center justify-between">
-                            <span>Payload Claims (Sub: <span x-text="extractJwtFromDetail(selectedLogDetail, 'response').sub || 'N/A'"></span>)</span>
-                            <button @click="copyText(extractJwtFromDetail(selectedLogDetail, 'response').payloadJson)" class="text-slate-400 hover:text-slate-200 text-[9px]">Copy</button>
-                          </div>
-                          <pre class="text-slate-300 overflow-x-auto whitespace-pre-wrap max-h-48" x-text="extractJwtFromDetail(selectedLogDetail, 'response').payloadJson"></pre>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-
-                <!-- Response Summary Status Bar -->
-                <div class="flex items-center justify-between p-2.5 bg-[#0B0F17] rounded-md border border-[#1E293B]">
-                  <div class="flex items-center space-x-2">
-                    <span class="text-slate-400 text-xs font-semibold">STATUS:</span>
-                    <span class="px-2.5 py-0.5 rounded text-xs font-bold font-mono"
-                      :class="selectedLogDetail.status_code >= 200 && selectedLogDetail.status_code < 300 ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-rose-950 text-rose-400 border border-rose-800'"
-                      x-text="selectedLogDetail.status_code || 'ERR'"></span>
-                  </div>
-                  <div class="flex items-center space-x-3 text-slate-400 text-xs font-mono">
-                    <div>
-                      <span>Latency: </span>
-                      <span class="text-slate-200 font-semibold" x-text="selectedLogDetail.duration_ms + 'ms'"></span>
-                    </div>
-                    <div>
-                      <span>Size: </span>
-                      <span class="text-slate-200 font-semibold"
-                        x-text="formatBytes((selectedLogDetail.response_body || '').length)"></span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Response Headers -->
-                <div>
-                  <div class="flex items-center justify-between mb-1.5">
-                    <div class="text-[11px] uppercase text-slate-400 font-semibold flex items-center">
-                      <span>Response Headers</span>
-                      <span class="ml-1.5 px-1.5 py-0.2 rounded text-[10px] bg-slate-800 text-emerald-300 font-mono"
-                        x-text="Object.keys(selectedLogDetail.response_headers || {}).length"></span>
-                    </div>
-                    <div class="flex items-center space-x-1.5 text-[10px]">
-                      <button @click="resHeadersView = 'table'"
-                        :class="resHeadersView === 'table' ? 'bg-[#1E293B] text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'"
-                        class="px-2 py-0.5 rounded border border-[#1E293B] transition">Table</button>
-                      <button @click="resHeadersView = 'raw'"
-                        :class="resHeadersView === 'raw' ? 'bg-[#1E293B] text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'"
-                        class="px-2 py-0.5 rounded border border-[#1E293B] transition">Raw</button>
-                      <button @click="copyText(formatRawHeaders(selectedLogDetail.response_headers))"
-                        class="px-2 py-0.5 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 transition"
-                        title="Copy Response Headers">Copy</button>
-                    </div>
-                  </div>
-                  <!-- Table View -->
-                  <div x-show="resHeadersView === 'table'"
-                    class="bg-[#0B0F17] border border-[#1E293B] rounded-md overflow-hidden max-h-[350px] overflow-y-auto">
-                    <table class="w-full text-left border-collapse">
-                      <tbody>
-                        <template x-for="(val, header) in selectedLogDetail.response_headers" :key="header">
-                          <tr class="border-b border-[#1E293B]/60 hover:bg-[#1E293B]/40">
-                            <td class="px-3 py-1.5 text-emerald-300 font-semibold w-1/3 select-text align-top"
-                              x-text="header"></td>
-                            <td class="px-3 py-1.5 text-slate-300 break-all select-text font-mono" x-text="val"></td>
-                          </tr>
-                        </template>
-                      </tbody>
-                    </table>
-                  </div>
-                  <!-- Raw View -->
-                  <div x-show="resHeadersView === 'raw'"
-                    class="bg-[#0B0F17] border border-[#1E293B] rounded-md p-3 select-text font-mono text-xs text-emerald-200 whitespace-pre-wrap max-h-[350px] overflow-y-auto"
-                    x-text="formatRawHeaders(selectedLogDetail.response_headers)"></div>
-                </div>
-
-                <!-- Response Body (Full Display with Auto-Beautify) -->
-                <div>
-                  <div class="flex items-center justify-between mb-1.5">
-                    <div class="text-[11px] uppercase text-slate-400 font-semibold flex items-center space-x-2">
-                      <span>Response Body</span>
-                      <span class="px-2 py-0.2 rounded text-[10px] font-bold" :class="{
-                            'bg-emerald-950 text-emerald-300 border border-emerald-800': detectContentType(selectedLogDetail.response_body, selectedLogDetail.response_headers) === 'JSON',
-                            'bg-orange-950 text-orange-300 border border-orange-800': detectContentType(selectedLogDetail.response_body, selectedLogDetail.response_headers) === 'HTML' || detectContentType(selectedLogDetail.response_body, selectedLogDetail.response_headers) === 'XML',
-                            'bg-slate-800 text-slate-400': !['JSON', 'HTML', 'XML'].includes(detectContentType(selectedLogDetail.response_body, selectedLogDetail.response_headers))
-                          }"
-                        x-text="detectContentType(selectedLogDetail.response_body, selectedLogDetail.response_headers)"></span>
-                      <span class="text-[10px] text-slate-500"
-                        x-text="'(' + formatBytes((selectedLogDetail.response_body || '').length) + ')'"></span>
-                    </div>
-                    <div class="flex items-center space-x-1.5 text-[10px]">
-                      <button @click="resBodyBeautified = true"
-                        :class="resBodyBeautified ? 'bg-emerald-950 text-emerald-300 border-emerald-700 font-bold' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
-                        class="px-2 py-0.5 rounded border transition flex items-center">
-                        <i data-lucide="sparkles" class="w-2.5 h-2.5 mr-1 text-emerald-400"></i>
-                        <span>✨ Beautified</span>
-                      </button>
-                      <button @click="resBodyBeautified = false"
-                        :class="!resBodyBeautified ? 'bg-[#1E293B] text-slate-200 font-bold' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
-                        class="px-2 py-0.5 rounded border transition">Raw</button>
-                      <button
-                        @click="distillCurrentResponseBody(selectedLogDetail?.response_body, selectedLogDetail?.response_headers)"
-                        class="px-2 py-0.5 rounded border border-indigo-700/60 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 font-bold transition flex items-center space-x-1"
-                        title="Compress HTML/JSON and extract forms, inputs, and endpoints (85-95% token savings)">
-                        <i data-lucide="sparkles" class="w-2.5 h-2.5 text-indigo-400"></i>
-                        <span>Distill (P1)</span>
-                      </button>
-                      <button @click="resBodyExpanded = !resBodyExpanded"
-                        :class="resBodyExpanded ? 'bg-emerald-950 text-emerald-300 font-bold border-emerald-700' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
-                        class="px-2 py-0.5 rounded border transition"
-                        :title="resBodyExpanded ? 'Collapse Height' : 'Expand Full Body'">
-                        <span x-text="resBodyExpanded ? 'Collapse' : 'Expand All'"></span>
-                      </button>
-                      <button
-                        @click="copyText(resBodyBeautified ? beautifyText(selectedLogDetail.response_body, null, selectedLogDetail.response_headers) : selectedLogDetail.response_body)"
-                        class="px-2 py-0.5 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 transition"
-                        title="Copy Response Body">Copy</button>
-                    </div>
-                  </div>
-                  <div
-                    class="bg-[#0B0F17] border border-[#1E293B] rounded-md p-3 select-text overflow-y-auto whitespace-pre-wrap text-slate-200 font-mono text-xs leading-relaxed"
-                    :class="resBodyExpanded ? 'max-h-none' : 'max-h-[600px]'"
-                    x-text="resBodyBeautified ? beautifyText(selectedLogDetail.response_body, null, selectedLogDetail.response_headers) : (selectedLogDetail.response_body || '[Empty Response Body]')">
-                  </div>
-                </div>
-              </div>
-
-              <!-- TAB 3: TRIAGE -->
-              <div x-show="inspectorTab === 'triage'" class="space-y-4 font-mono">
+            <div class="h-full w-full overflow-hidden min-h-0 flex flex-col">
+              <!-- TRIAGE VIEW (FULL PANEL) -->
+              <div x-show="inspectorViewMode === 'triage'" class="h-full overflow-y-auto p-4 space-y-4 smooth-scroll">
                 <!-- Advanced Active Audit Toolbar -->
                 <div class="p-3 bg-[#0B0F17] border border-[#1E293B] rounded-lg flex flex-wrap items-center justify-between gap-2 shadow-md">
                   <div class="flex flex-wrap items-center gap-2">
@@ -1722,6 +1419,523 @@
                     </div>
                   </div>
                 </template>
+              </div>
+
+              <!-- REQUEST & RESPONSE DUAL/SINGLE PANE CONTAINER -->
+              <div x-show="inspectorViewMode !== 'triage'"
+                id="inspectorSplitPane"
+                class="flex-1 w-full overflow-hidden min-h-0"
+                :class="inspectorViewMode === 'split' ? (inspectorSplitOrientation === 'vertical' ? 'flex flex-col' : 'flex flex-row') : 'flex flex-col'">
+
+                <!-- PANE A: REQUEST PANE -->
+                <div x-show="inspectorViewMode === 'split' || inspectorViewMode === 'request'"
+                  :style="inspectorViewMode === 'request' ? 'width: 100%; height: 100%;' : (inspectorSplitOrientation === 'vertical' ? 'height: ' + inspectorSplitPct + '%; min-height: 120px;' : 'width: ' + inspectorSplitPct + '%; min-width: 220px;')"
+                  class="flex flex-col bg-[#0B0F17]/95 overflow-hidden min-h-0"
+                  :class="{
+                    'border-r border-[#1E293B]': inspectorViewMode === 'split' && inspectorSplitOrientation === 'horizontal',
+                    'border-b border-[#1E293B]': inspectorViewMode === 'split' && inspectorSplitOrientation === 'vertical'
+                  }">
+                  <!-- URL Bar & Target Method -->
+                  <div class="h-9 px-3 bg-[#0B0F17] border-b border-[#1E293B] flex items-center justify-between shrink-0 text-xs">
+                    <div class="flex items-center space-x-2 min-w-0 overflow-hidden">
+                      <span class="w-2 h-2 rounded-full bg-sky-400 shrink-0 shadow-[0_0_6px_rgba(56,189,248,0.6)]"></span>
+                      <span class="px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 font-mono"
+                        :class="{
+                          'bg-emerald-950 text-emerald-300 border border-emerald-800': selectedLogDetail.method === 'GET',
+                          'bg-sky-950 text-sky-300 border border-sky-800': selectedLogDetail.method === 'POST',
+                          'bg-amber-950 text-amber-300 border border-amber-800': ['PUT','PATCH'].includes(selectedLogDetail.method),
+                          'bg-rose-950 text-rose-300 border border-rose-800': selectedLogDetail.method === 'DELETE',
+                          'bg-slate-800 text-slate-300': !['GET','POST','PUT','PATCH','DELETE'].includes(selectedLogDetail.method)
+                        }"
+                        x-text="selectedLogDetail.method"></span>
+                      <span class="text-slate-200 font-mono truncate select-text" :title="selectedLogDetail.url" x-text="selectedLogDetail.url"></span>
+                    </div>
+                    <div class="flex items-center space-x-1 shrink-0 ml-2">
+                      <button @click="copyText(selectedLogDetail.url)" class="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition" title="Copy URL">
+                        <i data-lucide="copy" class="w-3 h-3"></i>
+                      </button>
+                      <button @click="window.open(selectedLogDetail.url, '_blank')" class="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition" title="Open in New Tab">
+                        <i data-lucide="external-link" class="w-3 h-3"></i>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Request Sub-Tabs Strip -->
+                  <div class="h-8 bg-[#0D1524] border-b border-[#1E293B] px-3 flex items-center justify-between shrink-0 text-[11px] font-mono">
+                    <div class="flex items-center space-x-1">
+                      <button @click="reqSubTab = 'headers'"
+                        :class="reqSubTab === 'headers' ? 'text-sky-300 border-b-2 border-sky-400 font-semibold' : 'text-slate-400 hover:text-slate-200'"
+                        class="px-2 py-1 transition flex items-center space-x-1">
+                        <span>Headers</span>
+                        <span class="px-1 rounded text-[9px] bg-slate-800 text-sky-300" x-text="Object.keys(selectedLogDetail.request_headers || {}).length"></span>
+                      </button>
+                      <button @click="reqSubTab = 'body'"
+                        :class="reqSubTab === 'body' ? 'text-sky-300 border-b-2 border-sky-400 font-semibold' : 'text-slate-400 hover:text-slate-200'"
+                        class="px-2 py-1 transition flex items-center space-x-1">
+                        <span>Body</span>
+                        <span class="px-1 rounded text-[9px] bg-slate-800 text-slate-400" x-text="formatBytes((selectedLogDetail.request_body || '').length)"></span>
+                      </button>
+                      <button x-show="selectedLogDetail.url && selectedLogDetail.url.includes('?') && parseQueryParams(selectedLogDetail.url).length > 0"
+                        @click="reqSubTab = 'params'"
+                        :class="reqSubTab === 'params' ? 'text-sky-300 border-b-2 border-sky-400 font-semibold' : 'text-slate-400 hover:text-slate-200'"
+                        class="px-2 py-1 transition flex items-center space-x-1">
+                        <span>Params</span>
+                        <span class="px-1 rounded text-[9px] bg-sky-950 text-sky-300 border border-sky-800" x-text="parseQueryParams(selectedLogDetail.url).length"></span>
+                      </button>
+                      <button x-show="extractJwtFromDetail(selectedLogDetail, 'request')"
+                        @click="reqSubTab = 'jwt'"
+                        :class="reqSubTab === 'jwt' ? 'text-purple-300 border-b-2 border-purple-400 font-semibold' : 'text-purple-400 hover:text-purple-200'"
+                        class="px-2 py-1 transition flex items-center space-x-1">
+                        <i data-lucide="key" class="w-2.5 h-2.5 text-purple-400"></i>
+                        <span>JWT</span>
+                      </button>
+                      <button x-show="selectedLogDetail.reasoning"
+                        @click="reqSubTab = 'ai'"
+                        :class="reqSubTab === 'ai' ? 'text-indigo-300 border-b-2 border-indigo-400 font-semibold' : 'text-indigo-400 hover:text-indigo-200'"
+                        class="px-2 py-1 transition flex items-center space-x-1">
+                        <i data-lucide="brain" class="w-2.5 h-2.5 text-indigo-400"></i>
+                        <span>AI Reasoning</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Request Content Area -->
+                  <div class="flex-1 overflow-y-auto p-3 smooth-scroll">
+                    <!-- SUB-TAB: HEADERS -->
+                    <div x-show="reqSubTab === 'headers'" class="space-y-2.5">
+                      <div class="flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
+                        <!-- Filter Chips & Search Input -->
+                        <div class="flex items-center space-x-1">
+                          <button @click="reqHeaderFilter = 'all'"
+                            :class="reqHeaderFilter === 'all' ? 'bg-sky-950 text-sky-300 border-sky-700 font-bold' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
+                            class="px-2 py-0.5 rounded border text-[10px] transition">All</button>
+                          <button @click="reqHeaderFilter = 'security'"
+                            :class="reqHeaderFilter === 'security' ? 'bg-sky-950 text-sky-300 border-sky-700 font-bold' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
+                            class="px-2 py-0.5 rounded border text-[10px] transition flex items-center space-x-1"
+                            title="Filter Auth, Cookies, Tokens & CORS headers">
+                            <i data-lucide="shield" class="w-2.5 h-2.5 text-sky-400"></i>
+                            <span>Security &amp; Auth</span>
+                          </button>
+                          <input type="text" x-model="reqHeaderSearch" placeholder="Filter..."
+                            class="w-24 sm:w-28 bg-[#0B0F17] border border-[#1E293B] focus:border-sky-500 rounded px-1.5 py-0.5 text-[10px] text-slate-200 outline-none">
+                        </div>
+                        <!-- View Switcher & Copy -->
+                        <div class="flex items-center space-x-1 text-[10px]">
+                          <button @click="reqHeadersView = 'table'"
+                            :class="reqHeadersView === 'table' ? 'bg-[#1E293B] text-sky-400 font-bold' : 'text-slate-400 hover:text-slate-200'"
+                            class="px-2 py-0.5 rounded border border-[#1E293B] transition">Table</button>
+                          <button @click="reqHeadersView = 'raw'"
+                            :class="reqHeadersView === 'raw' ? 'bg-[#1E293B] text-sky-400 font-bold' : 'text-slate-400 hover:text-slate-200'"
+                            class="px-2 py-0.5 rounded border border-[#1E293B] transition">Raw</button>
+                          <button @click="copyText(formatRawHeaders(selectedLogDetail.request_headers))"
+                            class="px-2 py-0.5 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 transition"
+                            title="Copy Headers">Copy</button>
+                        </div>
+                      </div>
+
+                      <!-- Table View -->
+                      <div x-show="reqHeadersView === 'table'" class="bg-[#0B0F17] border border-[#1E293B] rounded-md overflow-hidden">
+                        <table class="w-full text-left border-collapse text-xs">
+                          <tbody class="divide-y divide-[#1E293B]/60">
+                            <template x-for="[header, val] in filteredRequestHeaders()" :key="header">
+                              <tr class="hover:bg-[#1E293B]/30 transition-colors">
+                                <td class="px-2.5 py-1.5 font-semibold w-1/3 select-text align-top"
+                                  :class="isSecurityHeader(header) ? 'text-sky-300' : 'text-slate-300'">
+                                  <div class="flex items-center space-x-1">
+                                    <span x-show="isSecurityHeader(header)" class="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" title="Security Header"></span>
+                                    <span x-text="header"></span>
+                                  </div>
+                                </td>
+                                <td class="px-2.5 py-1.5 text-slate-200 break-all select-text font-mono" x-text="val"></td>
+                              </tr>
+                            </template>
+                            <tr x-show="filteredRequestHeaders().length === 0">
+                              <td colspan="2" class="px-3 py-4 text-center text-slate-500 text-[11px]">No headers matching filter</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <!-- Raw View -->
+                      <div x-show="reqHeadersView === 'raw'"
+                        class="bg-[#0B0F17] border border-[#1E293B] rounded-md p-3 select-text font-mono text-xs text-sky-200 whitespace-pre-wrap"
+                        x-text="formatRawHeaders(selectedLogDetail.request_headers)"></div>
+                    </div>
+
+                    <!-- SUB-TAB: BODY -->
+                    <div x-show="reqSubTab === 'body'" class="space-y-2.5">
+                      <div class="flex items-center justify-between text-[11px]">
+                        <div class="flex items-center space-x-2">
+                          <span class="px-2 py-0.5 rounded text-[10px] font-bold" :class="{
+                            'bg-emerald-950 text-emerald-300 border border-emerald-800': detectContentType(selectedLogDetail.request_body, selectedLogDetail.request_headers) === 'JSON',
+                            'bg-orange-950 text-orange-300 border border-orange-800': detectContentType(selectedLogDetail.request_body, selectedLogDetail.request_headers) === 'HTML' || detectContentType(selectedLogDetail.request_body, selectedLogDetail.request_headers) === 'XML',
+                            'bg-indigo-950 text-indigo-300 border border-indigo-800': detectContentType(selectedLogDetail.request_body, selectedLogDetail.request_headers) === 'FORM',
+                            'bg-slate-800 text-slate-400': !['JSON', 'HTML', 'XML', 'FORM'].includes(detectContentType(selectedLogDetail.request_body, selectedLogDetail.request_headers))
+                          }" x-text="detectContentType(selectedLogDetail.request_body, selectedLogDetail.request_headers)"></span>
+                          <span class="text-[10px] text-slate-400" x-text="'(' + formatBytes((selectedLogDetail.request_body || '').length) + ')'"></span>
+                        </div>
+                        <div class="flex items-center space-x-1.5 text-[10px]">
+                          <button @click="reqBodyBeautified = true"
+                            :class="reqBodyBeautified ? 'bg-sky-950 text-sky-300 border-sky-700 font-bold' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
+                            class="px-2 py-0.5 rounded border transition flex items-center">
+                            <i data-lucide="sparkles" class="w-2.5 h-2.5 mr-1 text-sky-400"></i>
+                            <span>Beautified</span>
+                          </button>
+                          <button @click="reqBodyBeautified = false"
+                            :class="!reqBodyBeautified ? 'bg-[#1E293B] text-slate-200 font-bold' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
+                            class="px-2 py-0.5 rounded border transition">Raw</button>
+                          <button @click="reqBodyExpanded = !reqBodyExpanded"
+                            :class="reqBodyExpanded ? 'bg-sky-950 text-sky-300 font-bold border-sky-700' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
+                            class="px-2 py-0.5 rounded border transition">
+                            <span x-text="reqBodyExpanded ? 'Collapse' : 'Expand All'"></span>
+                          </button>
+                          <button @click="copyText(reqBodyBeautified ? beautifyText(selectedLogDetail.request_body, null, selectedLogDetail.request_headers) : (selectedLogDetail.request_body || ''))"
+                            class="px-2 py-0.5 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 transition"
+                            title="Copy Body">Copy</button>
+                        </div>
+                      </div>
+                      <div class="bg-[#0B0F17] border border-[#1E293B] rounded-md p-3 select-text overflow-y-auto whitespace-pre-wrap text-slate-200 font-mono text-xs leading-relaxed"
+                        :class="reqBodyExpanded ? 'max-h-none' : 'max-h-[500px]'"
+                        x-text="reqBodyBeautified ? beautifyText(selectedLogDetail.request_body, null, selectedLogDetail.request_headers) : (selectedLogDetail.request_body || '[Empty Request Body]')">
+                      </div>
+                    </div>
+
+                    <!-- SUB-TAB: PARAMS -->
+                    <div x-show="reqSubTab === 'params'" class="space-y-2.5">
+                      <div class="flex items-center justify-between text-[11px]">
+                        <span class="text-slate-400 font-semibold">Decoded Query Parameters</span>
+                        <button @click="copyText(JSON.stringify(parseQueryParams(selectedLogDetail.url), null, 2))" class="text-[10px] text-sky-400 hover:text-sky-300">Copy JSON</button>
+                      </div>
+                      <div class="bg-[#0B0F17] border border-[#1E293B] rounded-md overflow-hidden">
+                        <table class="w-full text-left text-[11px] font-mono">
+                          <thead class="bg-[#0B0F17] text-slate-400 uppercase text-[9px] border-b border-[#1E293B]">
+                            <tr>
+                              <th class="px-2.5 py-1 w-1/3">Key</th>
+                              <th class="px-2.5 py-1">Decoded Value</th>
+                            </tr>
+                          </thead>
+                          <tbody class="divide-y divide-[#1E293B]/60">
+                            <template x-for="p in parseQueryParams(selectedLogDetail.url)" :key="p.key">
+                              <tr class="hover:bg-slate-800/30">
+                                <td class="px-2.5 py-1 font-semibold text-sky-300 select-text" x-text="p.key"></td>
+                                <td class="px-2.5 py-1 text-slate-200 break-all select-text" x-text="p.value"></td>
+                              </tr>
+                            </template>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <!-- SUB-TAB: JWT -->
+                    <div x-show="reqSubTab === 'jwt'" class="space-y-2.5">
+                      <template x-if="extractJwtFromDetail(selectedLogDetail, 'request')">
+                        <div class="p-3 bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-[#0B0F17] border border-purple-500/40 rounded-lg shadow-sm font-mono text-xs space-y-3">
+                          <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-2">
+                              <span class="p-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center justify-center">
+                                <i data-lucide="key" class="w-3.5 h-3.5 text-purple-400"></i>
+                              </span>
+                              <div class="flex items-center space-x-1.5 flex-wrap">
+                                <span class="font-bold text-purple-300">Request JWT Detected</span>
+                                <span class="text-[10px] text-slate-400" x-text="'(' + extractJwtFromDetail(selectedLogDetail, 'request').location + ')'"></span>
+                                <span class="px-1.5 py-0.2 rounded text-[10px] font-bold"
+                                  :class="extractJwtFromDetail(selectedLogDetail, 'request').isExpired ? 'bg-rose-950 text-rose-300 border border-rose-800' : 'bg-emerald-950 text-emerald-300 border border-emerald-800'"
+                                  x-text="extractJwtFromDetail(selectedLogDetail, 'request').expiryStatus"></span>
+                              </div>
+                            </div>
+                          </div>
+                          <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+                            <div class="bg-[#0B0F17] p-2 rounded border border-[#1E293B]">
+                              <div class="text-[10px] uppercase text-purple-400 font-bold mb-1 flex items-center justify-between">
+                                <span>Header (Alg: <span x-text="extractJwtFromDetail(selectedLogDetail, 'request').alg"></span>)</span>
+                                <button @click="copyText(extractJwtFromDetail(selectedLogDetail, 'request').headerJson)" class="text-slate-400 hover:text-slate-200 text-[9px]">Copy</button>
+                              </div>
+                              <pre class="text-slate-300 overflow-x-auto whitespace-pre-wrap" x-text="extractJwtFromDetail(selectedLogDetail, 'request').headerJson"></pre>
+                            </div>
+                            <div class="bg-[#0B0F17] p-2 rounded border border-[#1E293B]">
+                              <div class="text-[10px] uppercase text-emerald-400 font-bold mb-1 flex items-center justify-between">
+                                <span>Payload Claims (Sub: <span x-text="extractJwtFromDetail(selectedLogDetail, 'request').sub || 'N/A'"></span>)</span>
+                                <button @click="copyText(extractJwtFromDetail(selectedLogDetail, 'request').payloadJson)" class="text-slate-400 hover:text-slate-200 text-[9px]">Copy</button>
+                              </div>
+                              <pre class="text-slate-300 overflow-x-auto whitespace-pre-wrap max-h-48" x-text="extractJwtFromDetail(selectedLogDetail, 'request').payloadJson"></pre>
+                            </div>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+
+                    <!-- SUB-TAB: AI REASONING -->
+                    <div x-show="reqSubTab === 'ai'" class="space-y-2.5">
+                      <div x-show="selectedLogDetail.reasoning" class="p-3 rounded-lg bg-indigo-950/40 border border-indigo-700/60">
+                        <div class="text-[11px] font-bold text-indigo-300 mb-1 flex items-center justify-between">
+                          <div class="flex items-center">
+                            <i data-lucide="brain" class="w-4 h-4 mr-1.5 text-indigo-400"></i>
+                            <span>AI Agent Hypothesis &amp; Reasoning</span>
+                          </div>
+                          <template x-if="selectedLogDetail.source === 'BROWSER_RENDER'">
+                            <span class="px-1.5 py-0.2 rounded text-[10px] font-semibold"
+                              :class="selectedLogDetail.reasoning && selectedLogDetail.reasoning.includes('Synthetic') ? 'bg-amber-950 text-amber-300 border border-amber-800' : 'bg-cyan-950 text-cyan-300 border border-cyan-800'"
+                              x-text="selectedLogDetail.reasoning && selectedLogDetail.reasoning.includes('Synthetic') ? 'Synthetic Asset Marker' : 'SPA Intercepted Asset'"></span>
+                          </template>
+                        </div>
+                        <div class="text-xs text-slate-200 select-text" x-text="selectedLogDetail.reasoning"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- DRAGGABLE SPLITTER (Visible only in Split mode) -->
+                <div x-show="inspectorViewMode === 'split'"
+                  @mousedown="startInspectorSplitResize($event)"
+                  class="group shrink-0 bg-[#1E293B] hover:bg-indigo-500/80 active:bg-indigo-500 transition-colors flex items-center justify-center select-none z-10"
+                  :class="inspectorSplitOrientation === 'vertical' ? 'h-1.5 hover:h-2 cursor-row-resize w-full' : 'w-1.5 hover:w-2 cursor-col-resize h-full'"
+                  :title="inspectorSplitOrientation === 'vertical' ? 'Drag up/down to adjust Request/Response height' : 'Drag left/right to adjust Request/Response width'">
+                  <div :class="inspectorSplitOrientation === 'vertical' ? 'w-8 h-0.5 bg-slate-500 group-hover:bg-white rounded' : 'h-8 w-0.5 bg-slate-500 group-hover:bg-white rounded'"></div>
+                </div>
+
+                <!-- PANE B: RESPONSE PANE -->
+                <div x-show="inspectorViewMode === 'split' || inspectorViewMode === 'response'"
+                  :style="inspectorViewMode === 'response' ? 'width: 100%; height: 100%;' : (inspectorSplitOrientation === 'vertical' ? 'height: ' + (100 - inspectorSplitPct) + '%; min-height: 120px;' : 'width: ' + (100 - inspectorSplitPct) + '%; min-width: 220px;')"
+                  class="flex flex-col bg-[#0B0F17]/95 overflow-hidden min-h-0">
+                  <!-- Response Status Bar -->
+                  <div class="h-9 px-3 bg-[#0B0F17] border-b border-[#1E293B] flex items-center justify-between shrink-0 text-xs">
+                    <div class="flex items-center space-x-2 min-w-0 overflow-hidden">
+                      <span class="w-2 h-2 rounded-full shrink-0"
+                        :class="selectedLogDetail.status_code >= 200 && selectedLogDetail.status_code < 300 ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : (selectedLogDetail.status_code >= 400 ? 'bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.6)]' : 'bg-sky-400')"></span>
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold shrink-0 font-mono"
+                        :class="selectedLogDetail.status_code >= 200 && selectedLogDetail.status_code < 300 ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-rose-950 text-rose-400 border border-rose-800'"
+                        x-text="selectedLogDetail.status_code ? (selectedLogDetail.status_code + ' ' + (selectedLogDetail.status_message || '')) : 'ERR'"></span>
+                      <div class="flex items-center space-x-2 text-[11px] font-mono text-slate-400">
+                        <span x-text="selectedLogDetail.duration_ms + 'ms'"></span>
+                        <span>•</span>
+                        <span x-text="formatBytes((selectedLogDetail.response_body || '').length)"></span>
+                      </div>
+                    </div>
+                    <div class="flex items-center space-x-1 shrink-0 ml-2">
+                      <button @click="copyRawHttpResponse()" class="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition" title="Copy Raw Response">
+                        <i data-lucide="file-code" class="w-3 h-3 text-emerald-400"></i>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Response Sub-Tabs Strip -->
+                  <div class="h-8 bg-[#0a1818] border-b border-[#1E293B] px-3 flex items-center justify-between shrink-0 text-[11px] font-mono">
+                    <div class="flex items-center space-x-1">
+                      <button @click="resSubTab = 'headers'"
+                        :class="resSubTab === 'headers' ? 'text-emerald-300 border-b-2 border-emerald-400 font-semibold' : 'text-slate-400 hover:text-slate-200'"
+                        class="px-2 py-1 transition flex items-center space-x-1">
+                        <span>Headers</span>
+                        <span class="px-1 rounded text-[9px] bg-slate-800 text-emerald-300" x-text="Object.keys(selectedLogDetail.response_headers || {}).length"></span>
+                      </button>
+                      <button @click="resSubTab = 'body'"
+                        :class="resSubTab === 'body' ? 'text-emerald-300 border-b-2 border-emerald-400 font-semibold' : 'text-slate-400 hover:text-slate-200'"
+                        class="px-2 py-1 transition flex items-center space-x-1">
+                        <span>Body</span>
+                        <span class="px-1 rounded text-[9px] bg-slate-800 text-slate-400" x-text="formatBytes((selectedLogDetail.response_body || '').length)"></span>
+                      </button>
+                      <button x-show="detectContentType(selectedLogDetail.response_body, selectedLogDetail.response_headers) === 'HTML'"
+                        @click="resSubTab = 'preview'"
+                        :class="resSubTab === 'preview' ? 'text-emerald-300 border-b-2 border-emerald-400 font-semibold' : 'text-slate-400 hover:text-slate-200'"
+                        class="px-2 py-1 transition flex items-center space-x-1">
+                        <i data-lucide="eye" class="w-2.5 h-2.5 text-emerald-400"></i>
+                        <span>HTML Preview</span>
+                      </button>
+                      <button x-show="extractJwtFromDetail(selectedLogDetail, 'response')"
+                        @click="resSubTab = 'jwt'"
+                        :class="resSubTab === 'jwt' ? 'text-purple-300 border-b-2 border-purple-400 font-semibold' : 'text-purple-400 hover:text-purple-200'"
+                        class="px-2 py-1 transition flex items-center space-x-1">
+                        <i data-lucide="key" class="w-2.5 h-2.5 text-purple-400"></i>
+                        <span>JWT</span>
+                      </button>
+                      <button @click="resSubTab = 'distill'"
+                        :class="resSubTab === 'distill' ? 'text-indigo-300 border-b-2 border-indigo-400 font-semibold' : 'text-indigo-400 hover:text-indigo-200'"
+                        class="px-2 py-1 transition flex items-center space-x-1"
+                        title="Compress HTML/JSON and extract forms, inputs, and endpoints (85-95% token savings)">
+                        <i data-lucide="sparkles" class="w-2.5 h-2.5 text-indigo-400"></i>
+                        <span>Distill AI</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Response Content Area -->
+                  <div class="flex-1 overflow-y-auto p-3 smooth-scroll">
+                    <!-- SUB-TAB: HEADERS -->
+                    <div x-show="resSubTab === 'headers'" class="space-y-2.5">
+                      <div class="flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
+                        <!-- Filter Chips & Search Input -->
+                        <div class="flex items-center space-x-1">
+                          <button @click="resHeaderFilter = 'all'"
+                            :class="resHeaderFilter === 'all' ? 'bg-emerald-950 text-emerald-300 border-emerald-700 font-bold' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
+                            class="px-2 py-0.5 rounded border text-[10px] transition">All</button>
+                          <button @click="resHeaderFilter = 'security'"
+                            :class="resHeaderFilter === 'security' ? 'bg-emerald-950 text-emerald-300 border-emerald-700 font-bold' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
+                            class="px-2 py-0.5 rounded border text-[10px] transition flex items-center space-x-1"
+                            title="Filter Cookies, CORS, CSP, HSTS, X-Frame-Options headers">
+                            <i data-lucide="shield" class="w-2.5 h-2.5 text-emerald-400"></i>
+                            <span>Security &amp; Headers</span>
+                          </button>
+                          <input type="text" x-model="resHeaderSearch" placeholder="Filter..."
+                            class="w-24 sm:w-28 bg-[#0B0F17] border border-[#1E293B] focus:border-emerald-500 rounded px-1.5 py-0.5 text-[10px] text-slate-200 outline-none">
+                        </div>
+                        <!-- View Switcher & Copy -->
+                        <div class="flex items-center space-x-1 text-[10px]">
+                          <button @click="resHeadersView = 'table'"
+                            :class="resHeadersView === 'table' ? 'bg-[#1E293B] text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'"
+                            class="px-2 py-0.5 rounded border border-[#1E293B] transition">Table</button>
+                          <button @click="resHeadersView = 'raw'"
+                            :class="resHeadersView === 'raw' ? 'bg-[#1E293B] text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'"
+                            class="px-2 py-0.5 rounded border border-[#1E293B] transition">Raw</button>
+                          <button @click="copyText(formatRawHeaders(selectedLogDetail.response_headers))"
+                            class="px-2 py-0.5 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 transition"
+                            title="Copy Response Headers">Copy</button>
+                        </div>
+                      </div>
+
+                      <!-- Table View -->
+                      <div x-show="resHeadersView === 'table'" class="bg-[#0B0F17] border border-[#1E293B] rounded-md overflow-hidden">
+                        <table class="w-full text-left border-collapse text-xs">
+                          <tbody class="divide-y divide-[#1E293B]/60">
+                            <template x-for="[header, val] in filteredResponseHeaders()" :key="header">
+                              <tr class="hover:bg-[#1E293B]/30 transition-colors">
+                                <td class="px-2.5 py-1.5 font-semibold w-1/3 select-text align-top"
+                                  :class="isSecurityHeader(header) ? 'text-emerald-300' : 'text-slate-300'">
+                                  <div class="flex items-center space-x-1">
+                                    <span x-show="isSecurityHeader(header)" class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" title="Security Header"></span>
+                                    <span x-text="header"></span>
+                                  </div>
+                                </td>
+                                <td class="px-2.5 py-1.5 text-slate-200 break-all select-text font-mono" x-text="val"></td>
+                              </tr>
+                            </template>
+                            <tr x-show="filteredResponseHeaders().length === 0">
+                              <td colspan="2" class="px-3 py-4 text-center text-slate-500 text-[11px]">No headers matching filter</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <!-- Raw View -->
+                      <div x-show="resHeadersView === 'raw'"
+                        class="bg-[#0B0F17] border border-[#1E293B] rounded-md p-3 select-text font-mono text-xs text-emerald-200 whitespace-pre-wrap"
+                        x-text="formatRawHeaders(selectedLogDetail.response_headers)"></div>
+                    </div>
+
+                    <!-- SUB-TAB: BODY -->
+                    <div x-show="resSubTab === 'body'" class="space-y-2.5">
+                      <div class="flex items-center justify-between text-[11px]">
+                        <div class="flex items-center space-x-2">
+                          <span class="px-2 py-0.5 rounded text-[10px] font-bold" :class="{
+                            'bg-emerald-950 text-emerald-300 border border-emerald-800': detectContentType(selectedLogDetail.response_body, selectedLogDetail.response_headers) === 'JSON',
+                            'bg-orange-950 text-orange-300 border border-orange-800': detectContentType(selectedLogDetail.response_body, selectedLogDetail.response_headers) === 'HTML' || detectContentType(selectedLogDetail.response_body, selectedLogDetail.response_headers) === 'XML',
+                            'bg-slate-800 text-slate-400': !['JSON', 'HTML', 'XML'].includes(detectContentType(selectedLogDetail.response_body, selectedLogDetail.response_headers))
+                          }" x-text="detectContentType(selectedLogDetail.response_body, selectedLogDetail.response_headers)"></span>
+                          <span class="text-[10px] text-slate-400" x-text="'(' + formatBytes((selectedLogDetail.response_body || '').length) + ')'"></span>
+                        </div>
+                        <div class="flex items-center space-x-1.5 text-[10px]">
+                          <button @click="resBodyBeautified = true"
+                            :class="resBodyBeautified ? 'bg-emerald-950 text-emerald-300 border-emerald-700 font-bold' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
+                            class="px-2 py-0.5 rounded border transition flex items-center">
+                            <i data-lucide="sparkles" class="w-2.5 h-2.5 mr-1 text-emerald-400"></i>
+                            <span>Beautified</span>
+                          </button>
+                          <button @click="resBodyBeautified = false"
+                            :class="!resBodyBeautified ? 'bg-[#1E293B] text-slate-200 font-bold' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
+                            class="px-2 py-0.5 rounded border transition">Raw</button>
+                          <button @click="distillCurrentResponseBody(selectedLogDetail?.response_body, selectedLogDetail?.response_headers)"
+                            class="px-2 py-0.5 rounded border border-indigo-700/60 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 font-bold transition flex items-center space-x-1"
+                            title="Compress HTML/JSON and extract forms, inputs, and endpoints (85-95% token savings)">
+                            <i data-lucide="sparkles" class="w-2.5 h-2.5 text-indigo-400"></i>
+                            <span>Distill (P1)</span>
+                          </button>
+                          <button @click="resBodyExpanded = !resBodyExpanded"
+                            :class="resBodyExpanded ? 'bg-emerald-950 text-emerald-300 font-bold border-emerald-700' : 'text-slate-400 border-[#1E293B] hover:text-slate-200'"
+                            class="px-2 py-0.5 rounded border transition">
+                            <span x-text="resBodyExpanded ? 'Collapse' : 'Expand All'"></span>
+                          </button>
+                          <button @click="copyText(resBodyBeautified ? beautifyText(selectedLogDetail.response_body, null, selectedLogDetail.response_headers) : (selectedLogDetail.response_body || ''))"
+                            class="px-2 py-0.5 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 transition"
+                            title="Copy Response Body">Copy</button>
+                        </div>
+                      </div>
+                      <div class="bg-[#0B0F17] border border-[#1E293B] rounded-md p-3 select-text overflow-y-auto whitespace-pre-wrap text-slate-200 font-mono text-xs leading-relaxed"
+                        :class="resBodyExpanded ? 'max-h-none' : 'max-h-[600px]'"
+                        x-text="resBodyBeautified ? beautifyText(selectedLogDetail.response_body, null, selectedLogDetail.response_headers) : (selectedLogDetail.response_body || '[Empty Response Body]')">
+                      </div>
+                    </div>
+
+                    <!-- SUB-TAB: HTML PREVIEW -->
+                    <div x-show="resSubTab === 'preview'" class="space-y-2.5">
+                      <div class="flex items-center justify-between text-[11px]">
+                        <span class="text-slate-400 font-semibold">Sandboxed HTML Render Preview</span>
+                        <span class="text-[10px] text-amber-400 font-mono">Scripts &amp; External Network Disabled</span>
+                      </div>
+                      <iframe :srcdoc="selectedLogDetail.response_body" sandbox="" class="w-full h-96 bg-white rounded border border-[#1E293B]"></iframe>
+                    </div>
+
+                    <!-- SUB-TAB: JWT -->
+                    <div x-show="resSubTab === 'jwt'" class="space-y-2.5">
+                      <template x-if="extractJwtFromDetail(selectedLogDetail, 'response')">
+                        <div class="p-3 bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-[#0B0F17] border border-purple-500/40 rounded-lg shadow-sm font-mono text-xs space-y-3">
+                          <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-2">
+                              <span class="p-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center justify-center">
+                                <i data-lucide="key" class="w-3.5 h-3.5 text-purple-400"></i>
+                              </span>
+                              <div class="flex items-center space-x-1.5 flex-wrap">
+                                <span class="font-bold text-purple-300">Response JWT Detected</span>
+                                <span class="text-[10px] text-slate-400" x-text="'(' + extractJwtFromDetail(selectedLogDetail, 'response').location + ')'"></span>
+                                <span class="px-1.5 py-0.2 rounded text-[10px] font-bold"
+                                  :class="extractJwtFromDetail(selectedLogDetail, 'response').isExpired ? 'bg-rose-950 text-rose-300 border border-rose-800' : 'bg-emerald-950 text-emerald-300 border border-emerald-800'"
+                                  x-text="extractJwtFromDetail(selectedLogDetail, 'response').expiryStatus"></span>
+                              </div>
+                            </div>
+                          </div>
+                          <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+                            <div class="bg-[#0B0F17] p-2 rounded border border-[#1E293B]">
+                              <div class="text-[10px] uppercase text-purple-400 font-bold mb-1 flex items-center justify-between">
+                                <span>Header (Alg: <span x-text="extractJwtFromDetail(selectedLogDetail, 'response').alg"></span>)</span>
+                                <button @click="copyText(extractJwtFromDetail(selectedLogDetail, 'response').headerJson)" class="text-slate-400 hover:text-slate-200 text-[9px]">Copy</button>
+                              </div>
+                              <pre class="text-slate-300 overflow-x-auto whitespace-pre-wrap" x-text="extractJwtFromDetail(selectedLogDetail, 'response').headerJson"></pre>
+                            </div>
+                            <div class="bg-[#0B0F17] p-2 rounded border border-[#1E293B]">
+                              <div class="text-[10px] uppercase text-emerald-400 font-bold mb-1 flex items-center justify-between">
+                                <span>Payload Claims (Sub: <span x-text="extractJwtFromDetail(selectedLogDetail, 'response').sub || 'N/A'"></span>)</span>
+                                <button @click="copyText(extractJwtFromDetail(selectedLogDetail, 'response').payloadJson)" class="text-slate-400 hover:text-slate-200 text-[9px]">Copy</button>
+                              </div>
+                              <pre class="text-slate-300 overflow-x-auto whitespace-pre-wrap max-h-48" x-text="extractJwtFromDetail(selectedLogDetail, 'response').payloadJson"></pre>
+                            </div>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+
+                    <!-- SUB-TAB: DISTILL AI -->
+                    <div x-show="resSubTab === 'distill'" class="space-y-2.5">
+                      <div class="flex items-center justify-between text-[11px]">
+                        <span class="text-slate-400 font-semibold">Distilled AI Representation</span>
+                        <button @click="distillCurrentResponseBody(selectedLogDetail?.response_body, selectedLogDetail?.response_headers)"
+                          class="px-2 py-0.5 rounded bg-indigo-950 border border-indigo-700/60 text-indigo-300 text-[10px] font-semibold hover:bg-indigo-900 transition">
+                          Re-Distill Payload
+                        </button>
+                      </div>
+                      <div class="p-3 bg-[#0B0F17] border border-[#1E293B] rounded-md font-mono text-xs text-slate-300">
+                        <template x-if="distilledResult">
+                          <div class="space-y-2">
+                            <div class="text-[10px] text-emerald-400 font-bold">Compression: <span x-text="distilledResult.compressionRatio || 'N/A'"></span></div>
+                            <pre class="overflow-x-auto whitespace-pre-wrap text-slate-200" x-text="distilledResult.distilledContent"></pre>
+                          </div>
+                        </template>
+                        <template x-if="!distilledResult">
+                          <div class="text-center py-6 text-slate-500">
+                            <p>Click "Distill Payload" to strip boilerplate HTML/JSON and compress tokens by 85-95%.</p>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </div>
           </template>
@@ -6775,6 +6989,14 @@
               <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-sky-300 font-bold border border-[#1E293B]">Ctrl + F</kbd>
             </div>
             <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
+              <span class="text-slate-300">Inspector Req / Res</span>
+              <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-sky-300 font-bold border border-[#1E293B]">Alt + 1 / 2</kbd>
+            </div>
+            <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
+              <span class="text-slate-300">Inspector Split / Triage</span>
+              <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-indigo-300 font-bold border border-[#1E293B]">Alt + 3 / 4</kbd>
+            </div>
+            <div class="flex items-center justify-between p-2 bg-[#0B0F17] border border-[#1E293B] rounded-lg">
               <span class="text-slate-300">Help / Shortcuts</span>
               <kbd class="px-1.5 py-0.5 rounded bg-[#111827] text-indigo-300 font-bold border border-[#1E293B]">?</kbd>
             </div>
@@ -7322,6 +7544,20 @@
           showColFilters: true,
           sortCol: 'id',
           sortDir: 'desc',
+
+          // Dual-Pane Inspector Layout & Controls
+          inspectorViewMode: 'split', // 'split' | 'request' | 'response' | 'triage'
+          inspectorSplitPct: 50,
+          inspectorSplitOrientation: 'horizontal', // 'horizontal' (side-by-side) | 'vertical' (stacked)
+          isDraggingInspectorSplit: false,
+          reqSubTab: 'headers', // 'headers' | 'body' | 'params' | 'jwt' | 'ai'
+          resSubTab: 'headers', // 'headers' | 'body' | 'preview' | 'jwt' | 'distill'
+          reqHeaderFilter: 'all', // 'all' | 'security'
+          reqHeaderSearch: '',
+          resHeaderFilter: 'all', // 'all' | 'security'
+          resHeaderSearch: '',
+          copiedRawHttp: false,
+          copiedRawResponse: false,
           colWidths: {
             id: 60,
             flag: 105,
@@ -7421,6 +7657,15 @@
               if (savedSidebar !== null) this.sidebarExpanded = savedSidebar === 'true';
               const savedDensity = localStorage.getItem('proxsynth_density');
               if (savedDensity) this.tableDensity = savedDensity;
+              const savedInspectorView = localStorage.getItem('proxsynth_inspector_view_mode');
+              if (savedInspectorView) {
+                this.inspectorViewMode = savedInspectorView;
+                this.inspectorTab = savedInspectorView;
+              }
+              const savedInspectorSplitPct = localStorage.getItem('proxsynth_inspector_split_pct');
+              if (savedInspectorSplitPct) this.inspectorSplitPct = parseFloat(savedInspectorSplitPct);
+              const savedInspectorOrientation = localStorage.getItem('proxsynth_inspector_split_orientation');
+              if (savedInspectorOrientation) this.inspectorSplitOrientation = savedInspectorOrientation;
             } catch (e) { }
 
             // Global Shortcuts Ecosystem (P1)
@@ -7497,6 +7742,34 @@
                   if (s) { s.focus(); s.select(); }
                   return;
                 }
+              }
+
+              // Alt+1: Focus Request view (in Proxy tab)
+              if (e.altKey && e.key === '1' && this.currentAppTab === 'proxy') {
+                e.preventDefault();
+                this.setInspectorViewMode('request');
+                return;
+              }
+
+              // Alt+2: Focus Response view (in Proxy tab)
+              if (e.altKey && e.key === '2' && this.currentAppTab === 'proxy') {
+                e.preventDefault();
+                this.setInspectorViewMode('response');
+                return;
+              }
+
+              // Alt+3: Split View (in Proxy tab)
+              if (e.altKey && e.key === '3' && this.currentAppTab === 'proxy') {
+                e.preventDefault();
+                this.setInspectorViewMode('split');
+                return;
+              }
+
+              // Alt+4: Triage View (in Proxy tab)
+              if (e.altKey && e.key === '4' && this.currentAppTab === 'proxy') {
+                e.preventDefault();
+                this.setInspectorViewMode('triage');
+                return;
               }
 
               // '?' key: Show Hotkeys Modal when not typing in input
@@ -8188,6 +8461,183 @@
 
             window.addEventListener('mousemove', onMouseMove);
             window.addEventListener('mouseup', onMouseUp);
+          },
+
+          setInspectorViewMode(mode) {
+            this.inspectorViewMode = mode;
+            this.inspectorTab = mode;
+            try {
+              localStorage.setItem('proxsynth_inspector_view_mode', mode);
+            } catch (e) { }
+            this.$nextTick(() => lucide.createIcons());
+          },
+
+          setInspectorSplitPct(pct) {
+            this.inspectorSplitPct = Math.min(80, Math.max(20, pct));
+            try {
+              localStorage.setItem('proxsynth_inspector_split_pct', String(this.inspectorSplitPct));
+            } catch (e) { }
+          },
+
+          toggleInspectorOrientation() {
+            this.inspectorSplitOrientation = this.inspectorSplitOrientation === 'horizontal' ? 'vertical' : 'horizontal';
+            try {
+              localStorage.setItem('proxsynth_inspector_split_orientation', this.inspectorSplitOrientation);
+            } catch (e) { }
+            this.$nextTick(() => lucide.createIcons());
+          },
+
+          startInspectorSplitResize(event) {
+            event.preventDefault();
+            const container = document.getElementById('inspectorSplitPane');
+            if (!container) return;
+            const containerRect = container.getBoundingClientRect();
+            const isVertical = this.inspectorSplitOrientation === 'vertical';
+
+            const prevCursor = document.body.style.cursor;
+            const prevUserSelect = document.body.style.userSelect;
+            document.body.style.cursor = isVertical ? 'row-resize' : 'col-resize';
+            document.body.style.userSelect = 'none';
+            this.isDraggingInspectorSplit = true;
+
+            let rAF = null;
+            const onMouseMove = (e) => {
+              if (rAF) return;
+              rAF = window.requestAnimationFrame(() => {
+                rAF = null;
+                if (isVertical) {
+                  const newHeight = ((e.clientY - containerRect.top) / containerRect.height) * 100;
+                  this.inspectorSplitPct = Math.min(80, Math.max(20, Math.round(newHeight * 10) / 10));
+                } else {
+                  const newWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+                  this.inspectorSplitPct = Math.min(80, Math.max(20, Math.round(newWidth * 10) / 10));
+                }
+              });
+            };
+
+            const onMouseUp = () => {
+              if (rAF) {
+                window.cancelAnimationFrame(rAF);
+                rAF = null;
+              }
+              document.body.style.cursor = prevCursor;
+              document.body.style.userSelect = prevUserSelect;
+              this.isDraggingInspectorSplit = false;
+              window.removeEventListener('mousemove', onMouseMove);
+              window.removeEventListener('mouseup', onMouseUp);
+              try {
+                localStorage.setItem('proxsynth_inspector_split_pct', String(this.inspectorSplitPct));
+              } catch (e) { }
+            };
+
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp);
+          },
+
+          isSecurityHeader(name) {
+            if (!name) return false;
+            const n = name.toLowerCase();
+            const securityKeys = [
+              'authorization', 'cookie', 'set-cookie', 'x-api-key', 'api-key', 'token',
+              'origin', 'referer', 'access-control-allow-origin', 'access-control-allow-credentials',
+              'access-control-allow-headers', 'access-control-allow-methods', 'access-control-expose-headers',
+              'access-control-max-age', 'access-control-request-headers', 'access-control-request-method',
+              'content-security-policy', 'content-security-policy-report-only',
+              'x-frame-options', 'x-content-type-options', 'strict-transport-security',
+              'x-xss-protection', 'cross-origin-opener-policy', 'cross-origin-embedder-policy',
+              'cross-origin-resource-policy', 'permissions-policy', 'server', 'x-powered-by',
+              'www-authenticate', 'content-type', 'x-csrf-token', 'csrf-token', 'xsrf-token', 'x-xsrf-token'
+            ];
+            return securityKeys.includes(n) || n.includes('token') || n.includes('auth') || n.includes('csrf') || n.includes('cors') || n.includes('key');
+          },
+
+          filteredRequestHeaders() {
+            if (!this.selectedLogDetail || !this.selectedLogDetail.request_headers) return [];
+            const entries = Object.entries(this.selectedLogDetail.request_headers);
+            const search = (this.reqHeaderSearch || '').trim().toLowerCase();
+            const filter = this.reqHeaderFilter || 'all';
+
+            return entries.filter(([k, v]) => {
+              if (filter === 'security' && !this.isSecurityHeader(k)) return false;
+              if (search) {
+                const matchKey = k.toLowerCase().includes(search);
+                const matchVal = String(v).toLowerCase().includes(search);
+                if (!matchKey && !matchVal) return false;
+              }
+              return true;
+            });
+          },
+
+          filteredResponseHeaders() {
+            if (!this.selectedLogDetail || !this.selectedLogDetail.response_headers) return [];
+            const entries = Object.entries(this.selectedLogDetail.response_headers);
+            const search = (this.resHeaderSearch || '').trim().toLowerCase();
+            const filter = this.resHeaderFilter || 'all';
+
+            return entries.filter(([k, v]) => {
+              if (filter === 'security' && !this.isSecurityHeader(k)) return false;
+              if (search) {
+                const matchKey = k.toLowerCase().includes(search);
+                const matchVal = String(v).toLowerCase().includes(search);
+                if (!matchKey && !matchVal) return false;
+              }
+              return true;
+            });
+          },
+
+          formatRawHttpRequest(detail) {
+            if (!detail) return '';
+            let path = detail.path || '/';
+            try {
+              if (detail.url && (detail.url.startsWith('http://') || detail.url.startsWith('https://'))) {
+                const urlObj = new URL(detail.url);
+                path = urlObj.pathname + urlObj.search;
+              }
+            } catch (e) { }
+            const httpVersion = detail.http_version || 'HTTP/1.1';
+            let raw = `${detail.method || 'GET'} ${path || '/'} ${httpVersion}\r\n`;
+            const headers = detail.request_headers || {};
+            for (const [k, v] of Object.entries(headers)) {
+              raw += `${k}: ${v}\r\n`;
+            }
+            raw += '\r\n';
+            if (detail.request_body) {
+              raw += detail.request_body;
+            }
+            return raw;
+          },
+
+          formatRawHttpResponse(detail) {
+            if (!detail) return '';
+            const httpVersion = detail.http_version || 'HTTP/1.1';
+            const statusCode = detail.status_code || 200;
+            const statusMsg = detail.status_message || (statusCode === 200 ? 'OK' : (statusCode === 404 ? 'Not Found' : (statusCode === 500 ? 'Internal Server Error' : '')));
+            let raw = `${httpVersion} ${statusCode} ${statusMsg}\r\n`;
+            const headers = detail.response_headers || {};
+            for (const [k, v] of Object.entries(headers)) {
+              raw += `${k}: ${v}\r\n`;
+            }
+            raw += '\r\n';
+            if (detail.response_body) {
+              raw += detail.response_body;
+            }
+            return raw;
+          },
+
+          async copyRawHttpRequest() {
+            if (!this.selectedLogDetail) return;
+            const raw = this.formatRawHttpRequest(this.selectedLogDetail);
+            await this.copyText(raw);
+            this.copiedRawHttp = true;
+            setTimeout(() => { this.copiedRawHttp = false; }, 2000);
+          },
+
+          async copyRawHttpResponse() {
+            if (!this.selectedLogDetail) return;
+            const raw = this.formatRawHttpResponse(this.selectedLogDetail);
+            await this.copyText(raw);
+            this.copiedRawResponse = true;
+            setTimeout(() => { this.copiedRawResponse = false; }, 2000);
           },
 
           startColResize(col, event) {
