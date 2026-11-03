@@ -1,10 +1,10 @@
 # ⚡ PROXSYNTH MCP — AUTONOMOUS AGENT INTEGRATION & OPERATIONAL DIRECTIVE
 ### Comprehensive Guide & Cognitive Decision Framework for AI Pentesting Agents (Claude Code / OpenCode / Hermes / Cursor / Windsurf / Antigravity)
 
-> **Release Version**: `v0.1.0-beta` (Initial Beta Release)  
+> **Release Version**: `v0.2.0-beta` (Autonomous Cognitive Testing Release)  
 > **Protocol**: Model Context Protocol (FastMCP 2.0+)  
-> **Registered Tools**: **83 Active FastMCP Security Tools**  
-> **Default Ports**: FastAPI Dashboard & API `:8000` | Forward Interception Proxy `:8088` | DNS OAST `:5354` | LDAP OAST `:1390`  
+> **Registered Tools**: **97 Active FastMCP Security Tools (Full Mode) | 11 High-Leverage Meta-Tools (Power Mode ~87.5% Token Reduction)**  
+> **Default Ports**: FastAPI Dashboard & API `:8000` | Forward Interception Proxy `:8088` | DNS OAST `:5353` | LDAP OAST `:1390`  
 
 This operational document specifies how autonomous AI agents interface with the **Proxynth Security Testing Gateway**, autonomously navigate attack surfaces across Web, REST/GraphQL APIs, and Network Infrastructure, make deterministic testing decisions, and execute zero-human-intervention security campaigns.
 
@@ -261,7 +261,7 @@ If executing independently, the agent must evaluate the following deterministic 
 
 ---
 
-## 5. Complete 80 FastMCP Tools Reference Specification
+## 5. Complete 97 FastMCP Tools Reference Specification (Full Mode)
 
 | # | Tool Name | Subsystem | Key Arguments | Description |
 | :---: | :--- | :--- | :--- | :--- |
@@ -345,6 +345,23 @@ If executing independently, the agent must evaluate the following deterministic 
 | **78** | `list_campaigns` | **Autonomous Campaign**| `project` | Lists all registered autonomous security campaigns across the workspace or project. |
 | **79** | `get_tool_harness_manifest` | **Agent Harness** | *(none)* | Returns complete 80-tool taxonomy with read_only and destructive flags for auto-approval. |
 | **80** | `get_target_health` | **Recon & Observability** | `url`, `timeout`, `project` | Granular latency probe (DNS, TCP, TLS, TTFB) diagnosing 5xx flapping, packet latency, and target stability. |
+| **81** | `audit_cache_poisoning` | Cache Security | `url`, `headers` | Audits unkeyed header web cache poisoning and fatal reflection vectors. |
+| **82** | `audit_csrf_indepth` | CSRF Security | `url`, `method` | Audits anti-CSRF defenses, SameSite cookie policies, and origin validation. |
+| **83** | `audit_file_upload` | Upload Security | `upload_url`, `param_name` | Audits multipart file upload filters against polyglots and extension evasion. |
+| **84** | `manage_pentest_execution` | **Power Tool 1** | `action`, `command`, `target_url` | Unified sandbox execution, external script capture & replay response diffing. |
+| **85** | `manage_attack_surface` | **Power Tool 2** | `action`, `project`, `data` | Unified knowledge graph mapping, passive scope recon & multi-hop exploit chains. |
+| **86** | `analyze_and_diff_traffic` | **Power Tool 3** | `action`, `log_id_a`, `log_id_b` | High-precision traffic analysis, DOM distillation, dynamic noise stripping & clustering. |
+| **87** | `manage_interception_rules` | **Power Tool 4** | `action`, `rule_id`, `rule_config` | Interception rules intelligence hub (list, add, toggle, delete). |
+| **88** | `manage_session_vault` | **Power Tool 5** | `action`, `domain`, `role` | Multi-role identity vault (Attacker, Victim, Admin, Guest). |
+| **89** | `manage_oast_and_tunnels` | **Power Tool 6** | `action`, `vuln_type`, `target_url` | Unified Out-of-Band operations, canary spraying, and public tunnel manager. |
+| **90** | `manage_testing_agenda` | **Power Tool 7** | `action`, `project`, `hypothesis` | Agent working memory hub, hypothesis ledger, and testing agenda manager. |
+| **91** | `run_autonomous_autopilot` | **Auto-Pilot Engine** | `target`, `goal`, `max_depth` | End-to-end 7-phase self-driving pentest loop with verification and exploit chaining. |
+| **92** | `configure_oast_webhook` | OAST Webhooks | `webhook_url`, `secret` | Configures external HMAC-SHA256 signed webhook for real-time OAST event dispatching. |
+| **93** | `simulate_oast_callback` | OAST Webhooks | `token`, `client_ip`, `body` | Simulates an incoming OAST callback hit in database and triggers webhook forwarder. |
+| **94** | `run_autopilot_swarm` | **Swarm Pool** | `targets`, `concurrency`, `goal` | Dispatches distributed multi-agent swarm worker pool to audit targets in parallel. |
+| **95** | `export_nuclei_template` | Template Exporter | `finding_id`, `payload_id` | Exports verified finding or payload to standard ProjectDiscovery Nuclei v2/v3 YAML. |
+| **96** | `configure_session_refresher` | Session Refresher | `domain`, `login_url`, `payload` | Configures automated login recipe for transparent 401 re-authentication in proxy. |
+| **97** | `test_session_refresh` | Session Refresher | `domain`, `project` | Tests re-authentication recipe to verify credential extraction and token refresh. |
 
 ---
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Proxsynth (`v0.1.0-beta`) is an interception proxy and security-testing gateway purpose-built for **autonomous AI pentesting agents** that talk to it over the **Model Context Protocol (FastMCP)**. It exposes ~83 MCP tools (traffic inspection, TLS-MITM forward proxy, multi-protocol OAST, DOM/XSS verification, authz/injection/logic audit engines, an autonomous campaign orchestrator, and an agent "hypothesis ledger" working memory) backed by a FastAPI dashboard and a shared SQLite store. It is an authorized-testing tool; treat all target traffic it handles as scoped engagement data.
+Proxsynth (`v0.2.0-beta`) is an interception proxy and security-testing gateway purpose-built for **autonomous AI pentesting agents** that talk to it over the **Model Context Protocol (FastMCP)**. It exposes **97 FastMCP tools** (Full Mode) and **11 consolidated meta-tools** (Power Mode via `PROXSYNTH_TOOL_MODE=power`, reducing prompt schema token overhead by ~87.5%) covering traffic inspection, TLS-MITM forward proxy with WAF auto-healing, multi-protocol OAST with HMAC webhooks, Playwright DOM/XSS screenshot verification, authz/injection/logic audit engines, an autonomous 7-phase closed-loop Auto-Pilot state machine, a distributed Swarm Worker Pool, and an agent "hypothesis ledger" working memory backed by a FastAPI dashboard and a shared SQLite store. It is an authorized-testing tool; treat all target traffic it handles as scoped engagement data.
 
 ## Architecture (the big picture)
 
@@ -61,12 +61,14 @@ install.ps1 / install.bat   # Windows
 Tests are standalone scripts (not pytest) that assert via `FastAPI TestClient` and the MCP registry, each with a `__main__` block. They are **gitignored** (`test_*.py`, local-only). Run one directly:
 
 ```bash
-venv/Scripts/python.exe test_suite_all.py          # full dashboard/API/WebSocket suite
-venv/Scripts/python.exe scripts/self_test.py       # acceptance gate: ~83 tools, annotations, output schemas, scoping
-bash scripts/self_test.sh                           # same gate, resolves the venv python for you
+venv/Scripts/python.exe scripts/self_test.py               # acceptance gate: 97 tools, annotations, output schemas, scoping
+venv/Scripts/python.exe test_unified_autonomous_engine.py  # autonomous campaign, port scanner, OpenAPI importer suite
+venv/Scripts/python.exe test_dummy_target_pentest.py       # end-to-end live mock target test (OAST, Swarm, Nuclei, Session)
+venv/Scripts/python.exe test_suite_all.py                  # full dashboard/API/WebSocket suite
+bash scripts/self_test.sh                                  # same gate, resolves the venv python for you
 ```
 
-When adding a tool, `scripts/self_test.py` enforces the tool count and that every tool carries correct annotations (and read-only tools carry an `outputSchema`) — run it before claiming an MCP change is done.
+When adding a tool, `scripts/self_test.py` enforces the tool count (97 tools) and that every tool carries correct annotations (and read-only tools carry an `outputSchema`) — run it before claiming an MCP change is done.
 
 ## Configuration
 Runtime config is environment-driven (see `.env`, loaded by the runners). Common vars: `PROXSYNTH_BACKEND_URL`, `PROXSYNTH_PROJECT` (default workspace), `PROXSYNTH_API_KEY`, `PROXSYNTH_ALLOWED_ORIGINS`, `PROXSYNTH_ALLOW_REMOTE`, `PROXSYNTH_MAX_BODY_SIZE`, `PROXSYNTH_PROXY_PORT`, `PROXSYNTH_DISABLE_AUTO_PROXY`. Several vars are read with both `PROXSYNTH_` and legacy `PROXYNTH_` prefixes. `mcp_config.json` is the sample MCP-client registration (points a client's `command`/`args` at this repo's venv python + `mcp_server.py`).
