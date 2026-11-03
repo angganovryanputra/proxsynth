@@ -1,7 +1,7 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-*$py.class
+*.class
 *.log
 
 # Database files & SQLite WAL
@@ -9,12 +9,14 @@ __pycache__/
 *.db-shm
 *.db-wal
 proxynth.db*
+proxsynth.db*
 
 # Test scripts & Development Scratch (Local Only - Not Pushed to Public Repo)
 test_*.py
 !test_cognitive_hexagon.py
 tests/
 scratch/
+evidence/
 .pytest_cache/
 test_output/
 .codegraph/
@@ -29,6 +31,10 @@ env/
 # IDE / Editor files
 .vscode/
 .idea/
+.cursor/
+.claude/
+.omc/
+opencode.json
 *.swp
 *.swo
 
@@ -39,6 +45,7 @@ Thumbs.db
 # Certificates & Local Secrets
 .proxsynth_ca/
 .proxynth_ca/
+.proxsynth_key*
 .proxynth_key*
 *.key
 *.crt
