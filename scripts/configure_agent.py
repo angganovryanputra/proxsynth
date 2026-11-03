@@ -2,8 +2,8 @@
 PROXSYNTH MCP - Automated Agent Configuration & Installer Helper
 Generates dynamic, cross-platform MCP client configurations for:
 - OpenCode (opencode.json / ~/.opencode/mcp.json)
-- Claude Code & Claude Desktop (claude_desktop_config.json / ~/.claude/mcp.json)
-- Cursor (.cursor/mcp.json)
+- Claude Code CLI (~/.claude.json) & Claude Desktop (claude_desktop_config.json)
+- Cursor (.cursor/mcp.json & ~/.cursor/mcp.json)
 - Windsurf (~/.codeium/windsurf/mcp_config.json)
 - Antigravity (~/.gemini/antigravity/mcp_config.json)
 - Generic FastMCP clients (mcp_config.json)
@@ -12,8 +12,9 @@ Generates dynamic, cross-platform MCP client configurations for:
 import os
 import sys
 import json
+import shutil
 import argparse
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -63,7 +64,7 @@ def build_mcp_config(tool_mode: str = "full", project: str = "default") -> Dict[
 
 
 def build_opencode_config(tool_mode: str = "full", project: str = "default") -> Dict[str, Any]:
-    """Generates OpenCode specific configuration dictionary."""
+    """Generates OpenCode specific configuration dictionary supporting dual schemas."""
     cfg = build_mcp_config(tool_mode=tool_mode, project=project)
     server_entry = cfg["mcpServers"]["proxsynth"]
     return {
@@ -79,16 +80,25 @@ def build_opencode_config(tool_mode: str = "full", project: str = "default") -> 
     }
 
 
-def get_agent_config_paths() -> Dict[str, str]:
+def get_agent_config_paths() -> Dict[str, Any]:
     """Resolves standard configuration file paths for common AI agents."""
     home = os.path.expanduser("~")
     appdata = os.getenv("APPDATA", os.path.join(home, "AppData", "Roaming"))
+    config_home = os.getenv("XDG_CONFIG_HOME", os.path.join(home, ".config"))
 
-    paths = {
+    paths: Dict[str, Any] = {
         "repo_mcp": os.path.join(REPO_DIR, "mcp_config.json"),
         "repo_opencode": os.path.join(REPO_DIR, "opencode.json"),
-        "opencode_user": os.path.join(home, ".opencode", "mcp.json"),
-        "claude_code": os.path.join(home, ".claude", "mcp.json"),
+        "repo_cursor": os.path.join(REPO_DIR, ".cursor", "mcp.json"),
+        "opencode_user": [
+            os.path.join(home, ".opencode", "mcp.json"),
+            os.path.join(config_home, "opencode", "opencode.json"),
+            os.path.join(appdata, "opencode", "opencode.json"),
+        ],
+        "claude_code": [
+            os.path.join(home, ".claude.json"),
+            os.path.join(home, ".claude", "mcp.json"),
+        ],
         "cursor_user": os.path.join(home, ".cursor", "mcp.json"),
         "windsurf_user": os.path.join(home, ".codeium", "windsurf", "mcp_config.json"),
         "antigravity_user": os.path.join(home, ".gemini", "antigravity", "mcp_config.json"),
@@ -99,7 +109,7 @@ def get_agent_config_paths() -> Dict[str, str]:
     elif sys.platform == "darwin":
         paths["claude_desktop"] = os.path.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
     else:
-        paths["claude_desktop"] = os.path.join(home, ".config", "Claude", "claude_desktop_config.json")
+        paths["claude_desktop"] = os.path.join(config_home, "Claude", "claude_desktop_config.json")
 
     return paths
 
@@ -110,9 +120,23 @@ def merge_mcp_config(target_file: str, new_config: Dict[str, Any]) -> bool:
     if os.path.isfile(target_file):
         try:
             with open(target_file, "r", encoding="utf-8") as f:
-                existing_data = json.load(f)
-        except Exception:
+                loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    existing_data = loaded
+                else:
+                    print(f"[-] Warning: {target_file} root is not a dictionary; resetting to blank.")
+                    existing_data = {}
+        except Exception as e:
+            bak_file = target_file + ".bak"
+            try:
+                shutil.copyfile(target_file, bak_file)
+                print(f"[!] Warning: Could not parse {target_file} ({e}). Backed up original to {bak_file}")
+            except Exception:
+                pass
             existing_data = {}
+
+    if not isinstance(existing_data, dict):
+        existing_data = {}
 
     # Handle standard "mcpServers"
     if "mcpServers" in new_config:
@@ -134,6 +158,35 @@ def merge_mcp_config(target_file: str, new_config: Dict[str, Any]) -> bool:
     return True
 
 
+def apply_config_to_targets(targets: Any, config: Dict[str, Any], agent_name: str) -> None:
+    """Helper to apply configuration to a target path or list of candidate paths."""
+    if isinstance(targets, str):
+        target_list = [targets]
+    elif isinstance(targets, list):
+        target_list = targets
+    else:
+        return
+
+    # If any existing target file is found, update it. Otherwise update the primary target.
+    found_existing = False
+    for target in target_list:
+        if os.path.isfile(target):
+            try:
+                merge_mcp_config(target, config)
+                print(f"[+] Installed Proxsynth into {agent_name} config: {target}")
+                found_existing = True
+            except Exception as ex:
+                print(f"[-] Notice: Could not update {agent_name} ({target}): {ex}")
+
+    if not found_existing and target_list:
+        primary_target = target_list[0]
+        try:
+            merge_mcp_config(primary_target, config)
+            print(f"[+] Installed Proxsynth into {agent_name} config: {primary_target}")
+        except Exception as ex:
+            print(f"[-] Notice: Could not create {agent_name} ({primary_target}): {ex}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Proxsynth Automated Agent MCP Configurator")
     parser.add_argument("--tool-mode", choices=["full", "power"], default="full", help="FastMCP registry mode (full=97 tools, power=11 tools)")
@@ -153,9 +206,10 @@ def main():
         print(json.dumps(mcp_cfg, indent=2))
         return
 
-    # Always generate dynamic local repository files
+    # 1. Always generate dynamic local repository files (mcp_config.json, opencode.json, .cursor/mcp.json)
     repo_mcp_file = os.path.join(REPO_DIR, "mcp_config.json")
     repo_opencode_file = os.path.join(REPO_DIR, "opencode.json")
+    repo_cursor_file = os.path.join(REPO_DIR, ".cursor", "mcp.json")
 
     with open(repo_mcp_file, "w", encoding="utf-8") as f:
         json.dump(mcp_cfg, f, indent=2)
@@ -165,48 +219,29 @@ def main():
         json.dump(opencode_cfg, f, indent=2)
     print(f"[+] Generated OpenCode config: {repo_opencode_file}")
 
+    os.makedirs(os.path.dirname(repo_cursor_file), exist_ok=True)
+    with open(repo_cursor_file, "w", encoding="utf-8") as f:
+        json.dump(mcp_cfg, f, indent=2)
+    print(f"[+] Generated Workspace Cursor config: {repo_cursor_file}")
+
     paths = get_agent_config_paths()
 
     if args.install in ("all", "opencode"):
-        target = paths["opencode_user"]
-        try:
-            merge_mcp_config(target, opencode_cfg)
-            print(f"[+] Installed Proxsynth into OpenCode user config: {target}")
-        except Exception as ex:
-            print(f"[-] Notice: Could not update OpenCode user config ({ex})")
+        apply_config_to_targets(paths["opencode_user"], opencode_cfg, "OpenCode")
 
     if args.install in ("all", "claude"):
-        for k in ["claude_desktop", "claude_code"]:
-            target = paths[k]
-            try:
-                merge_mcp_config(target, mcp_cfg)
-                print(f"[+] Installed Proxsynth into Claude config: {target}")
-            except Exception as ex:
-                print(f"[-] Notice: Could not update {k} config ({ex})")
+        if "claude_desktop" in paths:
+            apply_config_to_targets(paths["claude_desktop"], mcp_cfg, "Claude Desktop")
+        apply_config_to_targets(paths["claude_code"], mcp_cfg, "Claude Code")
 
     if args.install in ("all", "cursor"):
-        target = paths["cursor_user"]
-        try:
-            merge_mcp_config(target, mcp_cfg)
-            print(f"[+] Installed Proxsynth into Cursor user config: {target}")
-        except Exception as ex:
-            print(f"[-] Notice: Could not update Cursor config ({ex})")
+        apply_config_to_targets(paths["cursor_user"], mcp_cfg, "Cursor")
 
     if args.install in ("all", "windsurf"):
-        target = paths["windsurf_user"]
-        try:
-            merge_mcp_config(target, mcp_cfg)
-            print(f"[+] Installed Proxsynth into Windsurf user config: {target}")
-        except Exception as ex:
-            print(f"[-] Notice: Could not update Windsurf config ({ex})")
+        apply_config_to_targets(paths["windsurf_user"], mcp_cfg, "Windsurf")
 
     if args.install in ("all", "antigravity"):
-        target = paths["antigravity_user"]
-        try:
-            merge_mcp_config(target, mcp_cfg)
-            print(f"[+] Installed Proxsynth into Antigravity user config: {target}")
-        except Exception as ex:
-            print(f"[-] Notice: Could not update Antigravity config ({ex})")
+        apply_config_to_targets(paths["antigravity_user"], mcp_cfg, "Antigravity")
 
     print("\n[SUCCESS] Configuration completed. Proxsynth is ready for AI Agents.")
 

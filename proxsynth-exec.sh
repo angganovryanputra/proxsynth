@@ -61,9 +61,9 @@ JSON_PAYLOAD=$(cat <<EOF
   "reasoning": "Executed via proxsynth-exec wrapper",
   "stdout": $(printf '%s' "${STDOUT_TEXT}" | ${PY_BIN} -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || echo "\"\""),
   "stderr": "",
-  "exit_code": ${EXIT_CODE},
-  "duration_ms": ${DURATION_MS},
-  "status": "$([ ${EXIT_CODE} -eq 0 ] && echo "SUCCESS" || echo "FAILED")"
+  "exit_code": ${EXIT_CODE:-0},
+  "duration_ms": ${DURATION_MS:-0},
+  "status": "$([ ${EXIT_CODE:-0} -eq 0 ] && echo "SUCCESS" || echo "FAILED")"
 }
 EOF
 )

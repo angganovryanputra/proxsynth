@@ -1,5 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
+cd /d "%~dp0"
 
 echo ========================================================================
 echo   PROXSYNTH MCP - Autonomous Security Testing Gateway
@@ -93,6 +94,11 @@ if exist ".proxsynth_ca\proxsynth_ca.crt" (
 ) else if exist ".proxynth_ca\proxynth_ca.crt" (
     echo [*] Registering Proxsynth Root CA in Windows Certificate Store...
     certutil -addstore -f "Root" .proxynth_ca\proxynth_ca.crt >nul 2>nul
+    if not errorlevel 1 (
+        echo [+] Proxsynth Root CA successfully trusted in Windows System Store.
+    ) else (
+        echo [!] Note: To trust CA system-wide, run as Administrator or import .proxynth_ca\proxynth_ca.crt manually.
+    )
 )
 
 :: 9. Generate Dynamic Agent Configuration for OpenCode, Claude Code & Cursor

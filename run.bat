@@ -1,5 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
+cd /d "%~dp0"
 
 :: Check if virtual environment exists; if not, trigger installer
 if not exist "venv\Scripts\python.exe" (
@@ -31,7 +32,7 @@ if /i "%MODE%"=="mcp" (
 )
 
 if /i "%MODE%"=="config" (
-    echo [*] Configuring AI Agent integrations (OpenCode, Claude, Cursor, Windsurf)...
+    echo [*] Configuring AI Agent integrations for OpenCode, Claude, Cursor, Windsurf...
     venv\Scripts\python.exe scripts\configure_agent.py --install all
     exit /b %errorlevel%
 )

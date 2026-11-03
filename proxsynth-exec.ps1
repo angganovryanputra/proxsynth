@@ -33,9 +33,9 @@ $env:https_proxy = $ProxyUrl
 $env:all_proxy = $ProxyUrl
 
 # CA Certificate trust (probe both .proxsynth_ca and legacy .proxynth_ca)
-$CaCert = Join-Path $PSScriptRoot ".proxsynth_ca\proxsynth_ca.crt"
+$CaCert = Join-Path $PSScriptRoot ".proxsynth_ca/proxsynth_ca.crt"
 if (-not (Test-Path $CaCert)) {
-    $CaCert = Join-Path $PSScriptRoot ".proxynth_ca\proxynth_ca.crt"
+    $CaCert = Join-Path $PSScriptRoot ".proxynth_ca/proxynth_ca.crt"
 }
 if (Test-Path $CaCert) {
     $env:REQUESTS_CA_BUNDLE = $CaCert
