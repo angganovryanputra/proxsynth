@@ -6,8 +6,10 @@ heuristic-driven recommendations for AI Agents, directly mapping observed signal
 to specific FastMCP testing tools with ready-to-execute arguments.
 """
 
+import os
 import re
 import json
+import uuid
 import urllib.parse
 from typing import Dict, Any, List, Optional
 from backend.database import SessionLocal, HttpLog, TargetEndpoint, TargetAsset
@@ -44,6 +46,213 @@ _DEBUG_PARAM_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+_MODULAR_TO_POWER_MAP = {
+    "test_bola_idor": ("analyze_and_diff_traffic", {"action": "semantic_diff"}),
+    "audit_bfla_permissions": ("manage_pentest_execution", {"action": "replay"}),
+    "audit_mass_assignment": ("manage_pentest_execution", {"action": "replay"}),
+    "spray_oast_canaries": ("manage_oast_and_tunnels", {"action": "spray"}),
+    "fuzz_numeric_logic": ("manage_pentest_execution", {"action": "replay"}),
+    "test_jwt_security": ("manage_session_vault", {"action": "tamper_jwt"}),
+    "inspect_graphql_endpoint": ("manage_pentest_execution", {"action": "execute"}),
+    "audit_file_upload": ("manage_pentest_execution", {"action": "execute"}),
+    "run_smart_param_fuzz": ("manage_pentest_execution", {"action": "replay"}),
+    "send_http_request": ("manage_pentest_execution", {"action": "execute"}),
+    "verify_vulnerability_with_oracle": ("analyze_and_diff_traffic", {"action": "semantic_diff"})
+}
+
+
+def plan_multi_step_attack_chain(
+    url: str,
+    method: str = "GET",
+    vuln_focus: str = "Broken Object Level Authorization (BOLA / IDOR)",
+    log_id: Optional[int] = None,
+    power_mode: bool = False
+) -> Dict[str, Any]:
+    """
+    Synthesizes a structured Directed Acyclic Graph (DAG) multi-step attack plan
+    for an identified vulnerability focus, decomposing testing into discrete phases:
+    1. Reconnaissance (Baseline identification)
+    2. Exploitation (Tampering / Mutation / Injection)
+    3. Escalation (Privilege check / Secondary state alteration)
+    4. Verification (Differential analysis & FP elimination)
+    """
+    clean_method = (method or "GET").upper().strip()
+    clean_focus = vuln_focus.lower()
+    dag_slug = re.sub(r'[^a-zA-Z0-9]+', '_', vuln_focus.lower()).strip('_')[:20]
+    dag_id = f"dag_{dag_slug}_{uuid.uuid4().hex[:6]}"
+
+    steps: List[Dict[str, Any]] = []
+
+    if "bola" in clean_focus or "idor" in clean_focus:
+        recon_tool = "manage_pentest_execution" if power_mode else "send_http_request"
+        exploit_tool = "analyze_and_diff_traffic" if power_mode else "test_bola_idor"
+        escalate_tool = "manage_pentest_execution" if power_mode else "send_http_request"
+        verify_tool = "analyze_and_diff_traffic" if power_mode else "test_bola_idor"
+
+        steps = [
+            {
+                "step": 1,
+                "phase": "recon",
+                "objective": "Record baseline response for target object ID using authenticated session",
+                "recommended_tool": recon_tool,
+                "tool_arguments": {"action": "execute", "command": f"curl -s -i '{url}'"} if power_mode else {"url": url, "method": clean_method}
+            },
+            {
+                "step": 2,
+                "phase": "exploitation",
+                "objective": "Mutate object ID to adjacent or victim identifier and replay request",
+                "recommended_tool": exploit_tool,
+                "tool_arguments": {"action": "semantic_diff", "target_url": url} if power_mode else {"log_id": log_id, "url": url}
+            },
+            {
+                "step": 3,
+                "phase": "escalation",
+                "objective": "Attempt unauthorized state modifications (PUT/PATCH/DELETE) on target object ID",
+                "recommended_tool": escalate_tool,
+                "tool_arguments": {"action": "replay", "mutations": "method=PUT"} if power_mode else {"url": url, "method": "PUT"}
+            },
+            {
+                "step": 4,
+                "phase": "verification",
+                "objective": "Perform semantic diff between user response and victim data to eliminate false positives",
+                "recommended_tool": verify_tool,
+                "tool_arguments": {"action": "semantic_diff", "target_url": url} if power_mode else {"log_id": log_id}
+            }
+        ]
+    elif "bfla" in clean_focus or "function level" in clean_focus:
+        steps = [
+            {
+                "step": 1,
+                "phase": "recon",
+                "objective": "Extract active session tokens and user permission matrix across roles",
+                "recommended_tool": "manage_session_vault" if power_mode else "get_active_session",
+                "tool_arguments": {"action": "list_sessions"} if power_mode else {}
+            },
+            {
+                "step": 2,
+                "phase": "exploitation",
+                "objective": "Replay administrative endpoint with low-privilege role or unauthenticated token",
+                "recommended_tool": "manage_pentest_execution" if power_mode else "audit_bfla_permissions",
+                "tool_arguments": {"action": "replay", "mutations": "strip_auth=true"} if power_mode else {"url": url, "method": clean_method, "log_id": log_id}
+            },
+            {
+                "step": 3,
+                "phase": "escalation",
+                "objective": "Attempt high-impact administrative actions (role escalation, user creation, config tampering)",
+                "recommended_tool": "manage_pentest_execution" if power_mode else "send_http_request",
+                "tool_arguments": {"action": "execute", "command": f"curl -s -i -X {clean_method} '{url}'"} if power_mode else {"url": url, "method": clean_method}
+            },
+            {
+                "step": 4,
+                "phase": "verification",
+                "objective": "Verify if restricted action completed successfully and state mutated",
+                "recommended_tool": "analyze_and_diff_traffic" if power_mode else "audit_bfla_permissions",
+                "tool_arguments": {"action": "semantic_diff", "target_url": url} if power_mode else {"log_id": log_id}
+            }
+        ]
+    elif "mass assignment" in clean_focus or "property tampering" in clean_focus:
+        steps = [
+            {
+                "step": 1,
+                "phase": "recon",
+                "objective": "Inspect JSON mutation schema and map all mutable model attributes",
+                "recommended_tool": "analyze_and_diff_traffic" if power_mode else "get_traffic_history",
+                "tool_arguments": {"action": "pattern_analysis"} if power_mode else {"log_id": log_id}
+            },
+            {
+                "step": 2,
+                "phase": "exploitation",
+                "objective": "Inject privileged attributes (e.g. is_admin, role, account_balance, permissions)",
+                "recommended_tool": "manage_pentest_execution" if power_mode else "audit_mass_assignment",
+                "tool_arguments": {"action": "replay", "mutations": "inject_admin_fields"} if power_mode else {"log_id": log_id}
+            },
+            {
+                "step": 3,
+                "phase": "escalation",
+                "objective": "Verify if injected properties are reflected in response or persisted in backend database",
+                "recommended_tool": "analyze_and_diff_traffic" if power_mode else "send_http_request",
+                "tool_arguments": {"action": "semantic_diff"} if power_mode else {"url": url, "method": "GET"}
+            },
+            {
+                "step": 4,
+                "phase": "verification",
+                "objective": "Confirm unauthorized privilege elevation or state change with zero false positives",
+                "recommended_tool": "analyze_and_diff_traffic" if power_mode else "audit_mass_assignment",
+                "tool_arguments": {"action": "semantic_diff"} if power_mode else {"log_id": log_id}
+            }
+        ]
+    elif "ssrf" in clean_focus or "redirect" in clean_focus or "oast" in clean_focus:
+        steps = [
+            {
+                "step": 1,
+                "phase": "recon",
+                "objective": "Generate unique Out-of-Band (OAST) tracking canary token",
+                "recommended_tool": "manage_oast_and_tunnels" if power_mode else "generate_oast_token",
+                "tool_arguments": {"action": "generate_canary", "vuln_type": "ssrf"} if power_mode else {"vuln_type": "ssrf"}
+            },
+            {
+                "step": 2,
+                "phase": "exploitation",
+                "objective": "Inject generated OAST canary URL into suspected parameter or header",
+                "recommended_tool": "manage_oast_and_tunnels" if power_mode else "spray_oast_canaries",
+                "tool_arguments": {"action": "spray", "target_url": url} if power_mode else {"target_url": url, "vuln_types": ["ssrf", "dns"]}
+            },
+            {
+                "step": 3,
+                "phase": "escalation",
+                "objective": "Probe cloud metadata services (169.254.169.254) and internal networks (10.0.0.0/8, 127.0.0.1)",
+                "recommended_tool": "manage_pentest_execution" if power_mode else "send_http_request",
+                "tool_arguments": {"action": "replay", "mutations": "target=http://169.254.169.254/latest/meta-data/"} if power_mode else {"url": f"{url}?url=http://169.254.169.254/latest/meta-data/"}
+            },
+            {
+                "step": 4,
+                "phase": "verification",
+                "objective": "Poll OAST listener for external DNS or HTTP callbacks from the target server",
+                "recommended_tool": "manage_oast_and_tunnels" if power_mode else "poll_oast_events",
+                "tool_arguments": {"action": "poll_events"} if power_mode else {}
+            }
+        ]
+    else:
+        # Default / Injection / Fuzzing DAG
+        steps = [
+            {
+                "step": 1,
+                "phase": "recon",
+                "objective": "Extract parameter schema and baseline response structure",
+                "recommended_tool": "analyze_and_diff_traffic" if power_mode else "get_traffic_history",
+                "tool_arguments": {"action": "pattern_analysis"} if power_mode else {"log_id": log_id}
+            },
+            {
+                "step": 2,
+                "phase": "exploitation",
+                "objective": "Fuzz injectable vector with golden payloads from Payload Vault",
+                "recommended_tool": "manage_pentest_execution" if power_mode else "run_smart_param_fuzz",
+                "tool_arguments": {"action": "replay"} if power_mode else {"url": url, "method": clean_method}
+            },
+            {
+                "step": 3,
+                "phase": "escalation",
+                "objective": "Evaluate reflection sinks, error messages, and response behavior changes",
+                "recommended_tool": "analyze_and_diff_traffic" if power_mode else "analyze_and_diff_traffic",
+                "tool_arguments": {"action": "semantic_diff"} if power_mode else {"action": "semantic_diff"}
+            },
+            {
+                "step": 4,
+                "phase": "verification",
+                "objective": "Verify exploit impact and eliminate false positives",
+                "recommended_tool": "analyze_and_diff_traffic" if power_mode else "verify_vulnerability_with_oracle",
+                "tool_arguments": {"action": "semantic_diff"} if power_mode else {"log_id": log_id}
+            }
+        ]
+
+    return {
+        "dag_id": dag_id,
+        "vuln_focus": vuln_focus,
+        "target_url": url,
+        "total_steps": len(steps),
+        "steps": steps
+    }
+
 
 def suggest_attack_actions(
     url: str,
@@ -53,7 +262,8 @@ def suggest_attack_actions(
     response_status: Optional[int] = None,
     response_body: Optional[str] = None,
     log_id: Optional[int] = None,
-    response_headers: Optional[Dict[str, Any]] = None
+    response_headers: Optional[Dict[str, Any]] = None,
+    power_mode: Optional[bool] = None
 ) -> List[Dict[str, Any]]:
     """
     Examines an individual HTTP transaction and returns actionable next-step tool recommendations.
@@ -360,6 +570,38 @@ def suggest_attack_actions(
                 })
         except Exception:
             pass
+
+    # Attach multi-step attack chain DAG and map to Power Tools mode if active
+    is_power = power_mode if power_mode is not None else (os.getenv("PROXSYNTH_TOOL_MODE", "").lower() == "power")
+    for s in suggestions:
+        chain = plan_multi_step_attack_chain(
+            url=url,
+            method=clean_method,
+            vuln_focus=s.get("vulnerability_focus", ""),
+            log_id=log_id,
+            power_mode=is_power
+        )
+        s["attack_chain"] = chain
+
+        if is_power:
+            mod_tool = s.get("recommended_mcp_tool")
+            if mod_tool in _MODULAR_TO_POWER_MAP:
+                p_tool, p_args = _MODULAR_TO_POWER_MAP[mod_tool]
+                s["recommended_mcp_tool"] = p_tool
+                combined_args = dict(p_args)
+                combined_args.update(s.get("tool_arguments", {}))
+                s["tool_arguments"] = combined_args
+            elif mod_tool not in [
+                "manage_pentest_execution",
+                "manage_attack_surface",
+                "analyze_and_diff_traffic",
+                "manage_interception_rules",
+                "manage_session_vault",
+                "manage_oast_and_tunnels",
+                "manage_testing_agenda"
+            ]:
+                s["recommended_mcp_tool"] = "manage_pentest_execution"
+                s["tool_arguments"] = {"action": "execute", "command": f"curl -s -i '{url}'"}
 
     # Dedupe: do not recommend the same tool against the same target twice.
     deduped: List[Dict[str, Any]] = []
