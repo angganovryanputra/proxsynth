@@ -166,3 +166,4 @@ async def run_autopilot_swarm(
         max_depth=max_depth
     )
     return await swarm.run(mock_mode=mock_mode)
+

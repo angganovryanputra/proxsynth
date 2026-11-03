@@ -208,3 +208,4 @@ def export_payload_to_nuclei(
         )
     finally:
         db.close()
+
