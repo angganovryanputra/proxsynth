@@ -12,6 +12,7 @@ proxynth.db*
 
 # Test scripts & Development Scratch (Local Only - Not Pushed to Public Repo)
 test_*.py
+!test_cognitive_hexagon.py
 tests/
 scratch/
 .pytest_cache/

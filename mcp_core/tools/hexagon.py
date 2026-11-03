@@ -40,14 +40,22 @@ async def proxsynth_recon(
     - Spec File/URL -> OpenAPI / Swagger Schema Importer
     - Domain Hostname -> Asset Inventory & Target Health Diagnostic
     """
-    res = await recon_intent_router(
-        target=target,
-        mode=mode,
-        project=project,
-        max_pages=max_pages,
-        concurrency=concurrency
-    )
-    return json.dumps(res, indent=2)
+    try:
+        res = await recon_intent_router(
+            target=target,
+            mode=mode,
+            project=project,
+            max_pages=max_pages,
+            concurrency=concurrency
+        )
+        return json.dumps(res, indent=2)
+    except Exception as ex:
+        return json.dumps({
+            "status": "error",
+            "facet": "recon",
+            "target": target,
+            "message": str(ex)
+        }, indent=2)
 
 
 @proxsynth_tool(name="proxsynth_traffic")
@@ -72,19 +80,26 @@ async def proxsynth_traffic(
     - Given URL -> Dispatches request via MITM engine with WAF auto-heal and attaches follow-up attack suggestions
     - Given query -> Searches captured traffic history
     """
-    res = await traffic_intent_router(
-        url=url,
-        action=action,
-        method=method,
-        headers=headers,
-        body=body,
-        log_id_a=log_id_a,
-        log_id_b=log_id_b,
-        payload=payload,
-        query_search=query_search,
-        project=project
-    )
-    return json.dumps(res, indent=2)
+    try:
+        res = await traffic_intent_router(
+            url=url,
+            action=action,
+            method=method,
+            headers=headers,
+            body=body,
+            log_id_a=log_id_a,
+            log_id_b=log_id_b,
+            payload=payload,
+            query_search=query_search,
+            project=project
+        )
+        return json.dumps(res, indent=2)
+    except Exception as ex:
+        return json.dumps({
+            "status": "error",
+            "facet": "traffic",
+            "message": str(ex)
+        }, indent=2)
 
 
 @proxsynth_tool(name="proxsynth_audit")
@@ -109,18 +124,25 @@ async def proxsynth_audit(
     - Reflected parameters -> Verifies exploitability in Playwright Headless Chromium DOM Oracle
     - GraphQL routes -> Audits schema introspection and query depth
     """
-    res = await audit_intent_router(
-        target_url=target_url,
-        vuln_focus=vuln_focus,
-        log_id=log_id,
-        params=params,
-        headers=headers,
-        method=method,
-        body=body,
-        project=project,
-        auto_exploit=auto_exploit
-    )
-    return json.dumps(res, indent=2)
+    try:
+        res = await audit_intent_router(
+            target_url=target_url,
+            vuln_focus=vuln_focus,
+            log_id=log_id,
+            params=params,
+            headers=headers,
+            method=method,
+            body=body,
+            project=project,
+            auto_exploit=auto_exploit
+        )
+        return json.dumps(res, indent=2)
+    except Exception as ex:
+        return json.dumps({
+            "status": "error",
+            "facet": "audit",
+            "message": str(ex)
+        }, indent=2)
 
 
 @proxsynth_tool(name="proxsynth_session")
@@ -141,16 +163,23 @@ async def proxsynth_session(
     - Provided domain -> Retrieves active identities and cached anti-CSRF tokens
     - Session expired / 401 -> Executes automated re-auth recipe
     """
-    res = await session_intent_router(
-        domain=domain,
-        action=action,
-        role=role,
-        token=token,
-        headers=headers,
-        login_url=login_url,
-        project=project
-    )
-    return json.dumps(res, indent=2)
+    try:
+        res = await session_intent_router(
+            domain=domain,
+            action=action,
+            role=role,
+            token=token,
+            headers=headers,
+            login_url=login_url,
+            project=project
+        )
+        return json.dumps(res, indent=2)
+    except Exception as ex:
+        return json.dumps({
+            "status": "error",
+            "facet": "session",
+            "message": str(ex)
+        }, indent=2)
 
 
 @proxsynth_tool(name="proxsynth_verify_and_export")
@@ -168,13 +197,20 @@ async def proxsynth_verify_and_export(
     - Synthesizes reproducible Nuclei v2/v3 YAML template with cross-step extractors
     - Compiles publication-ready Markdown dossier with CVSS v4.0 metrics and CWE references
     """
-    res = await verify_export_intent_router(
-        finding_id=finding_id,
-        log_id=log_id,
-        format=format,
-        project=project
-    )
-    return json.dumps(res, indent=2)
+    try:
+        res = await verify_export_intent_router(
+            finding_id=finding_id,
+            log_id=log_id,
+            format=format,
+            project=project
+        )
+        return json.dumps(res, indent=2)
+    except Exception as ex:
+        return json.dumps({
+            "status": "error",
+            "facet": "verify_and_export",
+            "message": str(ex)
+        }, indent=2)
 
 
 @proxsynth_tool(name="proxsynth_autonomous_step")
@@ -188,9 +224,17 @@ async def proxsynth_autonomous_step(
     Master autonomous agent interface. Inspects Attack Surface Knowledge Graph and recent traffic,
     selects the single next highest-leverage offensive testing action, and executes it immediately.
     """
-    res = await autonomous_step_router(
-        project=project,
-        goal=goal,
-        feedback=feedback
-    )
-    return json.dumps(res, indent=2)
+    try:
+        res = await autonomous_step_router(
+            project=project,
+            goal=goal,
+            feedback=feedback
+        )
+        return json.dumps(res, indent=2)
+    except Exception as ex:
+        return json.dumps({
+            "status": "error",
+            "facet": "autonomous_step",
+            "message": str(ex)
+        }, indent=2)
+

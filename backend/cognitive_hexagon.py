@@ -4,7 +4,7 @@ Consolidates 98 granular tools into 6 high-leverage, intent-driven super-routers
 with deterministic heuristic auto-decision capabilities:
 
 1. recon_intent_router        (Auto: IP -> Ports, URL -> SPA Spider, Spec -> OpenAPI, Domain -> Asset Graph)
-2. traffic_intent_router      (Auto: Proxy HTTP/WS, WAF Auto-Heal, Distillation >50KB, Semantic Diffing)
+2. traffic_intent_router      (Auto: Proxy HTTP/WS, WAF Auto-Heal, Distillation >50KB, Semantic Diffing, Vault)
 3. audit_intent_router        (Auto: 2 Roles/IDs -> Two-Tier Replay, Numeric -> Logic Fuzz, SSRF -> OAST, XSS -> DOM Oracle)
 4. session_intent_router      (Auto: Multi-Role Vault, Anti-CSRF Token Cache, 401 Re-Auth Refresher)
 5. verify_export_intent_router(Auto: Deterministic Verification Gate, Nuclei YAML, CVSS v4.0 Dossier)
@@ -21,19 +21,15 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Union
 
 import httpx
-from sqlalchemy import func
 
 from backend.database import (
     SessionLocal,
     HttpLog,
     Finding,
-    Project,
     ActiveSession,
     TargetAsset,
-    TargetService,
     TargetEndpoint,
-    CapturedPayload,
-    TestingHypothesis
+    CapturedPayload
 )
 from backend.intercept_manager import async_check_scope
 from backend.attack_advisor import (
@@ -42,7 +38,6 @@ from backend.attack_advisor import (
     _NUMERIC_PARAM_PATTERN,
     _SSRF_PARAM_PATTERN,
     _OPEN_REDIRECT_PARAM_PATTERN,
-    _JWT_PATTERN,
     _GRAPHQL_PATH_PATTERN,
     _GRAPHQL_BODY_PATTERN,
     suggest_attack_actions,
@@ -52,20 +47,22 @@ from backend.diff_engine import compute_semantic_diff, detect_soft_errors
 from backend.body_distiller import distill_response_body as distill_http_response
 from backend.target_manager import (
     upsert_target_asset,
-    add_or_update_service,
-    add_or_update_endpoint,
     get_attack_surface_graph
 )
 from backend.target_health import probe_target_health
+
+
 def _resolve_proj(project: Optional[str] = None, allow_all: bool = False) -> str:
+    """Non-recursive project workspace resolver with safe fallback."""
     try:
         from mcp_core.gateway import _resolve_project
-        return _resolve_proj(project, allow_all=allow_all)
+        return _resolve_project(project, allow_all=allow_all)
     except Exception:
         p = (project or "").strip().lower()
         if p in ("all", "*", "any", "global") and allow_all:
             return "all"
         return p or os.getenv("PROXSYNTH_PROJECT", "default").strip().lower() or "default"
+
 
 _IPV4_CIDR_PATTERN = re.compile(
     r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?:/(?:[0-9]|[12][0-9]|3[0-2]))?$"
@@ -211,19 +208,10 @@ async def recon_intent_router(
         }
 
     elif clean_mode == "openapi":
-        from backend.api_importer import import_openapi_spec
-        spec_content = clean_target
-        if clean_target.startswith(("http://", "https://")):
-            async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
-                resp = await client.get(clean_target)
-                spec_content = resp.text
-        elif os.path.exists(clean_target):
-            with open(clean_target, "r", encoding="utf-8", errors="replace") as f:
-                spec_content = f.read()
-
-        res = import_openapi_spec(
-            spec_data=spec_content,
-            base_url="",
+        from backend.api_importer import import_api_schema
+        res = await import_api_schema(
+            spec_source=clean_target,
+            target_base_url="",
             project=proj
         )
         return {
@@ -233,7 +221,7 @@ async def recon_intent_router(
             "target": clean_target,
             "project": proj,
             "results": res,
-            "cognitive_advice": f"Imported API endpoints into Knowledge Graph. Run proxsynth_audit with vuln_focus='auto'."
+            "cognitive_advice": "Imported API endpoints into Knowledge Graph. Run proxsynth_audit with vuln_focus='auto'."
         }
 
     elif clean_mode == "spider":
@@ -405,6 +393,33 @@ async def traffic_intent_router(
                 "distilled": dist
             }
 
+        # Payload Vault Action
+        elif clean_action == "vault":
+            records = []
+            if payload:
+                db_payload = CapturedPayload(
+                    project=proj,
+                    raw_payload=payload,
+                    vuln_type="CUSTOM",
+                    notes="Ingested via traffic router vault action"
+                )
+                db.add(db_payload)
+                db.commit()
+                db.refresh(db_payload)
+                records.append({"id": db_payload.id, "payload": db_payload.raw_payload, "type": db_payload.vuln_type})
+            else:
+                vault_items = db.query(CapturedPayload).filter(CapturedPayload.project == proj).order_by(CapturedPayload.id.desc()).limit(15).all()
+                for v in vault_items:
+                    records.append({"id": v.id, "payload": v.raw_payload, "type": v.vuln_type})
+            return {
+                "status": "success",
+                "facet": "traffic",
+                "action": "vault",
+                "total_records": len(records),
+                "items": records,
+                "vault_entries": records
+            }
+
         # Search Traffic
         elif clean_action == "search":
             q = db.query(HttpLog)
@@ -483,16 +498,25 @@ async def traffic_intent_router(
 
             # WAF Auto-Heal check
             waf_healed = False
-            if status in (403, 406, 429) and body:
-                from backend.waf_mutator import mutate_payload_waf
-                mutated = mutate_payload_waf(body, technique="all")
-                if mutated and mutated != body:
+            if status in (403, 406, 429):
+                from backend.waf_mutator import mutate_payload, generate_evasion_headers
+                evasion_hdrs = dict(req_headers)
+                evasion_hdrs.update(generate_evasion_headers(target_host=host))
+
+                mutated_body = body
+                if body:
+                    mut_res = mutate_payload(raw_payload=body, strategy="ALL")
+                    mut_list = [m.get("payload") for m in mut_res.get("mutations", []) if m.get("payload")]
+                    if mut_list:
+                        mutated_body = mut_list[0]
+
+                if mutated_body != body or evasion_hdrs != req_headers:
                     async with httpx.AsyncClient(timeout=15.0, verify=False, follow_redirects=True) as client:
                         resp_retry = await client.request(
                             method=clean_method,
                             url=url,
-                            headers=req_headers,
-                            content=mutated.encode("utf-8")
+                            headers=evasion_hdrs,
+                            content=mutated_body.encode("utf-8") if mutated_body else None
                         )
                     if resp_retry.status_code not in (403, 406):
                         resp = resp_retry
@@ -598,14 +622,30 @@ async def audit_intent_router(
         if not target_url:
             return {"status": "error", "message": "Audit facet requires target_url or valid log_id."}
 
+        # Integrate params into target_url if supplied
+        if params and isinstance(params, dict):
+            parsed_params_url = urllib.parse.urlparse(target_url)
+            existing_qs = urllib.parse.parse_qs(parsed_params_url.query)
+            for k, v in params.items():
+                existing_qs[str(k)] = [str(v)]
+            new_qs = urllib.parse.urlencode({k: v[0] for k, v in existing_qs.items()})
+            target_url = urllib.parse.urlunparse((
+                parsed_params_url.scheme,
+                parsed_params_url.netloc,
+                parsed_params_url.path,
+                parsed_params_url.params,
+                new_qs,
+                parsed_params_url.fragment
+            ))
+
         clean_focus = (vuln_focus or "auto").strip().lower()
         parsed_url = urllib.parse.urlparse(target_url)
         path = parsed_url.path or "/"
         query_dict = urllib.parse.parse_qs(parsed_url.query)
+        host = parsed_url.netloc or ""
 
         # Heuristic Vulnerability Classification
         if clean_focus == "auto":
-            host = parsed_url.netloc or ""
             domain_sessions = db.query(ActiveSession).filter(
                 ActiveSession.project == proj,
                 ActiveSession.domain.ilike(f"%{host}%")
@@ -639,7 +679,15 @@ async def audit_intent_router(
             orch = AccessControlOrchestrator(project=proj)
             sess_a = {"token": "", "auth_headers": {}}
             sess_b = {"token": "", "auth_headers": {}}
-            sessions = db.query(ActiveSession).filter(ActiveSession.project == proj).all()
+
+            # Prioritize host-specific identities
+            sessions = db.query(ActiveSession).filter(
+                ActiveSession.project == proj,
+                ActiveSession.domain.ilike(f"%{host}%")
+            ).all()
+            if len(sessions) < 2:
+                sessions = db.query(ActiveSession).filter(ActiveSession.project == proj).all()
+
             if len(sessions) >= 2:
                 st_a = sessions[0].get_decrypted_state()
                 st_b = sessions[1].get_decrypted_state()
@@ -648,8 +696,7 @@ async def audit_intent_router(
                 sess_b["token"] = st_b.get("bearer_token", "")
                 sess_b["auth_headers"] = st_b.get("auth_headers", {})
 
-            parsed = urllib.parse.urlparse(target_url)
-            target_base = f"{parsed.scheme}://{parsed.netloc}" if parsed.netloc else target_url
+            target_base = f"{parsed_url.scheme}://{parsed_url.netloc}" if parsed_url.netloc else target_url
             res = await orch.execute_full_campaign(
                 target_base=target_base,
                 session_a=sess_a,
@@ -674,10 +721,8 @@ async def audit_intent_router(
 
         elif clean_focus in ("logic", "numeric", "pricing"):
             from backend.logic_fuzzer import audit_numeric_business_logic
-            # Ensure log entry exists for logic fuzzer
             target_log_id = log_id
             if not target_log_id:
-                # Synthesize baseline entry
                 log_synth = HttpLog(
                     project=proj,
                     method=method.upper(),
@@ -774,10 +819,9 @@ async def audit_intent_router(
             }
 
         else:
-            # Default Smart Fuzzer
             from backend.fuzzer import run_fuzz_attack
             res = await run_fuzz_attack(
-                url=target_url,
+                base_url=target_url,
                 method=method.upper(),
                 payloads=["'", "\"", "<script>", "../../../etc/passwd"],
                 project=proj
@@ -989,16 +1033,21 @@ async def verify_export_intent_router(
         # 2. Nuclei YAML Template Generation
         nuclei_yaml = ""
         try:
+            nuclei_out = None
             if finding and log_record:
                 from backend.nuclei_generator import generate_nuclei_yaml_from_finding
-                nuclei_yaml = generate_nuclei_yaml_from_finding(finding, log_record)
+                nuclei_out = generate_nuclei_yaml_from_finding(finding, log_record)
             elif log_record:
                 from backend.nuclei_generator import generate_nuclei_yaml_from_log
-                nuclei_yaml = generate_nuclei_yaml_from_log(
+                nuclei_out = generate_nuclei_yaml_from_log(
                     log_record,
                     title=finding.title if finding else "Verified Vulnerability",
                     severity=finding.severity if finding else "HIGH"
                 )
+            if isinstance(nuclei_out, dict):
+                nuclei_yaml = nuclei_out.get("yaml", "") or nuclei_out.get("template", "") or json.dumps(nuclei_out, indent=2)
+            elif nuclei_out:
+                nuclei_yaml = str(nuclei_out)
         except Exception as ex:
             nuclei_yaml = f"# Nuclei generation notice: {str(ex)}"
 
@@ -1070,7 +1119,6 @@ async def autonomous_step_router(
     summary = graph.get("summary", {})
     total_assets = summary.get("total_assets", 0)
     total_endpoints = summary.get("total_endpoints", 0)
-    untested_endpoints = summary.get("untested_endpoints", 0)
 
     db = SessionLocal()
     try:
@@ -1085,22 +1133,37 @@ async def autonomous_step_router(
             }
 
         # Step B: Check for unverified high-severity findings
-        unverified_finding = db.query(Finding).join(HttpLog).filter(
+        findings_to_verify = db.query(Finding).join(HttpLog).filter(
             HttpLog.project == proj,
             Finding.severity.in_(["CRITICAL", "HIGH"])
-        ).order_by(Finding.id.desc()).first()
+        ).order_by(Finding.id.desc()).all()
 
-        if unverified_finding and not getattr(unverified_finding, "is_verified", False):
+        unverified_finding = None
+        for f in findings_to_verify:
+            ev = f.evidence or ""
+            is_verified = "[ORACLE VERDICT:" in ev or (f.log and f.log.flag_status in ("CONFIRMED", "VERIFIED"))
+            if not is_verified:
+                unverified_finding = f
+                break
+
+        if unverified_finding:
             verify_res = await verify_export_intent_router(
                 finding_id=unverified_finding.id,
                 format="auto",
                 project=proj
             )
+            # Stamp finding evidence with oracle verdict to prevent re-verification loop
+            verdict = verify_res.get("verification_verdict", "UNCONFIRMED")
+            unverified_finding.evidence = f"{unverified_finding.evidence or ''}\n[ORACLE VERDICT: {verdict}]"
+            if unverified_finding.log:
+                unverified_finding.log.flag_status = "CONFIRMED" if "VERIFIED" in str(verdict) else "FLAGGED"
+            db.commit()
+
             return {
                 "status": "success",
                 "facet": "autonomous_step",
                 "phase": "VERIFICATION_AND_EXPORT",
-                "action_taken": f"Executed deterministic verification gate on Finding #{unverified_finding.id} ({unverified_finding.title}).",
+                "action_taken": f"Executed deterministic verification gate on Finding #{unverified_finding.id} ({unverified_finding.title}) -> Verdict: {verdict}.",
                 "result": verify_res,
                 "next_recommended_call": "Review verified finding and proceed with autonomous audit on next endpoint."
             }
