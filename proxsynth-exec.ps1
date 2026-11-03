@@ -32,9 +32,11 @@ $env:http_proxy = $ProxyUrl
 $env:https_proxy = $ProxyUrl
 $env:all_proxy = $ProxyUrl
 
-# CA Certificate trust
-$CaDir = Join-Path $PSScriptRoot ".proxsynth_ca"
-$CaCert = Join-Path $CaDir "proxsynth_ca.crt"
+# CA Certificate trust (probe both .proxsynth_ca and legacy .proxynth_ca)
+$CaCert = Join-Path $PSScriptRoot ".proxsynth_ca\proxsynth_ca.crt"
+if (-not (Test-Path $CaCert)) {
+    $CaCert = Join-Path $PSScriptRoot ".proxynth_ca\proxynth_ca.crt"
+}
 if (Test-Path $CaCert) {
     $env:REQUESTS_CA_BUNDLE = $CaCert
     $env:CURL_CA_BUNDLE = $CaCert
@@ -49,13 +51,19 @@ $StartTime = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 
 Write-Host "[*] Proxsynth Executing: $FullCommand (Proxy: $ProxyUrl)" -ForegroundColor Cyan
 
-# Execute command
+# Execute command reliably preserving arguments and quotes
 $ExitCode = 0
 $StdoutText = ""
 $StderrText = ""
 
 try {
-    $Output = Invoke-Expression "$FullCommand" 2>&1
+    if ($CommandArgs.Length -eq 1 -and ($CommandArgs[0] -match '\s')) {
+        $Output = Invoke-Expression $CommandArgs[0] 2>&1
+    } else {
+        $cmd = $CommandArgs[0]
+        $argsList = if ($CommandArgs.Length -gt 1) { $CommandArgs[1..($CommandArgs.Length - 1)] } else { @() }
+        $Output = & $cmd $argsList 2>&1
+    }
     $ExitCode = $LASTEXITCODE
     if ($null -eq $ExitCode) { $ExitCode = 0 }
     $StdoutText = ($Output | Out-String)
@@ -91,4 +99,3 @@ catch {
 }
 
 exit $ExitCode
-

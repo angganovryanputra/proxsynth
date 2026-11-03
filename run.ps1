@@ -4,7 +4,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet("dashboard", "mcp", "all", "install")]
+    [ValidateSet("dashboard", "mcp", "all", "config", "test", "install")]
     [string]$Mode = "dashboard"
 )
 
@@ -31,6 +31,14 @@ switch ($Mode.ToLower()) {
     "mcp" {
         # Pure silent execution for JSON-RPC MCP stdio compatibility
         & $VenvPython (Join-Path $PSScriptRoot "mcp_server.py")
+    }
+    "config" {
+        Write-Host "[*] Configuring AI Agent integrations (OpenCode, Claude, Cursor, Windsurf)..." -ForegroundColor Cyan
+        & $VenvPython (Join-Path $PSScriptRoot "scripts\configure_agent.py") --install all
+    }
+    "test" {
+        Write-Host "[*] Running Proxsynth Acceptance Gate Self-Test..." -ForegroundColor Cyan
+        & $VenvPython (Join-Path $PSScriptRoot "scripts\self_test.py")
     }
     "all" {
         Write-Host "[*] Starting Proxsynth Dashboard in background process..." -ForegroundColor Cyan

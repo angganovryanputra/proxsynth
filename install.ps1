@@ -83,9 +83,16 @@ if ($LASTEXITCODE -ne 0) {
 
 # 7. Install AI Agent Proxy Enforcer Hook
 Write-Host "[*] Installing AI Agent Transparent Proxy Enforcer..." -ForegroundColor Cyan
-$SitePackages = Join-Path $VenvDir "Lib\site-packages\sitecustomize.py"
-Copy-Item (Join-Path $PSScriptRoot "sitecustomize.py") $SitePackages -Force
-Write-Host "[+] AI Agent transparent proxy hook installed in venv." -ForegroundColor Green
+try {
+    $SitePkg = (& $VenvPython -c "import site; print(site.getsitepackages()[-1])").Trim()
+    if (Test-Path $SitePkg) {
+        Copy-Item (Join-Path $PSScriptRoot "sitecustomize.py") (Join-Path $SitePkg "sitecustomize.py") -Force
+        Write-Host "[+] AI Agent transparent proxy hook installed at $SitePkg" -ForegroundColor Green
+    }
+} catch {
+    $FallbackPkg = Join-Path $VenvDir "Lib\site-packages\sitecustomize.py"
+    Copy-Item (Join-Path $PSScriptRoot "sitecustomize.py") $FallbackPkg -Force -ErrorAction SilentlyContinue
+}
 
 # 8. Initialize CA Certificate and Trust Store
 Write-Host "[*] Initializing Proxsynth Root CA certificate..." -ForegroundColor Cyan
@@ -96,12 +103,21 @@ if (-not (Test-Path $CaCert)) {
 }
 if (Test-Path $CaCert) {
     try {
-        certutil -addstore -f "Root" $CaCert | Out-Null
-        Write-Host "[+] Proxsynth Root CA successfully trusted in Windows System Store." -ForegroundColor Green
+        certutil -addstore -f "Root" $CaCert 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "[+] Proxsynth Root CA successfully trusted in Windows System Store." -ForegroundColor Green
+        } else {
+            Write-Host "[!] Note: Run PowerShell as Administrator to install CA certificate system-wide." -ForegroundColor Yellow
+        }
     } catch {
         Write-Host "[!] Note: Run PowerShell as Administrator to install CA certificate system-wide." -ForegroundColor Yellow
     }
 }
+
+# 9. Generate Dynamic Agent Configuration
+Write-Host "[*] Generating dynamic Agent configurations (mcp_config.json, opencode.json)..." -ForegroundColor Cyan
+& $VenvPython (Join-Path $PSScriptRoot "scripts\configure_agent.py") --install repo
+Write-Host "[+] Agent configurations dynamically generated for current directory." -ForegroundColor Green
 
 Write-Host ""
 Write-Host "========================================================================" -ForegroundColor Green
@@ -112,10 +128,16 @@ Write-Host "  To launch the Web Dashboard:"
 Write-Host "    .\run.ps1" -ForegroundColor Cyan
 Write-Host "    (or .\run.ps1 -Mode dashboard)" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  To run as an MCP Server for AI Agents:"
+Write-Host "  To run as an MCP Server for AI Agents (OpenCode, Claude, Cursor):"
 Write-Host "    .\run.ps1 -Mode mcp" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  To auto-configure AI Agents (OpenCode, Claude Code, Cursor, Windsurf):"
+Write-Host "    .\run.ps1 -Mode config" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  To start both Dashboard and MCP Server:"
 Write-Host "    .\run.ps1 -Mode all" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  To run self-test verification:"
+Write-Host "    .\run.ps1 -Mode test" -ForegroundColor Cyan
 Write-Host "========================================================================" -ForegroundColor Green
 Write-Host ""

@@ -22,6 +22,7 @@ export https_proxy="${PROXY_URL}"
 export all_proxy="${PROXY_URL}"
 
 CA_CERT="${SCRIPT_DIR}/.proxsynth_ca/proxsynth_ca.crt"
+[ ! -f "${CA_CERT}" ] && CA_CERT="${SCRIPT_DIR}/.proxynth_ca/proxynth_ca.crt"
 if [ -f "${CA_CERT}" ]; then
     export REQUESTS_CA_BUNDLE="${CA_CERT}"
     export CURL_CA_BUNDLE="${CA_CERT}"
@@ -50,12 +51,15 @@ STDOUT_TEXT=$(head -c 500000 "${TMP_OUT}")
 rm -f "${TMP_OUT}"
 
 # Asynchronous Telemetry to Proxsynth Dashboard API
+PY_BIN="python3"
+[ -f "${SCRIPT_DIR}/venv/bin/python3" ] && PY_BIN="${SCRIPT_DIR}/venv/bin/python3"
+
 JSON_PAYLOAD=$(cat <<EOF
 {
-  "command": $(printf '%s' "${FULL_CMD}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),
+  "command": $(printf '%s' "${FULL_CMD}" | ${PY_BIN} -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || echo "\"${FULL_CMD}\""),
   "tool_name": "proxsynth-cli-wrapper",
   "reasoning": "Executed via proxsynth-exec wrapper",
-  "stdout": $(printf '%s' "${STDOUT_TEXT}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),
+  "stdout": $(printf '%s' "${STDOUT_TEXT}" | ${PY_BIN} -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || echo "\"\""),
   "stderr": "",
   "exit_code": ${EXIT_CODE},
   "duration_ms": ${DURATION_MS},
@@ -70,4 +74,3 @@ curl -s -X POST "http://127.0.0.1:8000/api/commands" \
     --max-time 2 >/dev/null 2>&1 || true
 
 exit ${EXIT_CODE}
-

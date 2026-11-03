@@ -1,9 +1,9 @@
 {
   "mcpServers": {
     "proxsynth": {
-      "command": "d:/PROJECT/01/venv/Scripts/python.exe",
+      "command": "D:/0x13 PROJECT/Proxsynth/venv/Scripts/python.exe",
       "args": [
-        "d:/PROJECT/01/mcp_server.py"
+        "D:/0x13 PROJECT/Proxsynth/mcp_server.py"
       ],
       "env": {
         "PROXSYNTH_BACKEND_URL": "http://127.0.0.1:8000",

@@ -30,6 +30,14 @@ case "$MODE" in
         # In MCP mode, DO NOT print anything to stdout to preserve JSON-RPC protocol
         exec python3 mcp_server.py
         ;;
+    config)
+        echo "[*] Configuring AI Agent integrations (OpenCode, Claude, Cursor, Windsurf)..."
+        exec python3 scripts/configure_agent.py --install all
+        ;;
+    test)
+        echo "[*] Running Proxsynth Acceptance Gate Self-Test..."
+        exec python3 scripts/self_test.py
+        ;;
     all)
         echo "[*] Starting Proxsynth Dashboard in background..." >&2
         uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload &
@@ -48,7 +56,7 @@ case "$MODE" in
     *)
         echo "[!] Unknown mode: $MODE"
         echo "Usage:"
-        echo "  ./run.sh [dashboard | mcp | all | install]"
+        echo "  ./run.sh [dashboard | mcp | all | config | test | install]"
         exit 1
         ;;
 esac

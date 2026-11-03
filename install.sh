@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Proxynth MCP - Automated Linux / WSL2 Environment Installer
+# Proxsynth MCP - Automated Linux / WSL2 Environment Installer
 # ==============================================================================
 
 set -eo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 # ANSI Color Codes
 CYAN='\033[0;36m'
@@ -87,8 +90,11 @@ python3 -c "from backend.database import init_db; init_db(); from backend.securi
 
 # 8. Install AI Agent Proxy Enforcer Hook
 echo -e "${CYAN}[*] Installing AI Agent Proxy Enforcer into venv...${NC}"
-cp sitecustomize.py $(python3 -c "import site; print(site.getsitepackages()[-1])")/sitecustomize.py 2>/dev/null || true
-echo -e "${GREEN}[+] AI Agent transparent proxy hook installed in venv.${NC}"
+SITE_DIR=$(python3 -c "import site; print(site.getsitepackages()[-1])" 2>/dev/null || true)
+if [ -d "$SITE_DIR" ]; then
+    cp sitecustomize.py "$SITE_DIR/sitecustomize.py" 2>/dev/null || true
+    echo -e "${GREEN}[+] AI Agent transparent proxy hook installed at $SITE_DIR${NC}"
+fi
 
 # 9. Initialize CA Certificate & Trust Store
 echo -e "${CYAN}[*] Initializing Proxsynth Root CA certificate...${NC}"
@@ -111,8 +117,13 @@ if [ -f "$CA_FILE" ]; then
     fi
 fi
 
-# 10. Set Executable Permissions
-chmod +x run.sh install.sh 2>/dev/null || true
+# 10. Generate Dynamic Agent Configuration
+echo -e "${CYAN}[*] Generating dynamic Agent configurations (mcp_config.json, opencode.json)...${NC}"
+python3 scripts/configure_agent.py --install repo
+echo -e "${GREEN}[+] Agent configurations dynamically generated for current directory.${NC}"
+
+# 11. Set Executable Permissions
+chmod +x run.sh install.sh proxsynth-exec.sh scripts/*.sh 2>/dev/null || true
 
 echo ""
 echo -e "${GREEN}========================================================================${NC}"
@@ -122,10 +133,16 @@ echo ""
 echo -e "  To launch the Web Dashboard:"
 echo -e "    ${CYAN}./run.sh${NC} (or ${CYAN}./run.sh dashboard${NC})"
 echo ""
-echo -e "  To run as an MCP Server for AI Agents (Claude Code, Cursor, OpenCode):"
+echo -e "  To run as an MCP Server for AI Agents (OpenCode, Claude, Cursor):"
 echo -e "    ${CYAN}./run.sh mcp${NC}"
+echo ""
+echo -e "  To auto-configure AI Agents (OpenCode, Claude Code, Cursor, Windsurf):"
+echo -e "    ${CYAN}./run.sh config${NC}"
 echo ""
 echo -e "  To start both Dashboard (background) and MCP Server (foreground):"
 echo -e "    ${CYAN}./run.sh all${NC}"
+echo ""
+echo -e "  To run self-test verification:"
+echo -e "    ${CYAN}./run.sh test${NC}"
 echo -e "${GREEN}========================================================================${NC}"
 echo ""

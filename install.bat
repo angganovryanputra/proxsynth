@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 
 echo ========================================================================
 echo   PROXSYNTH MCP - Autonomous Security Testing Gateway
@@ -57,7 +57,7 @@ if errorlevel 1 (
 echo [+] Dependencies installed successfully.
 
 :: 5. Install Playwright Chromium Browser
-echo [*] Setting up Playwright Chromium browser for headless rendering and HITL...
+echo [*] Setting up Playwright Chromium browser for headless rendering and DOM oracle...
 venv\Scripts\python.exe -m playwright install chromium
 if errorlevel 1 (
     echo [!] Warning: Playwright browser download encountered an issue.
@@ -71,26 +71,34 @@ if errorlevel 1 (
     echo [!] Warning: Database pre-initialization check failed.
 )
 
-:: 7. Install AI Agent Proxy Enforcer Hook
-echo [*] Installing AI Agent Proxy Enforcer into venv...
-copy /Y sitecustomize.py venv\Lib\site-packages\sitecustomize.py >nul
+:: 7. Install AI Agent Proxy Enforcer Hook into Virtualenv
+echo [*] Installing AI Agent Proxy Enforcer into venv site-packages...
+venv\Scripts\python.exe -c "import site, shutil, os; [shutil.copy('sitecustomize.py', os.path.join(p, 'sitecustomize.py')) for p in site.getsitepackages() if os.path.isdir(p)]" 2>nul
+if not exist "venv\Lib\site-packages\sitecustomize.py" (
+    copy /Y sitecustomize.py venv\Lib\site-packages\sitecustomize.py >nul 2>nul
+)
 echo [+] AI Agent transparent proxy hook installed in venv.
 
-:: 8. Initialize CA Certificate and Trust Store
+:: 8. Initialize CA Certificate and Windows Trust Store
 echo [*] Initializing Proxsynth Root CA certificate...
 venv\Scripts\python.exe -c "from backend.ca_manager import get_ca_cert_path; print('[+] Proxsynth Root CA ready at:', get_ca_cert_path())"
 if exist ".proxsynth_ca\proxsynth_ca.crt" (
     echo [*] Registering Proxsynth Root CA in Windows Certificate Store...
     certutil -addstore -f "Root" .proxsynth_ca\proxsynth_ca.crt >nul 2>nul
-    if errorlevel 0 (
+    if not errorlevel 1 (
         echo [+] Proxsynth Root CA successfully trusted in Windows System Store.
     ) else (
-        echo [!] Note: To trust CA system-wide, import .proxsynth_ca\proxsynth_ca.crt into Trusted Root Certification Authorities.
+        echo [!] Note: To trust CA system-wide, run as Administrator or import .proxsynth_ca\proxsynth_ca.crt manually.
     )
 ) else if exist ".proxynth_ca\proxynth_ca.crt" (
     echo [*] Registering Proxsynth Root CA in Windows Certificate Store...
     certutil -addstore -f "Root" .proxynth_ca\proxynth_ca.crt >nul 2>nul
 )
+
+:: 9. Generate Dynamic Agent Configuration for OpenCode, Claude Code & Cursor
+echo [*] Generating dynamic Agent configurations (mcp_config.json, opencode.json)...
+venv\Scripts\python.exe scripts\configure_agent.py --install repo
+echo [+] Agent configurations dynamically generated for current directory.
 
 echo.
 echo ========================================================================
@@ -98,14 +106,19 @@ echo   [SUCCESS] Proxsynth Installation Complete!
 echo ========================================================================
 echo.
 echo   To launch the Web Dashboard:
-echo     run.bat
-echo     (or run.bat dashboard)
+echo     run.bat (or run.bat dashboard)
 echo.
 echo   To run as an MCP Server for AI Agents:
 echo     run.bat mcp
 echo.
+echo   To configure or integrate with OpenCode, Claude Code, or Cursor:
+echo     run.bat config
+echo.
 echo   To start both Dashboard and MCP Server:
 echo     run.bat all
+echo.
+echo   To verify system health:
+echo     run.bat test
 echo ========================================================================
 echo.
 exit /b 0

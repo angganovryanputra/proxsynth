@@ -13,8 +13,8 @@ if not exist "venv\Scripts\python.exe" (
 
 :: Handle command line arguments
 set "MODE=%~1"
-
 if "%MODE%"=="" set "MODE=dashboard"
+
 if /i "%MODE%"=="dashboard" (
     echo ========================================================================
     echo   Starting Proxsynth Web Dashboard
@@ -27,6 +27,18 @@ if /i "%MODE%"=="dashboard" (
 if /i "%MODE%"=="mcp" (
     :: In MCP mode, DO NOT print banner/echo to stdout (preserves JSON-RPC protocol)
     venv\Scripts\python.exe mcp_server.py
+    exit /b %errorlevel%
+)
+
+if /i "%MODE%"=="config" (
+    echo [*] Configuring AI Agent integrations (OpenCode, Claude, Cursor, Windsurf)...
+    venv\Scripts\python.exe scripts\configure_agent.py --install all
+    exit /b %errorlevel%
+)
+
+if /i "%MODE%"=="test" (
+    echo [*] Running Proxsynth Acceptance Gate Self-Test...
+    venv\Scripts\python.exe scripts\self_test.py
     exit /b %errorlevel%
 )
 
@@ -45,5 +57,5 @@ if /i "%MODE%"=="install" (
 
 echo [!] Unknown option: %MODE%
 echo Usage:
-echo   run.bat [dashboard ^| mcp ^| all ^| install]
+echo   run.bat [dashboard ^| mcp ^| all ^| config ^| test ^| install]
 exit /b 1
