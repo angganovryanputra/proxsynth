@@ -94,6 +94,36 @@ def pop_intercept_result(intercept_id: str) -> Optional[Dict[str, Any]]:
 # Scope & Guardrail Engine
 # ==============================================================================
 
+# Curated blacklist of destructive or session-invalidating routes
+DANGEROUS_ROUTE_PATTERNS = [
+    r"/(?:auth/)?logout(?:\b|/|\?)",
+    r"/(?:auth/)?signout(?:\b|/|\?)",
+    r"/delete-account(?:\b|/|\?)",
+    r"/reset-password(?:\b|/|\?)",
+    r"/reset-db(?:\b|/|\?)",
+    r"/destroy(?:\b|/|\?)",
+    r"/purge(?:\b|/|\?)",
+    r"/deactivate(?:\b|/|\?)"
+]
+
+def is_dangerous_route(url: str) -> Tuple[bool, Optional[str]]:
+    """Checks if a URL targets a destructive or session-terminating route."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        path = parsed.path or "/"
+        for pattern in DANGEROUS_ROUTE_PATTERNS:
+            if re.search(pattern, path, re.IGNORECASE):
+                return True, f"Dangerous route detected: '{path}' matches blacklist pattern '{pattern}'"
+    except Exception:
+        pass
+    return False, None
+
+
+def evaluate_scope_url(url: str, scope_data: Optional[Dict[str, Any]]) -> Tuple[bool, Optional[str]]:
+    """Evaluates a URL against provided scope rules dict (unit testable without DB)."""
+    return _evaluate_scope_rules("test_scope", url, scope_data)
+
+
 # In-memory TTL cache for project scope rules (5-second cache to prevent DB churn during high-volume fuzzing/agent runs)
 _SCOPE_CACHE: Dict[str, Tuple[float, Optional[Dict[str, Any]]]] = {}
 

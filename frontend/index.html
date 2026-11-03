@@ -695,6 +695,25 @@
               <span class="text-sky-400 font-bold" x-text="filteredLogs.length"></span> / <span
                 x-text="logs.length"></span>
             </div>
+
+            <!-- Quick Filter Presets -->
+            <div class="hidden xl:flex items-center space-x-1 text-[10px] font-mono shrink-0">
+              <button @click="applyFilterPreset('all')"
+                :class="proxyFilterPreset === 'all' ? 'bg-sky-950 text-sky-300 border-sky-700 font-bold' : 'bg-[#0B0F17] text-slate-400 border-[#1E293B] hover:text-slate-200'"
+                class="px-2 py-1 rounded border transition">All</button>
+              <button @click="applyFilterPreset('in_scope')"
+                :class="proxyFilterPreset === 'in_scope' ? 'bg-emerald-950 text-emerald-300 border-emerald-700 font-bold' : 'bg-[#0B0F17] text-slate-400 border-[#1E293B] hover:text-slate-200'"
+                class="px-2 py-1 rounded border transition">In-Scope</button>
+              <button @click="applyFilterPreset('api')"
+                :class="proxyFilterPreset === 'api' ? 'bg-purple-950 text-purple-300 border-purple-700 font-bold' : 'bg-[#0B0F17] text-slate-400 border-[#1E293B] hover:text-slate-200'"
+                class="px-2 py-1 rounded border transition">APIs / JSON</button>
+              <button @click="applyFilterPreset('errors')"
+                :class="proxyFilterPreset === 'errors' ? 'bg-rose-950 text-rose-300 border-rose-700 font-bold' : 'bg-[#0B0F17] text-slate-400 border-[#1E293B] hover:text-slate-200'"
+                class="px-2 py-1 rounded border transition">Errors (4xx/5xx)</button>
+              <button @click="applyFilterPreset('hide_static')"
+                :class="proxyFilterPreset === 'hide_static' ? 'bg-amber-950 text-amber-300 border-amber-700 font-bold' : 'bg-[#0B0F17] text-slate-400 border-[#1E293B] hover:text-slate-200'"
+                class="px-2 py-1 rounded border transition">Hide Static</button>
+            </div>
           </div>
 
           <!-- Right: Action & Layout Tools -->
@@ -1975,7 +1994,7 @@
 
           <div class="flex-1 overflow-y-auto divide-y divide-[#1E293B]/60 font-mono text-xs">
             <template x-for="item in interceptPending" :key="item.id">
-              <div @click="activeInterceptItem = item"
+              <div @click="selectInterceptItem(item)"
                 :class="activeInterceptItem && activeInterceptItem.id === item.id ? 'bg-[#1E293B] ring-1 ring-rose-500' : 'hover:bg-[#1E293B]/50'"
                 class="p-3 cursor-pointer transition space-y-1">
                 <div class="flex items-center justify-between">
@@ -2033,32 +2052,81 @@
                   <option value="POST">POST</option>
                   <option value="PUT">PUT</option>
                   <option value="DELETE">DELETE</option>
+                  <option value="PATCH">PATCH</option>
                 </select>
                 <input type="text" x-model="activeInterceptItem.url"
-                  class="flex-1 bg-[#0B0F17] border border-[#1E293B] rounded px-3 py-1.5 text-slate-100 focus:outline-none focus:border-rose-500">
+                  class="flex-1 bg-[#0B0F17] border border-[#1E293B] rounded px-3 py-1.5 text-slate-100 focus:outline-none focus:border-rose-500 font-mono">
               </div>
 
-              <!-- Body Edit -->
-              <div class="flex-1 flex flex-col">
-                <div class="flex items-center justify-between mb-1">
-                  <div class="flex items-center space-x-2">
-                    <label class="text-[11px] text-slate-400">Request Body (Editable):</label>
-                    <span class="px-2 py-0.2 rounded text-[10px] font-bold" :class="{
-                          'bg-emerald-950 text-emerald-300 border border-emerald-800': detectContentType(activeInterceptItem.body) === 'JSON',
-                          'bg-orange-950 text-orange-300 border border-orange-800': detectContentType(activeInterceptItem.body) === 'HTML' || detectContentType(activeInterceptItem.body) === 'XML',
-                          'bg-indigo-950 text-indigo-300 border border-indigo-800': detectContentType(activeInterceptItem.body) === 'FORM',
-                          'bg-slate-800 text-slate-400': !['JSON', 'HTML', 'XML', 'FORM'].includes(detectContentType(activeInterceptItem.body))
-                        }" x-text="detectContentType(activeInterceptItem.body)"></span>
-                  </div>
-                  <button @click="activeInterceptItem.body = beautifyText(activeInterceptItem.body)"
-                    class="px-2 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/60 transition flex items-center font-bold text-[10px]"
-                    title="Beautify paused request body">
-                    <i data-lucide="sparkles" class="w-2.5 h-2.5 mr-1 text-emerald-400"></i>
-                    <span>✨ Beautify Body</span>
+              <!-- Sub-Tabs: Split / Headers / Body -->
+              <div class="flex items-center justify-between border-b border-[#1E293B] pb-1.5 text-xs">
+                <div class="flex items-center space-x-1.5">
+                  <button @click="interceptActiveSubTab = 'split'"
+                    :class="interceptActiveSubTab === 'split' ? 'bg-rose-950/80 text-rose-300 border border-rose-700/60 font-bold' : 'text-slate-400 hover:text-slate-200'"
+                    class="px-2.5 py-1 rounded text-[11px] transition">
+                    Dual Pane (Headers &amp; Body)
+                  </button>
+                  <button @click="interceptActiveSubTab = 'headers'"
+                    :class="interceptActiveSubTab === 'headers' ? 'bg-rose-950/80 text-rose-300 border border-rose-700/60 font-bold' : 'text-slate-400 hover:text-slate-200'"
+                    class="px-2.5 py-1 rounded text-[11px] transition">
+                    Headers Only
+                  </button>
+                  <button @click="interceptActiveSubTab = 'body'"
+                    :class="interceptActiveSubTab === 'body' ? 'bg-rose-950/80 text-rose-300 border border-rose-700/60 font-bold' : 'text-slate-400 hover:text-slate-200'"
+                    class="px-2.5 py-1 rounded text-[11px] transition">
+                    Body Only
                   </button>
                 </div>
-                <textarea x-model="activeInterceptItem.body"
-                  class="flex-1 bg-[#0B0F17] border border-[#1E293B] rounded p-3 text-slate-100 font-mono text-xs focus:outline-none focus:border-rose-500 resize-none leading-relaxed"></textarea>
+                <div class="text-[10px] text-slate-500 font-mono">
+                  Mutations forward upstream immediately
+                </div>
+              </div>
+
+              <!-- Headers & Body Split Container -->
+              <div class="flex-1 flex gap-3 overflow-hidden" :class="interceptActiveSubTab === 'split' ? 'flex-col sm:flex-row' : 'flex-col'">
+                <!-- Headers Editor -->
+                <div x-show="interceptActiveSubTab === 'split' || interceptActiveSubTab === 'headers'"
+                  :class="interceptActiveSubTab === 'split' ? 'w-full sm:w-1/2' : 'w-full'"
+                  class="flex-1 flex flex-col min-h-0">
+                  <div class="flex items-center justify-between mb-1">
+                    <label class="text-[11px] text-slate-400 font-bold flex items-center">
+                      <i data-lucide="list" class="w-3 h-3 mr-1 text-sky-400"></i>
+                      <span>Request Headers (Editable):</span>
+                    </label>
+                    <span class="text-[10px] text-slate-500" x-text="(interceptRawHeaders ? interceptRawHeaders.split('\n').filter(Boolean).length : 0) + ' headers'"></span>
+                  </div>
+                  <textarea x-model="interceptRawHeaders"
+                    placeholder="Host: target.com&#10;Authorization: Bearer token&#10;X-Forwarded-For: 127.0.0.1"
+                    class="flex-1 bg-[#0B0F17] border border-[#1E293B] rounded p-2.5 text-slate-100 font-mono text-xs focus:outline-none focus:border-rose-500 resize-none leading-relaxed"></textarea>
+                </div>
+
+                <!-- Body Editor -->
+                <div x-show="interceptActiveSubTab === 'split' || interceptActiveSubTab === 'body'"
+                  :class="interceptActiveSubTab === 'split' ? 'w-full sm:w-1/2' : 'w-full'"
+                  class="flex-1 flex flex-col min-h-0">
+                  <div class="flex items-center justify-between mb-1">
+                    <div class="flex items-center space-x-2">
+                      <label class="text-[11px] text-slate-400 font-bold flex items-center">
+                        <i data-lucide="file-text" class="w-3 h-3 mr-1 text-emerald-400"></i>
+                        <span>Request Body (Editable):</span>
+                      </label>
+                      <span class="px-2 py-0.2 rounded text-[10px] font-bold" :class="{
+                            'bg-emerald-950 text-emerald-300 border border-emerald-800': detectContentType(activeInterceptItem.body) === 'JSON',
+                            'bg-orange-950 text-orange-300 border border-orange-800': detectContentType(activeInterceptItem.body) === 'HTML' || detectContentType(activeInterceptItem.body) === 'XML',
+                            'bg-indigo-950 text-indigo-300 border border-indigo-800': detectContentType(activeInterceptItem.body) === 'FORM',
+                            'bg-slate-800 text-slate-400': !['JSON', 'HTML', 'XML', 'FORM'].includes(detectContentType(activeInterceptItem.body))
+                          }" x-text="detectContentType(activeInterceptItem.body)"></span>
+                    </div>
+                    <button @click="activeInterceptItem.body = beautifyText(activeInterceptItem.body)"
+                      class="px-2 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/60 transition flex items-center font-bold text-[10px]"
+                      title="Beautify paused request body">
+                      <i data-lucide="sparkles" class="w-2.5 h-2.5 mr-1 text-emerald-400"></i>
+                      <span>✨ Beautify Body</span>
+                    </button>
+                  </div>
+                  <textarea x-model="activeInterceptItem.body"
+                    class="flex-1 bg-[#0B0F17] border border-[#1E293B] rounded p-2.5 text-slate-100 font-mono text-xs focus:outline-none focus:border-rose-500 resize-none leading-relaxed"></textarea>
+                </div>
               </div>
             </div>
           </template>
@@ -2155,25 +2223,29 @@
         </div>
       </div>
 
-      <!-- Active Tab Workspace Panes (Left Composer, Right Response) -->
-      <div class="flex-1 flex space-x-4 overflow-hidden">
+      <!-- Active Tab Workspace Panes (Left Composer, Right Response with Draggable Splitter) -->
+      <div class="flex-1 flex overflow-hidden relative select-none" id="repeaterSplitContainer">
         <!-- Left: Request Composer -->
-        <div
-          class="w-1/2 bg-[#111827] border border-[#1E293B] rounded-xl flex flex-col p-4 space-y-3 font-mono text-xs overflow-hidden">
+        <div :style="'width: ' + repeaterSplitRatio + '%'"
+          class="bg-[#111827] border border-[#1E293B] rounded-xl flex flex-col p-4 space-y-3 font-mono text-xs overflow-hidden shrink-0">
           <!-- Composer Top Bar -->
           <div class="flex items-center justify-between border-b border-[#1E293B] pb-2">
             <h3 class="font-bold text-amber-400 flex items-center">
               <i data-lucide="repeat" class="w-4 h-4 mr-1.5"></i>
               Repeater Request Composer
             </h3>
-            <div class="flex items-center space-x-2">
+            <div class="flex items-center space-x-2.5">
+              <label class="flex items-center space-x-1.5 text-slate-300 text-xs cursor-pointer select-none" title="Automatically follow 301/302 redirects or inspect raw redirection headers">
+                <input type="checkbox" x-model="repeaterForm.followRedirects" class="rounded bg-[#0B0F17] border-[#1E293B] text-indigo-500 focus:ring-0">
+                <span class="text-[11px] text-slate-300">Follow Redirects</span>
+              </label>
               <button @click="sendRepeaterToFuzzer()"
-                class="px-2.5 py-1.5 bg-purple-950/80 hover:bg-purple-900 border border-purple-700/60 text-purple-300 rounded font-semibold transition flex items-center">
+                class="px-2.5 py-1.5 bg-purple-950/80 hover:bg-purple-900 border border-purple-700/60 text-purple-300 rounded font-semibold transition flex items-center text-xs">
                 <i data-lucide="zap" class="w-3.5 h-3.5 mr-1 text-purple-400"></i>
                 <span>Send to Fuzzer</span>
               </button>
               <button @click="sendRepeaterRequest()" :disabled="repeaterLoading"
-                class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold transition flex items-center shadow-lg disabled:opacity-50">
+                class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold transition flex items-center shadow-lg disabled:opacity-50 text-xs">
                 <i data-lucide="send" class="w-3.5 h-3.5 mr-1.5"></i>
                 <span x-text="repeaterLoading ? 'Sending...' : 'Send Request'"></span>
               </button>
@@ -2253,9 +2325,16 @@
           </div>
         </div>
 
+        <!-- Draggable Divider -->
+        <div @mousedown="startDraggingRepeaterSplitter($event)"
+          class="w-2 mx-1 cursor-col-resize hover:bg-amber-500/50 active:bg-amber-500 rounded transition flex items-center justify-center shrink-0 group z-10"
+          title="Drag horizontally to resize Request and Response panes">
+          <div class="w-0.5 h-10 bg-[#334155] group-hover:bg-amber-400 rounded"></div>
+        </div>
+
         <!-- Right: Repeater Response Pane (Sub-Tabs: Body | Headers | Diff) -->
-        <div
-          class="w-1/2 bg-[#111827] border border-[#1E293B] rounded-xl flex flex-col p-4 space-y-3 font-mono text-xs overflow-hidden">
+        <div :style="'width: calc(' + (100 - repeaterSplitRatio) + '% - 0.75rem)'"
+          class="flex-1 bg-[#111827] border border-[#1E293B] rounded-xl flex flex-col p-4 space-y-3 font-mono text-xs overflow-hidden">
           <!-- Response Top Bar -->
           <div class="flex items-center justify-between border-b border-[#1E293B] pb-2">
             <div class="flex items-center space-x-3">
@@ -2472,11 +2551,19 @@
             </h2>
             <p class="text-[11px] text-slate-400">Automated differential injection with position markers (§...§)</p>
           </div>
-          <button @click="runFuzzerAttack()" :disabled="fuzzerRunning || !fuzzerForm.url"
-            class="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded font-bold transition flex items-center shadow-lg disabled:opacity-50">
-            <i data-lucide="flame" class="w-3.5 h-3.5 mr-1.5"></i>
-            <span x-text="fuzzerRunning ? 'Attacking...' : 'Launch Attack'"></span>
-          </button>
+          <div class="flex items-center space-x-2">
+            <button x-show="fuzzerRunning" @click="abortFuzzer()"
+              class="px-3 py-1.5 bg-rose-700 hover:bg-rose-600 text-white rounded font-bold transition flex items-center shadow-lg text-xs"
+              title="Abort running fuzzing attack immediately">
+              <i data-lucide="square" class="w-3.5 h-3.5 mr-1.5 text-rose-200"></i>
+              <span>Abort</span>
+            </button>
+            <button @click="runFuzzerAttack()" :disabled="fuzzerRunning || !fuzzerForm.url"
+              class="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded font-bold transition flex items-center shadow-lg disabled:opacity-50 text-xs">
+              <i data-lucide="flame" class="w-3.5 h-3.5 mr-1.5"></i>
+              <span x-text="fuzzerRunning ? 'Attacking...' : 'Launch Attack'"></span>
+            </button>
+          </div>
         </div>
 
         <!-- Target URL & Marker Helper -->
@@ -2869,6 +2956,48 @@
             systems (e.g. `logout`, `delete.*user`, `payment`, `stripe`).</p>
           <textarea x-model="scopeForm.blockedRaw" rows="3"
             class="w-full bg-[#0B0F17] border border-[#1E293B] rounded p-3 text-slate-100 focus:outline-none focus:border-rose-500 font-mono"></textarea>
+        </div>
+
+        <!-- REAL-TIME INTERACTIVE SCOPE & DANGEROUS ROUTE TESTER SANDBOX -->
+        <div class="p-4 bg-[#0B0F17] border border-sky-900/60 rounded-xl space-y-3 font-mono">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-bold text-sky-300 flex items-center">
+              <i data-lucide="test-tube" class="w-4 h-4 mr-1.5 text-sky-400"></i>
+              <span>Real-Time Scope &amp; Guardrail Evaluator</span>
+            </h3>
+            <span class="text-[10px] text-slate-500">Instant regex &amp; dangerous route sandbox</span>
+          </div>
+          <p class="text-[11px] text-slate-400">
+            Verify whether an arbitrary URL is allowed, blocked by regex, out-of-scope, or matches destructive route blacklists before deploying.
+          </p>
+
+          <div class="flex space-x-2">
+            <input type="text" x-model="scopeTestUrl" placeholder="https://api.target.com/v1/auth/logout"
+              @keydown.enter="runScopeTest()"
+              class="flex-1 bg-[#111827] border border-[#1E293B] rounded px-3 py-2 text-slate-100 text-xs focus:outline-none focus:border-sky-500 font-mono">
+            <button @click="runScopeTest()" :disabled="!scopeTestUrl || scopeTesting"
+              class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded font-bold text-xs flex items-center space-x-1.5 transition disabled:opacity-50">
+              <i data-lucide="play" class="w-3.5 h-3.5" :class="scopeTesting ? 'animate-spin' : ''"></i>
+              <span>Evaluate</span>
+            </button>
+          </div>
+
+          <!-- Result Card -->
+          <template x-if="scopeTestResult">
+            <div class="p-3 rounded-lg border text-xs space-y-1.5"
+              :class="!scopeTestResult.in_scope || scopeTestResult.is_dangerous ? 'bg-rose-950/40 border-rose-800 text-rose-200' : 'bg-emerald-950/40 border-emerald-800 text-emerald-200'">
+              <div class="flex items-center justify-between">
+                <span class="font-bold flex items-center">
+                  <span x-text="scopeTestResult.in_scope && !scopeTestResult.is_dangerous ? '✓ PASSED — IN SCOPE & SAFE' : '✕ BLOCKED — GUARDRAIL TRIGGERED'"></span>
+                </span>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold"
+                  :class="scopeTestResult.in_scope && !scopeTestResult.is_dangerous ? 'bg-emerald-900 text-emerald-300' : 'bg-rose-900 text-rose-300'"
+                  x-text="scopeTestResult.in_scope && !scopeTestResult.is_dangerous ? 'AUTHORIZED' : 'RESTRICTED'"></span>
+              </div>
+              <div x-show="scopeTestResult.reason" class="text-[11px] text-slate-300" x-text="scopeTestResult.reason"></div>
+              <div x-show="scopeTestResult.is_dangerous" class="text-[11px] text-amber-300 font-bold" x-text="'⚠️ ' + scopeTestResult.dangerous_reason"></div>
+            </div>
+          </template>
         </div>
       </div>
     </div>
@@ -4994,6 +5123,19 @@
                 </div>
               </div>
 
+              <!-- Orchestration Engine Choice -->
+              <div class="flex items-center space-x-4 pt-1.5 border-t border-[#1E293B] pb-1 text-xs">
+                <span class="text-[10px] font-bold text-slate-400 uppercase">Engine:</span>
+                <label class="flex items-center space-x-1.5 cursor-pointer text-slate-300">
+                  <input type="radio" value="classic" x-model="campaignEngine" class="text-amber-500 bg-[#0B0F17] border-[#1E293B]">
+                  <span>Classic Linear Pipeline</span>
+                </label>
+                <label class="flex items-center space-x-1.5 cursor-pointer text-cyan-300 font-bold">
+                  <input type="radio" value="hexagon" x-model="campaignEngine" class="text-cyan-500 bg-[#0B0F17] border-[#1E293B]">
+                  <span>🧠 Cognitive Hexagon Orchestrator (~95% Token Savings)</span>
+                </label>
+              </div>
+
               <!-- Phase Selector Pills -->
               <div class="space-y-1.5 pt-1 border-t border-[#1E293B]">
                 <div class="text-[10px] font-bold text-slate-400 uppercase">Active Audit Pipeline Phases:</div>
@@ -5245,6 +5387,11 @@
               <i data-lucide="refresh-cw" class="w-3.5 h-3.5" :class="openApiLoading ? 'animate-spin' : ''"></i>
               <span>Refresh Spec</span>
             </button>
+            <button @click="showOpenApiImportModal = true"
+              class="px-3 py-1.5 rounded-lg bg-indigo-950 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-200 flex items-center space-x-1.5 text-xs font-semibold shadow transition">
+              <i data-lucide="upload" class="w-3.5 h-3.5 text-indigo-400"></i>
+              <span>Import Swagger / OpenAPI</span>
+            </button>
             <button @click="exportOpenAPI()"
               class="px-3 py-1.5 rounded-lg bg-purple-950 hover:bg-purple-900 border border-purple-700/80 text-purple-200 flex items-center space-x-1.5 text-xs font-semibold shadow transition">
               <i data-lucide="download" class="w-3.5 h-3.5 text-purple-400"></i>
@@ -5299,6 +5446,18 @@
                   </div>
 
                   <div class="flex items-center space-x-2">
+                    <button @click="sendOpenApiToRepeater()"
+                      class="px-2.5 py-1 rounded bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-300 text-[11px] flex items-center space-x-1 transition font-bold"
+                      title="Send this endpoint schema and populated parameters to Repeater">
+                      <i data-lucide="repeat" class="w-3 h-3"></i>
+                      <span>Repeater</span>
+                    </button>
+                    <button @click="sendOpenApiToFuzzer()"
+                      class="px-2.5 py-1 rounded bg-purple-950/80 hover:bg-purple-900 border border-purple-700/60 text-purple-300 text-[11px] flex items-center space-x-1 transition font-bold"
+                      title="Send this endpoint schema with inserted §payload§ markers to Fuzzer">
+                      <i data-lucide="zap" class="w-3 h-3"></i>
+                      <span>Fuzzer</span>
+                    </button>
                     <button @click="copyOpenApiAsCurl()"
                       class="px-2.5 py-1 rounded bg-[#1E293B] hover:bg-[#334155] text-slate-300 text-[11px] flex items-center space-x-1 transition">
                       <i data-lucide="copy" class="w-3 h-3"></i>
@@ -5671,6 +5830,45 @@
   </main>
 
   <!-- MODALS -->
+  <!-- MODAL: IMPORT OPENAPI / SWAGGER SPEC -->
+  <div x-show="showOpenApiImportModal" x-cloak
+    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm font-mono">
+    <div @click.away="showOpenApiImportModal = false"
+      class="w-full max-w-xl bg-[#111827] border border-indigo-700/60 rounded-xl p-5 shadow-2xl space-y-4 text-xs">
+      <div class="flex items-center justify-between border-b border-[#1E293B] pb-3">
+        <div class="flex items-center space-x-2 text-indigo-300 font-bold text-sm">
+          <i data-lucide="upload-cloud" class="w-4 h-4 text-indigo-400"></i>
+          <span>Import OpenAPI / Swagger Specification</span>
+        </div>
+        <button @click="showOpenApiImportModal = false" class="text-slate-400 hover:text-white">✕</button>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Specification Source (URL or Raw JSON/YAML):</label>
+          <textarea x-model="openApiImportSource" rows="6"
+            placeholder="https://petstore.swagger.io/v2/swagger.json&#10;or paste raw OpenAPI 2.0/3.x JSON/YAML here..."
+            class="w-full bg-[#0B0F17] border border-[#1E293B] rounded p-2.5 text-slate-100 font-mono text-xs focus:outline-none focus:border-indigo-500"></textarea>
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Optional Target Base URL Override:</label>
+          <input type="text" x-model="openApiImportBaseUrl" placeholder="https://api.target.com/v1"
+            class="w-full bg-[#0B0F17] border border-[#1E293B] rounded px-3 py-2 text-slate-100 text-xs focus:outline-none focus:border-indigo-500 font-mono">
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end space-x-2 pt-2 border-t border-[#1E293B]">
+        <button @click="showOpenApiImportModal = false"
+          class="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300">Cancel</button>
+        <button @click="importOpenApiSpec()" :disabled="!openApiImportSource || openApiImporting"
+          class="px-4 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-bold flex items-center space-x-1.5 disabled:opacity-50">
+          <i data-lucide="download" class="w-3.5 h-3.5" :class="openApiImporting ? 'animate-spin' : ''"></i>
+          <span x-text="openApiImporting ? 'Importing...' : 'Parse & Ingest Endpoints'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
   <!-- Create Project Modal -->
   <div x-show="openNewProjectModal"
     role="dialog"
@@ -7340,6 +7538,30 @@
           interceptEnabled: false,
           interceptPending: [],
           activeInterceptItem: null,
+          interceptActiveSubTab: 'split', // 'split' | 'headers' | 'body'
+          interceptRawHeaders: '',
+
+          // Repeater Resizable Splitter & Follow Redirects
+          repeaterSplitRatio: 50,
+          isDraggingRepeaterSplitter: false,
+
+          // Real-Time Scope Evaluator
+          scopeTestUrl: '',
+          scopeTestResult: null,
+          scopeTesting: false,
+
+          // OpenAPI Explorer Workflows & Importer
+          showOpenApiImportModal: false,
+          openApiImportSource: '',
+          openApiImportBaseUrl: '',
+          openApiImporting: false,
+
+          // Auto Campaign Engine Selector
+          campaignEngine: 'classic', // 'classic' | 'hexagon'
+
+          // Proxy Traffic Quick Presets & Search
+          proxyFilterPreset: 'all',
+          responseSearchQuery: '',
 
           // Repeater Multi-Tab State (Burp Suite Style)
           repeaterTabs: [
@@ -7356,7 +7578,8 @@
               resHeadersView: 'table',
               resBeautified: true,
               deltaValue: 0,
-              loading: false
+              loading: false,
+              followRedirects: true
             }
           ],
           activeRepeaterTabId: 'tab_1',
@@ -7378,8 +7601,10 @@
               get headersRaw() { return t.headersRaw; },
               set headersRaw(v) { t.headersRaw = v; },
               get body() { return t.body; },
-              set body(v) { t.body = v; }
-            } : { method: 'GET', url: '', headersRaw: '', body: '' };
+              set body(v) { t.body = v; },
+              get followRedirects() { return t.followRedirects !== false; },
+              set followRedirects(v) { t.followRedirects = v; }
+            } : { method: 'GET', url: '', headersRaw: '', body: '', followRedirects: true };
           },
           get repeaterResponse() {
             return this.activeRepeaterTab ? this.activeRepeaterTab.response : null;
@@ -8762,8 +8987,37 @@
             } catch (e) { }
           },
 
+          selectInterceptItem(item) {
+            this.activeInterceptItem = item;
+            if (!item) {
+              this.interceptRawHeaders = '';
+              return;
+            }
+            if (item.headers) {
+              if (typeof item.headers === 'string') {
+                this.interceptRawHeaders = item.headers;
+              } else {
+                this.interceptRawHeaders = Object.entries(item.headers).map(([k, v]) => `${k}: ${v}`).join('\n');
+              }
+            } else {
+              this.interceptRawHeaders = '';
+            }
+          },
+
           async resolveIntercept(interceptId, action) {
             try {
+              if (this.activeInterceptItem && this.interceptRawHeaders) {
+                const parsed = {};
+                this.interceptRawHeaders.split('\n').forEach(line => {
+                  const colonIdx = line.indexOf(':');
+                  if (colonIdx > 0) {
+                    const k = line.substring(0, colonIdx).trim();
+                    const v = line.substring(colonIdx + 1).trim();
+                    if (k) parsed[k] = v;
+                  }
+                });
+                this.activeInterceptItem.headers = parsed;
+              }
               await fetch(`/api/intercept/${interceptId}/action`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -8773,8 +9027,171 @@
                 })
               });
               this.activeInterceptItem = null;
+              this.interceptRawHeaders = '';
               await this.fetchInterceptStatus();
             } catch (e) { }
+          },
+
+          async abortFuzzer() {
+            try {
+              await fetch('/api/fuzzer/abort?project=' + encodeURIComponent(this.selectedProject || 'default'), {
+                method: 'POST'
+              });
+              this.fuzzerRunning = false;
+            } catch (e) { }
+          },
+
+          startDraggingRepeaterSplitter(event) {
+            this.isDraggingRepeaterSplitter = true;
+            const startX = event.clientX;
+            const container = document.getElementById('repeaterSplitContainer');
+            if (!container) return;
+            const containerRect = container.getBoundingClientRect();
+            const startRatio = this.repeaterSplitRatio || 50;
+
+            const onMouseMove = (moveEvent) => {
+              if (!this.isDraggingRepeaterSplitter) return;
+              const deltaX = moveEvent.clientX - startX;
+              const deltaPct = (deltaX / containerRect.width) * 100;
+              let newRatio = Math.round(startRatio + deltaPct);
+              if (newRatio < 20) newRatio = 20;
+              if (newRatio > 80) newRatio = 80;
+              this.repeaterSplitRatio = newRatio;
+            };
+
+            const onMouseUp = () => {
+              this.isDraggingRepeaterSplitter = false;
+              window.removeEventListener('mousemove', onMouseMove);
+              window.removeEventListener('mouseup', onMouseUp);
+            };
+
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp);
+          },
+
+          async runScopeTest() {
+            if (!this.scopeTestUrl) return;
+            this.scopeTesting = true;
+            this.scopeTestResult = null;
+            try {
+              const res = await fetch('/api/scope/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  url: this.scopeTestUrl,
+                  project: this.selectedProject || 'default'
+                })
+              });
+              if (res.ok) {
+                this.scopeTestResult = await res.json();
+              }
+            } catch (e) {
+            } finally {
+              this.scopeTesting = false;
+            }
+          },
+
+          sendOpenApiToRepeater() {
+            if (!this.openApiSelectedOp) return;
+            let targetUrl = this.openApiSelectedOp.path;
+            let serverBase = (this.openApiSpec && this.openApiSpec.servers && this.openApiSpec.servers[0]?.url) || window.location.origin;
+            if (!targetUrl.startsWith('http')) {
+              targetUrl = serverBase.replace(/\/$/, '') + '/' + targetUrl.replace(/^\//, '');
+            }
+            const queryParams = [];
+            if (this.openApiSelectedOp.operation && this.openApiSelectedOp.operation.parameters) {
+              for (const p of this.openApiSelectedOp.operation.parameters) {
+                const val = this.openApiSandboxParams[p.name] || (p.example || '1');
+                if (p.in === 'path') {
+                  targetUrl = targetUrl.replace(`{${p.name}}`, encodeURIComponent(val));
+                } else if (p.in === 'query') {
+                  queryParams.push(`${encodeURIComponent(p.name)}=${encodeURIComponent(val)}`);
+                }
+              }
+            }
+            if (queryParams.length > 0) {
+              targetUrl += (targetUrl.includes('?') ? '&' : '?') + queryParams.join('&');
+            }
+            this.addRepeaterTab({
+              method: this.openApiSelectedOp.method,
+              url: targetUrl,
+              body: this.openApiSandboxBody || '',
+              headers: { 'Content-Type': 'application/json' }
+            }, `${this.openApiSelectedOp.method} ${this.openApiSelectedOp.path}`);
+            this.currentAppTab = 'repeater';
+          },
+
+          sendOpenApiToFuzzer() {
+            if (!this.openApiSelectedOp) return;
+            let targetUrl = this.openApiSelectedOp.path;
+            let serverBase = (this.openApiSpec && this.openApiSpec.servers && this.openApiSpec.servers[0]?.url) || window.location.origin;
+            if (!targetUrl.startsWith('http')) {
+              targetUrl = serverBase.replace(/\/$/, '') + '/' + targetUrl.replace(/^\//, '');
+            }
+            let markedUrl = targetUrl;
+            let markedBody = this.openApiSandboxBody || '';
+            if (this.openApiSelectedOp.operation && this.openApiSelectedOp.operation.parameters) {
+              const queryParams = [];
+              for (const p of this.openApiSelectedOp.operation.parameters) {
+                if (p.in === 'path') {
+                  markedUrl = markedUrl.replace(`{${p.name}}`, `§${p.name}§`);
+                } else if (p.in === 'query') {
+                  queryParams.push(`${encodeURIComponent(p.name)}=§${p.name}§`);
+                }
+              }
+              if (queryParams.length > 0) {
+                markedUrl += (markedUrl.includes('?') ? '&' : '?') + queryParams.join('&');
+              }
+            } else if (!markedUrl.includes('§')) {
+              markedUrl += (markedUrl.includes('?') ? '&' : '?') + 'id=§FUZZ§';
+            }
+            this.fuzzerForm.method = this.openApiSelectedOp.method;
+            this.fuzzerForm.url = markedUrl;
+            this.fuzzerForm.body = markedBody;
+            this.currentAppTab = 'fuzzer';
+          },
+
+          async importOpenApiSpec() {
+            if (!this.openApiImportSource) return;
+            this.openApiImporting = true;
+            try {
+              const res = await fetch('/api/openapi/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  spec_source: this.openApiImportSource,
+                  target_base_url: this.openApiImportBaseUrl || null,
+                  project: this.selectedProject || 'default'
+                })
+              });
+              if (res.ok) {
+                const data = await res.json();
+                this.showOpenApiImportModal = false;
+                this.openApiImportSource = '';
+                await this.fetchOpenApiExplorer();
+              }
+            } catch (e) {
+            } finally {
+              this.openApiImporting = false;
+            }
+          },
+
+          applyFilterPreset(preset) {
+            this.proxyFilterPreset = preset;
+            if (preset === 'all') {
+              this.searchQuery = '';
+              this.clearAllColFilters();
+            } else if (preset === 'in_scope') {
+              this.colFilters.flag = 'ALL';
+              this.searchQuery = '';
+            } else if (preset === 'api') {
+              this.searchQuery = 'json';
+            } else if (preset === 'errors') {
+              this.colFilters.status = '4xx/5xx';
+            } else if (preset === 'hide_static') {
+              this.searchQuery = '!(\.png|\.jpg|\.css|\.js|\.ico|\.woff)';
+            }
+            this.filterLogs();
           },
 
           // REPEATER MULTI-TAB & SMART DIFFING ACTIONS (BURP SUITE STYLE)
@@ -8796,7 +9213,8 @@
               resHeadersView: 'table',
               resBeautified: true,
               deltaValue: 0,
-              loading: false
+              loading: false,
+              followRedirects: true
             };
             this.repeaterTabs.push(newTab);
             this.activeRepeaterTabId = newId;
@@ -8941,7 +9359,8 @@
                   method: tab.method,
                   url: tab.url,
                   headers: headers,
-                  body: tab.body
+                  body: tab.body,
+                  follow_redirects: tab.followRedirects !== false
                 })
               });
               if (res.ok) {
@@ -10879,7 +11298,8 @@
                   modes: this.campaignModes,
                   project: this.selectedProject || 'default',
                   max_pages: this.campaignMaxPages || 15,
-                  deep_verify: true
+                  deep_verify: true,
+                  engine: this.campaignEngine || 'classic'
                 })
               });
               if (res.ok) {

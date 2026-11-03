@@ -267,8 +267,43 @@ def get_attack_surface_graph(
         db.close()
 
 
-def auto_ingest_url_to_target_graph(project: str, url: str, method: str = "GET"):
-    """Silently ingests an outbound or observed URL into the attack surface graph."""
+def extract_technology_tags(headers: Optional[Dict[str, Any]]) -> List[str]:
+    """Infers web application frameworks and server software from HTTP response headers and cookies."""
+    if not headers:
+        return []
+    tags = []
+    lower_headers = {str(k).lower(): str(v).lower() for k, v in headers.items()}
+    server = lower_headers.get("server", "")
+    if "nginx" in server: tags.append("Nginx")
+    if "apache" in server: tags.append("Apache")
+    if "cloudflare" in server: tags.append("Cloudflare")
+    if "caddy" in server: tags.append("Caddy")
+    if "envoy" in server: tags.append("Envoy")
+    if "microsoft-iis" in server or "iis" in server: tags.append("IIS")
+
+    powered_by = lower_headers.get("x-powered-by", "")
+    if "express" in powered_by: tags.append("Express.js")
+    if "next.js" in powered_by or "next" in powered_by: tags.append("Next.js")
+    if "php" in powered_by: tags.append("PHP")
+    if "asp.net" in powered_by: tags.append("ASP.NET")
+
+    cookie_str = lower_headers.get("set-cookie", "")
+    if "sessionid" in cookie_str: tags.append("Django")
+    if "phpsessid" in cookie_str: tags.append("PHP")
+    if "jsessionid" in cookie_str: tags.append("Java/Spring")
+    if "laravel_session" in cookie_str: tags.append("Laravel")
+    if "connect.sid" in cookie_str: tags.append("Express")
+
+    return sorted(list(set(tags)))
+
+
+def auto_ingest_url_to_target_graph(
+    project: str,
+    url: str,
+    method: str = "GET",
+    response_headers: Optional[Dict[str, Any]] = None
+):
+    """Silently ingests an outbound or observed URL into the attack surface graph with passive fingerprinting."""
     if not url or not url.startswith("http"):
         return
     try:
@@ -310,6 +345,10 @@ def auto_ingest_url_to_target_graph(project: str, url: str, method: str = "GET")
                         return
             finally:
                 db.close()
+
+        # Extract and associate fingerprint tags if available
+        tags = extract_technology_tags(response_headers) if response_headers else None
+        upsert_target_asset(project=clean_project, host=host, port=port, tags=tags)
 
         service_name = "https" if parsed.scheme == "https" else "http"
         add_or_update_service(project=clean_project, host=host, port=port, service_name=service_name)

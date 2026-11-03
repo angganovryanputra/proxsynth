@@ -13,6 +13,30 @@ import urllib.parse
 from typing import Dict, Any, List, Optional, Tuple
 import httpx
 from backend.user_agents import apply_rotating_user_agent
+
+# Active Fuzzer Job Registry for Abort/Cancellation Control
+_active_fuzzer_jobs: Dict[str, asyncio.Event] = {}
+
+def register_fuzzer_job(job_key: str) -> asyncio.Event:
+    """Registers an active fuzzer job with a cancellation event."""
+    event = asyncio.Event()
+    _active_fuzzer_jobs[job_key.lower()] = event
+    return event
+
+def unregister_fuzzer_job(job_key: str):
+    """Removes a fuzzer job from the active registry."""
+    _active_fuzzer_jobs.pop(job_key.lower(), None)
+
+def abort_fuzzer(project: str = "default") -> bool:
+    """Signals active fuzzer jobs for this project to abort immediately."""
+    aborted = False
+    proj_prefix = project.lower().strip()
+    for key, event in list(_active_fuzzer_jobs.items()):
+        if proj_prefix == "all" or key.startswith(proj_prefix):
+            event.set()
+            aborted = True
+    return aborted
+
 # NOTE: mcp_core.diag is imported lazily (inside the except blocks below), not at
 # module level, because mcp_core/tools/*.py import backend.fuzzer at import time;
 # a top-level "from mcp_core import diag" here would cycle back into this
@@ -426,6 +450,10 @@ async def run_fuzz_attack(
     sem = asyncio.Semaphore(concurrency)
     results: List[Dict[str, Any]] = []
 
+    # Register active job for abort capability
+    job_key = f"{project.lower()}_{int(time.time() * 1000)}"
+    abort_event = register_fuzzer_job(job_key)
+
     limits = httpx.Limits(max_keepalive_connections=concurrency, max_connections=concurrency * 2, keepalive_expiry=30.0)
     async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=20.0, limits=limits, **proxy_kwargs) as client:
         # 1. Baseline Request
@@ -450,12 +478,16 @@ async def run_fuzz_attack(
 
         # 2. Concurrently execute attacks
         async def _fuzz_worker(index: int, payload: str):
+            if abort_event.is_set():
+                return
             req_url = replace_markers(base_url, payload)
             req_body = replace_markers(body, payload)
             req_headers = {k: replace_markers(str(v), payload) for k, v in headers.items()}
             apply_rotating_user_agent(req_headers)
 
             async with sem:
+                if abort_event.is_set():
+                    return
                 # Rate Limiting & Anti-Ban Pacing
                 if eff_delay > 0 or eff_jitter > 0:
                     jit = random.uniform(0, max(0.0, eff_jitter)) if eff_jitter > 0 else 0.0
@@ -596,6 +628,9 @@ async def run_fuzz_attack(
         tasks = [_fuzz_worker(i, p) for i, p in enumerate(payloads)]
         await asyncio.gather(*tasks)
 
+    was_aborted = abort_event.is_set()
+    unregister_fuzzer_job(job_key)
+
     # Sort results by ID
     results.sort(key=lambda x: x["id"])
 
@@ -603,7 +638,7 @@ async def run_fuzz_attack(
     flagged_count = sum(1 for r in results if len(r["anomalies"]) > 0)
 
     # Ensure clean fuzzing session is recorded in HttpLog if no anomalies triggered individual logs
-    if flagged_count == 0:
+    if flagged_count == 0 and not was_aborted:
         try:
             from backend.forward_proxy import _dispatch_log
             import urllib.parse
@@ -635,5 +670,6 @@ async def run_fuzz_attack(
         "baseline": baseline_result,
         "total_payloads": len(payloads),
         "anomalies_detected": flagged_count,
+        "aborted": was_aborted,
         "results": results
     }

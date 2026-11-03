@@ -1231,3 +1231,46 @@ async def autonomous_step_router(
         }
     finally:
         db.close()
+
+
+async def run_cognitive_hexagon_campaign(
+    target_url: str,
+    project: str = "default",
+    max_steps: int = 5
+) -> Dict[str, Any]:
+    """
+    Runs an autonomous unified pentest sequence orchestrated entirely by the Cognitive Hexagon.
+    Seeds target knowledge, prioritizes hypotheses, audits endpoints, verifies findings, and returns telemetry.
+    """
+    steps_taken = []
+    proj = _resolve_proj(project, allow_all=False)
+
+    # Step 1: Recon & Seed
+    if target_url and target_url.strip():
+        recon_res = await recon_intent_router(target=target_url.strip(), mode="auto", project=proj)
+        steps_taken.append({
+            "step": 1,
+            "facet": "recon",
+            "result": recon_res
+        })
+
+    # Steps 2..N: Autonomous Iterations
+    for step_num in range(2, max_steps + 1):
+        step_res = await autonomous_step_router(project=proj, goal="auto")
+        steps_taken.append({
+            "step": step_num,
+            "facet": "autonomous_step",
+            "result": step_res
+        })
+        phase = step_res.get("phase", "")
+        if phase in ("COVERAGE_COMPLETE", "RECON_REQUIRED", "IDLE"):
+            break
+
+    return {
+        "status": "completed",
+        "engine": "cognitive_hexagon",
+        "project": proj,
+        "target_url": target_url,
+        "steps_count": len(steps_taken),
+        "steps": steps_taken
+    }

@@ -20,6 +20,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query, HTT
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel
 import ipaddress
 import urllib.parse
@@ -48,7 +50,7 @@ from backend.intercept_manager import (
 )
 from backend.report_generator import generate_har_export, generate_markdown_report
 from backend.openapi_generator import generate_openapi_spec
-from backend.fuzzer import run_fuzz_attack, BUILTIN_PAYLOADS
+from backend.fuzzer import run_fuzz_attack, BUILTIN_PAYLOADS, abort_fuzzer
 from backend.session_keeper import start_session_keeper, stop_session_keeper, get_session_keeper_status
 from backend.security_utils import sanitize_attachment_filename
 from backend.update_manager import PROXSYNTH_VERSION
@@ -61,6 +63,93 @@ app = FastAPI(
     description="Autonomous Agentic Interception Proxy & Security Telemetry Platform for AI Agents",
     version=PROXSYNTH_VERSION
 )
+
+# ==============================================================================
+# API Contract Standardization: Idempotency Key & Error Envelopes (api-and-interface-design)
+# ==============================================================================
+
+_IDEMPOTENCY_STORE: Dict[str, Dict[str, Any]] = {}
+
+def check_idempotency_key(key: str, payload_hash: str) -> Tuple[bool, Any]:
+    """
+    Validates and claims an Idempotency-Key.
+    Returns (is_duplicate: bool, previous_result_or_status: Any).
+    """
+    now = time.time()
+    # Evict keys older than 15 minutes (900 seconds)
+    expired = [k for k, v in list(_IDEMPOTENCY_STORE.items()) if now - v["timestamp"] > 900.0]
+    for k in expired:
+        _IDEMPOTENCY_STORE.pop(k, None)
+
+    if key in _IDEMPOTENCY_STORE:
+        entry = _IDEMPOTENCY_STORE[key]
+        if entry["payload_hash"] != payload_hash:
+            return True, "PAYLOAD_MISMATCH"
+        if entry["status"] == "in_progress":
+            return True, "IN_PROGRESS"
+        return True, entry.get("result")
+
+    # Atomically claim key
+    _IDEMPOTENCY_STORE[key] = {
+        "timestamp": now,
+        "payload_hash": payload_hash,
+        "status": "in_progress",
+        "result": None
+    }
+    return False, None
+
+
+def record_idempotency_result(key: str, result: Any):
+    """Stores the finished response payload for an Idempotency-Key."""
+    if key in _IDEMPOTENCY_STORE:
+        _IDEMPOTENCY_STORE[key]["status"] = "succeeded"
+        _IDEMPOTENCY_STORE[key]["result"] = result
+
+
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    detail = exc.detail
+    code = "HTTP_ERROR"
+    if exc.status_code == 404:
+        code = "RESOURCE_NOT_FOUND"
+    elif exc.status_code == 403:
+        code = "FORBIDDEN"
+    elif exc.status_code == 401:
+        code = "UNAUTHORIZED"
+    elif exc.status_code == 409:
+        code = "CONFLICT"
+    elif exc.status_code == 400:
+        code = "BAD_REQUEST"
+
+    msg = str(detail) if isinstance(detail, str) else "An HTTP error occurred"
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": code,
+                "message": msg,
+                "details": detail if not isinstance(detail, str) else None
+            },
+            "detail": detail  # Hyrum's law backwards-compatibility
+        }
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    first_msg = errors[0]["msg"] if errors and "msg" in errors[0] else "Validation failed"
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": f"Input validation failed: {first_msg}",
+                "details": errors
+            },
+            "detail": errors  # Hyrum's law backwards-compatibility
+        }
+    )
 
 @app.on_event("startup")
 async def startup_event():
@@ -295,6 +384,14 @@ class UpdateScopeRequest(BaseModel):
     upstream_proxy: Optional[str] = ""
 
 
+class ScopeTestRequest(BaseModel):
+    url: str
+    project: Optional[str] = "default"
+    allowed_hosts: Optional[List[str]] = None
+    blocked_patterns: Optional[List[str]] = None
+    scope_enabled: Optional[bool] = None
+
+
 class SpawnAuthRequest(BaseModel):
     project: str = "default"
     login_url: str
@@ -329,6 +426,7 @@ class RepeaterSendRequest(BaseModel):
     url: str
     headers: Dict[str, str] = {}
     body: Optional[str] = ""
+    follow_redirects: Optional[bool] = True
 
 
 class RunFuzzRequest(BaseModel):
@@ -534,10 +632,11 @@ async def record_and_broadcast_log(log_data: dict, db: Session) -> HttpLog:
     except Exception:
         pass
 
-    # Auto-ingest URL into attack surface knowledge graph
+    # Auto-ingest URL into attack surface knowledge graph with passive fingerprinting
     try:
         from backend.target_manager import auto_ingest_url_to_target_graph
-        auto_ingest_url_to_target_graph(project_name, log_entry.url, log_entry.method)
+        resp_hdrs_dict = json.loads(log_entry.response_headers) if log_entry.response_headers else None
+        auto_ingest_url_to_target_graph(project_name, log_entry.url, log_entry.method, response_headers=resp_hdrs_dict)
     except Exception:
         pass
 
@@ -836,6 +935,35 @@ async def update_project_scope(name: str, req: UpdateScopeRequest, db: Session =
     return proj.to_dict()
 
 
+@app.post("/api/scope/test")
+def test_scope_endpoint(req: ScopeTestRequest, db: Session = Depends(get_db)):
+    """Tests a target URL against active or draft scope guardrail rules and dangerous route blacklist in real-time."""
+    from backend.intercept_manager import evaluate_scope_url, is_dangerous_route, _get_project_scope_data
+
+    # 1. Check dangerous routes
+    is_dang, dang_reason = is_dangerous_route(req.url)
+
+    # 2. Determine scope data to test
+    if req.allowed_hosts is not None or req.blocked_patterns is not None or req.scope_enabled is not None:
+        scope_data = {
+            "scope_enabled": req.scope_enabled if req.scope_enabled is not None else True,
+            "allowed_hosts": req.allowed_hosts or ["*"],
+            "blocked_patterns": req.blocked_patterns or []
+        }
+    else:
+        scope_data = _get_project_scope_data(req.project or "default", db)
+
+    in_scope, reason = evaluate_scope_url(req.url, scope_data)
+
+    return {
+        "url": req.url,
+        "in_scope": in_scope,
+        "reason": reason,
+        "is_dangerous": is_dang,
+        "dangerous_reason": dang_reason
+    }
+
+
 @app.get("/api/proxy/status")
 def get_forward_proxy_status():
     """Returns the running status and port of the Proxsynth Forward Proxy."""
@@ -888,15 +1016,15 @@ async def handle_intercept_decision(intercept_id: str, req: InterceptActionReque
 
 _repeater_clients: Dict[str, Any] = {}
 
-async def _get_repeater_client(proxy_cfg: str = "", verify_ssl: bool = False):
+async def _get_repeater_client(proxy_cfg: str = "", verify_ssl: bool = False, follow_redirects: bool = True):
     import httpx
     verify_env = os.getenv("PROXSYNTH_VERIFY_SSL", "false").lower() == "true"
     final_verify = verify_ssl or verify_env
-    key = f"{proxy_cfg.strip() if proxy_cfg else 'direct'}_{final_verify}"
+    key = f"{proxy_cfg.strip() if proxy_cfg else 'direct'}_{final_verify}_{follow_redirects}"
     if key not in _repeater_clients or _repeater_clients[key].is_closed:
         kwargs = {
             "verify": final_verify,
-            "follow_redirects": True,
+            "follow_redirects": follow_redirects,
             "timeout": 30.0,
             "limits": httpx.Limits(max_keepalive_connections=20, max_connections=50, keepalive_expiry=60.0)
         }
@@ -944,7 +1072,8 @@ async def repeater_send_request(req: RepeaterSendRequest, db: Session = Depends(
     apply_rotating_user_agent(req_headers)
 
     try:
-        client = await _get_repeater_client(proxy_cfg or "", verify_ssl=verify_ssl)
+        follow_redir = req.follow_redirects is not False
+        client = await _get_repeater_client(proxy_cfg or "", verify_ssl=verify_ssl, follow_redirects=follow_redir)
         content_bytes = req.body.encode("utf-8") if req.body else None
         response = await client.request(
             method=req.method.upper(),
@@ -1071,6 +1200,14 @@ async def run_fuzzer_attack_endpoint(req: RunFuzzRequest, db: Session = Depends(
         "anomalies": results.get("anomalies_detected", 0)
     })
     return results
+
+
+@app.post("/api/fuzzer/abort")
+async def abort_fuzzer_endpoint(project: str = Query("default")):
+    """Aborts active running fuzzing attacks for the project."""
+    success = abort_fuzzer(project)
+    await ws_manager.broadcast({"type": "FUZZER_ABORTED", "project": project})
+    return {"status": "aborted", "project": project, "success": success}
 
 
 # ==============================================================================
@@ -3778,13 +3915,24 @@ class CampaignRunRequest(BaseModel):
     deep_verify: bool = True
     ports_profile: str = "top_100"
     enable_spa: bool = True
+    engine: Optional[str] = "classic"  # "classic" or "hexagon"
+    max_steps: Optional[int] = 5
 
 
 @app.post("/api/campaign/run")
 async def run_campaign_endpoint(req: CampaignRunRequest, db: Session = Depends(get_db)):
-    """Executes full autonomous unified security campaign pipeline."""
-    from backend.campaign_orchestrator import run_autonomous_security_campaign
+    """Executes full autonomous unified security campaign pipeline (Classic Pipeline or Cognitive Hexagon)."""
     proj = req.project.strip().lower()
+
+    if req.engine == "hexagon":
+        from backend.cognitive_hexagon import run_cognitive_hexagon_campaign
+        return await run_cognitive_hexagon_campaign(
+            target_url=req.target_url,
+            project=proj,
+            max_steps=req.max_steps or 5
+        )
+
+    from backend.campaign_orchestrator import run_autonomous_security_campaign
     return await run_autonomous_security_campaign(
         target_url=req.target_url,
         modes=req.modes,
@@ -3826,6 +3974,7 @@ class ApiSpecImportRequest(BaseModel):
 
 
 @app.post("/api/api-spec/import")
+@app.post("/api/openapi/import")
 async def api_spec_import_endpoint(req: ApiSpecImportRequest):
     """Imports OpenAPI / Swagger specification into Target Knowledge Graph."""
     from backend.api_importer import import_api_schema
