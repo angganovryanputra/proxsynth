@@ -2410,7 +2410,7 @@
 
           <template x-if="fuzzerAttackResults">
             <div>
-              <template x-for="item in fuzzerAttackResults.results" :key="item.id">
+              <template x-for="item in paginatedFuzzerResults()" :key="item.id">
                 <div @click="selectedFuzzPreview = item"
                   :class="selectedFuzzPreview && selectedFuzzPreview.id === item.id ? 'bg-[#1E293B] ring-1 ring-purple-500' : 'hover:bg-[#111827]/70'"
                   class="grid grid-cols-12 px-3 py-2 cursor-pointer transition items-center">
@@ -2438,6 +2438,75 @@
               </template>
             </div>
           </template>
+        </div>
+
+        <!-- STANDARDIZED PAGINATION FOOTER BAR FOR FUZZER RESULTS -->
+        <div x-show="fuzzerAttackResults && fuzzerResultsList().length > 0"
+          class="h-10 bg-[#111827] border-t border-[#1E293B] px-3 flex items-center justify-between shrink-0 font-mono text-xs select-none">
+          <!-- Left: Items Info & Rows Per Page Dropdown -->
+          <div class="flex items-center space-x-3 text-slate-400 text-[11px]">
+            <div class="flex items-center space-x-1">
+              <span>Showing</span>
+              <span class="text-slate-200 font-bold" x-text="fuzzerPageStartItem()"></span>
+              <span>-</span>
+              <span class="text-slate-200 font-bold" x-text="fuzzerPageEndItem()"></span>
+              <span>of</span>
+              <span class="text-purple-400 font-bold" x-text="fuzzerResultsList().length"></span>
+            </div>
+
+            <!-- Rows Per Page Selector -->
+            <div class="flex items-center space-x-1 pl-2 border-l border-[#1E293B]">
+              <span class="text-slate-500 text-[10px] uppercase">Rows:</span>
+              <select :value="fuzzerPageSize >= 999999 ? 'ALL' : fuzzerPageSize" @change="setFuzzerPageSize($event.target.value)"
+                class="bg-[#0B0F17] border border-[#1E293B] text-slate-200 text-[11px] rounded px-1.5 py-0.5 focus:outline-none focus:border-purple-500 cursor-pointer">
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="250">250</option>
+                <option value="ALL">All</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Right: Page Navigation Controls -->
+          <div class="flex items-center space-x-1">
+            <!-- First Page -->
+            <button @click="setFuzzerPage(1)" :disabled="fuzzerCurrentPage === 1"
+              :class="fuzzerCurrentPage === 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+              class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="First Page">
+              <i data-lucide="chevrons-left" class="w-3.5 h-3.5"></i>
+            </button>
+
+            <!-- Previous Page -->
+            <button @click="setFuzzerPage(fuzzerCurrentPage - 1)" :disabled="fuzzerCurrentPage === 1"
+              :class="fuzzerCurrentPage === 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+              class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Previous Page">
+              <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+            </button>
+
+            <!-- Current Page Indicator -->
+            <div
+              class="px-2.5 py-0.5 text-[11px] text-slate-300 flex items-center space-x-1 bg-[#0B0F17] border border-[#1E293B] rounded">
+              <span class="text-slate-500">Page</span>
+              <span class="text-purple-400 font-bold" x-text="fuzzerCurrentPage"></span>
+              <span class="text-slate-500">/</span>
+              <span class="font-semibold" x-text="fuzzerTotalPages()"></span>
+            </div>
+
+            <!-- Next Page -->
+            <button @click="setFuzzerPage(fuzzerCurrentPage + 1)" :disabled="fuzzerCurrentPage >= fuzzerTotalPages()"
+              :class="fuzzerCurrentPage >= fuzzerTotalPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+              class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Next Page">
+              <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+            </button>
+
+            <!-- Last Page -->
+            <button @click="setFuzzerPage(fuzzerTotalPages())" :disabled="fuzzerCurrentPage >= fuzzerTotalPages()"
+              :class="fuzzerCurrentPage >= fuzzerTotalPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+              class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Last Page">
+              <i data-lucide="chevrons-right" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
         </div>
 
         <!-- Bottom Response Preview -->
@@ -2761,53 +2830,71 @@
 
           <!-- Bottom Pagination Bar for Commands -->
           <div
-            class="h-10 bg-[#111827] border-t border-[#1E293B] px-3 flex items-center justify-between shrink-0 font-mono text-[11px] text-slate-400 select-none">
-            <div class="flex items-center space-x-1.5">
-              <span class="text-slate-500">Showing</span>
-              <span class="text-teal-400 font-bold" x-text="commandPageStartItem() + '-' + commandPageEndItem()"></span>
-              <span class="text-slate-500">of</span>
-              <span class="text-slate-300 font-semibold" x-text="filteredCommandsList.length"></span>
+            class="h-10 bg-[#111827] border-t border-[#1E293B] px-3 flex items-center justify-between shrink-0 font-mono text-xs select-none">
+            <!-- Left: Items Info & Rows Per Page Dropdown -->
+            <div class="flex items-center space-x-3 text-slate-400 text-[11px]">
+              <div class="flex items-center space-x-1">
+                <span>Showing</span>
+                <span class="text-slate-200 font-bold" x-text="commandPageStartItem()"></span>
+                <span>-</span>
+                <span class="text-slate-200 font-bold" x-text="commandPageEndItem()"></span>
+                <span>of</span>
+                <span class="text-teal-400 font-bold" x-text="filteredCommandsList.length"></span>
+              </div>
+
+              <!-- Rows Per Page Selector -->
+              <div class="flex items-center space-x-1 pl-2 border-l border-[#1E293B]">
+                <span class="text-slate-500 text-[10px] uppercase">Rows:</span>
+                <select :value="commandPageSize >= 999999 ? 'ALL' : commandPageSize"
+                  @change="setCommandPageSize($event.target.value)"
+                  class="bg-[#0B0F17] border border-[#1E293B] text-slate-200 text-[11px] rounded px-1.5 py-0.5 focus:outline-none focus:border-teal-500 cursor-pointer">
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                  <option value="ALL">All</option>
+                </select>
+              </div>
             </div>
 
+            <!-- Right: Page Navigation Controls -->
             <div class="flex items-center space-x-1">
+              <!-- First Page -->
               <button @click="setCommandPage(1)" :disabled="commandPage <= 1"
-                :class="commandPage <= 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300'"
-                class="p-1 rounded transition" title="First Page">
+                :class="commandPage <= 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="First Page">
                 <i data-lucide="chevrons-left" class="w-3.5 h-3.5"></i>
               </button>
+
+              <!-- Previous Page -->
               <button @click="setCommandPage(commandPage - 1)" :disabled="commandPage <= 1"
-                :class="commandPage <= 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300'"
-                class="p-1 rounded transition" title="Previous Page">
+                :class="commandPage <= 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Previous Page">
                 <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
               </button>
 
-              <span class="px-2 text-slate-300 font-bold">
-                <span class="text-teal-400" x-text="commandPage"></span> / <span x-text="totalCommandPages()"></span>
-              </span>
+              <!-- Current Page Indicator -->
+              <div
+                class="px-2.5 py-0.5 text-[11px] text-slate-300 flex items-center space-x-1 bg-[#0B0F17] border border-[#1E293B] rounded">
+                <span class="text-slate-500">Page</span>
+                <span class="text-teal-400 font-bold" x-text="commandPage"></span>
+                <span class="text-slate-500">/</span>
+                <span class="font-semibold" x-text="totalCommandPages()"></span>
+              </div>
 
+              <!-- Next Page -->
               <button @click="setCommandPage(commandPage + 1)" :disabled="commandPage >= totalCommandPages()"
-                :class="commandPage >= totalCommandPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300'"
-                class="p-1 rounded transition" title="Next Page">
+                :class="commandPage >= totalCommandPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Next Page">
                 <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
               </button>
+
+              <!-- Last Page -->
               <button @click="setCommandPage(totalCommandPages())" :disabled="commandPage >= totalCommandPages()"
-                :class="commandPage >= totalCommandPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300'"
-                class="p-1 rounded transition" title="Last Page">
+                :class="commandPage >= totalCommandPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Last Page">
                 <i data-lucide="chevrons-right" class="w-3.5 h-3.5"></i>
               </button>
-            </div>
-
-            <div class="flex items-center space-x-1">
-              <span class="text-slate-500 text-[10px]">Rows:</span>
-              <select :value="commandPageSize >= 999999 ? 'ALL' : commandPageSize"
-                @change="setCommandPageSize($event.target.value)"
-                class="bg-[#0B0F17] border border-[#1E293B] text-teal-400 font-bold rounded px-1.5 py-0.5 text-[10px] focus:outline-none cursor-pointer">
-                <option value="25">25</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="200">200</option>
-                <option value="ALL">ALL</option>
-              </select>
             </div>
           </div>
         </div>
@@ -3236,55 +3323,71 @@
 
           <!-- Bottom Pagination Bar for Payloads -->
           <div
-            class="h-10 bg-[#0B0F17] border-t border-[#1E293B] px-4 flex items-center justify-between shrink-0 font-mono text-[11px] text-slate-400 select-none">
-            <div class="flex items-center space-x-1.5">
-              <span class="text-slate-500">Showing</span>
-              <span class="text-amber-400 font-bold"
-                x-text="payloadPageStartItem() + '-' + payloadPageEndItem()"></span>
-              <span class="text-slate-500">of</span>
-              <span class="text-slate-300 font-semibold" x-text="filteredPayloadsList.length"></span>
-              <span class="text-slate-500">payloads</span>
+            class="h-10 bg-[#111827] border-t border-[#1E293B] px-3 flex items-center justify-between shrink-0 font-mono text-xs select-none">
+            <!-- Left: Items Info & Rows Per Page Dropdown -->
+            <div class="flex items-center space-x-3 text-slate-400 text-[11px]">
+              <div class="flex items-center space-x-1">
+                <span>Showing</span>
+                <span class="text-slate-200 font-bold" x-text="payloadPageStartItem()"></span>
+                <span>-</span>
+                <span class="text-slate-200 font-bold" x-text="payloadPageEndItem()"></span>
+                <span>of</span>
+                <span class="text-amber-400 font-bold" x-text="filteredPayloadsList.length"></span>
+              </div>
+
+              <!-- Rows Per Page Selector -->
+              <div class="flex items-center space-x-1 pl-2 border-l border-[#1E293B]">
+                <span class="text-slate-500 text-[10px] uppercase">Rows:</span>
+                <select :value="payloadPageSize >= 999999 ? 'ALL' : payloadPageSize"
+                  @change="setPayloadPageSize($event.target.value)"
+                  class="bg-[#0B0F17] border border-[#1E293B] text-slate-200 text-[11px] rounded px-1.5 py-0.5 focus:outline-none focus:border-amber-500 cursor-pointer">
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                  <option value="ALL">All</option>
+                </select>
+              </div>
             </div>
 
+            <!-- Right: Page Navigation Controls -->
             <div class="flex items-center space-x-1">
+              <!-- First Page -->
               <button @click="setPayloadPage(1)" :disabled="payloadPage <= 1"
-                :class="payloadPage <= 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300'"
-                class="p-1 rounded transition" title="First Page">
+                :class="payloadPage <= 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="First Page">
                 <i data-lucide="chevrons-left" class="w-3.5 h-3.5"></i>
               </button>
+
+              <!-- Previous Page -->
               <button @click="setPayloadPage(payloadPage - 1)" :disabled="payloadPage <= 1"
-                :class="payloadPage <= 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300'"
-                class="p-1 rounded transition" title="Previous Page">
+                :class="payloadPage <= 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Previous Page">
                 <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
               </button>
 
-              <span class="px-2 text-slate-300 font-bold">
-                <span class="text-amber-400" x-text="payloadPage"></span> / <span x-text="totalPayloadPages()"></span>
-              </span>
+              <!-- Current Page Indicator -->
+              <div
+                class="px-2.5 py-0.5 text-[11px] text-slate-300 flex items-center space-x-1 bg-[#0B0F17] border border-[#1E293B] rounded">
+                <span class="text-slate-500">Page</span>
+                <span class="text-amber-400 font-bold" x-text="payloadPage"></span>
+                <span class="text-slate-500">/</span>
+                <span class="font-semibold" x-text="totalPayloadPages()"></span>
+              </div>
 
+              <!-- Next Page -->
               <button @click="setPayloadPage(payloadPage + 1)" :disabled="payloadPage >= totalPayloadPages()"
-                :class="payloadPage >= totalPayloadPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300'"
-                class="p-1 rounded transition" title="Next Page">
+                :class="payloadPage >= totalPayloadPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Next Page">
                 <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
               </button>
+
+              <!-- Last Page -->
               <button @click="setPayloadPage(totalPayloadPages())" :disabled="payloadPage >= totalPayloadPages()"
-                :class="payloadPage >= totalPayloadPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300'"
-                class="p-1 rounded transition" title="Last Page">
+                :class="payloadPage >= totalPayloadPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Last Page">
                 <i data-lucide="chevrons-right" class="w-3.5 h-3.5"></i>
               </button>
-            </div>
-
-            <div class="flex items-center space-x-1">
-              <span class="text-slate-500 text-[10px]">Rows:</span>
-              <select :value="payloadPageSize >= 999999 ? 'ALL' : payloadPageSize"
-                @change="setPayloadPageSize($event.target.value)"
-                class="bg-[#111827] border border-[#1E293B] text-amber-400 font-bold rounded px-1.5 py-0.5 text-[10px] focus:outline-none cursor-pointer">
-                <option value="25">25</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="200">200</option>
-                <option value="ALL">ALL</option>
-              </select>
             </div>
           </div>
         </div>
@@ -3396,7 +3499,7 @@
 
       <!-- Asset & Endpoint Topology List -->
       <div class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 smooth-scroll">
-        <template x-for="asset in filteredAssets()" :key="asset.id">
+        <template x-for="asset in paginatedAssets()" :key="asset.id">
           <div
             class="bg-[#111827] border border-[#1E293B] rounded-xl overflow-hidden shadow-lg transition hover:border-slate-700">
             <!-- Asset Card Header -->
@@ -3535,6 +3638,78 @@
             organized here automatically.</p>
         </div>
       </div>
+
+      <!-- STANDARDIZED PAGINATION FOOTER BAR FOR ATTACK SURFACE -->
+      <div
+        class="h-10 bg-[#111827] border-t border-[#1E293B] px-3 flex items-center justify-between shrink-0 font-mono text-xs select-none">
+        <!-- Left: Items Info & Rows Per Page Dropdown -->
+        <div class="flex items-center space-x-3 text-slate-400 text-[11px]">
+          <div class="flex items-center space-x-1">
+            <span>Showing</span>
+            <span class="text-slate-200 font-bold" x-text="assetPageStartItem()"></span>
+            <span>-</span>
+            <span class="text-slate-200 font-bold" x-text="assetPageEndItem()"></span>
+            <span>of</span>
+            <span class="text-cyan-400 font-bold" x-text="filteredAssets().length"></span>
+            <span x-show="filteredAssets().length !== ((attackSurfaceData && attackSurfaceData.assets) || []).length" class="text-slate-500 text-[10px]">
+              (filtered from <span x-text="((attackSurfaceData && attackSurfaceData.assets) || []).length"></span>)
+            </span>
+          </div>
+
+          <!-- Rows Per Page Selector -->
+          <div class="flex items-center space-x-1 pl-2 border-l border-[#1E293B]">
+            <span class="text-slate-500 text-[10px] uppercase">Rows:</span>
+            <select :value="assetPageSize >= 999999 ? 'ALL' : assetPageSize" @change="setAssetPageSize($event.target.value)"
+              class="bg-[#0B0F17] border border-[#1E293B] text-slate-200 text-[11px] rounded px-1.5 py-0.5 focus:outline-none focus:border-cyan-500 cursor-pointer">
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="ALL">All</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Right: Page Navigation Controls -->
+        <div class="flex items-center space-x-1">
+          <!-- First Page -->
+          <button @click="setAssetPage(1)" :disabled="assetCurrentPage === 1"
+            :class="assetCurrentPage === 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+            class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="First Page">
+            <i data-lucide="chevrons-left" class="w-3.5 h-3.5"></i>
+          </button>
+
+          <!-- Previous Page -->
+          <button @click="setAssetPage(assetCurrentPage - 1)" :disabled="assetCurrentPage === 1"
+            :class="assetCurrentPage === 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+            class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Previous Page">
+            <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+          </button>
+
+          <!-- Current Page Indicator -->
+          <div
+            class="px-2.5 py-0.5 text-[11px] text-slate-300 flex items-center space-x-1 bg-[#0B0F17] border border-[#1E293B] rounded">
+            <span class="text-slate-500">Page</span>
+            <span class="text-cyan-400 font-bold" x-text="assetCurrentPage"></span>
+            <span class="text-slate-500">/</span>
+            <span class="font-semibold" x-text="assetTotalPages()"></span>
+          </div>
+
+          <!-- Next Page -->
+          <button @click="setAssetPage(assetCurrentPage + 1)" :disabled="assetCurrentPage >= assetTotalPages()"
+            :class="assetCurrentPage >= assetTotalPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+            class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Next Page">
+            <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+          </button>
+
+          <!-- Last Page -->
+          <button @click="setAssetPage(assetTotalPages())" :disabled="assetCurrentPage >= assetTotalPages()"
+            :class="assetCurrentPage >= assetTotalPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+            class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Last Page">
+            <i data-lucide="chevrons-right" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </div>
     </div>
 
 
@@ -3657,7 +3832,7 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-[#1E293B]/60 text-slate-300 font-mono">
-              <template x-for="ev in filteredOastEvents()" :key="ev.id">
+              <template x-for="ev in paginatedOastEvents()" :key="ev.id">
                 <tr class="hover:bg-[#1E293B]/50 transition select-text">
                   <td class="px-3 py-2.5 text-slate-500 text-[11px]" x-text="'#' + ev.id"></td>
                   <td class="px-3 py-2.5 text-slate-400 text-[11px]" x-text="formatTime(ev.timestamp)"></td>
@@ -3690,6 +3865,78 @@
               </tr>
             </tbody>
           </table>
+
+          <!-- STANDARDIZED PAGINATION FOOTER BAR FOR OAST -->
+          <div
+            class="h-10 bg-[#111827] border-t border-[#1E293B] px-3 flex items-center justify-between shrink-0 font-mono text-xs select-none">
+            <!-- Left: Items Info & Rows Per Page Dropdown -->
+            <div class="flex items-center space-x-3 text-slate-400 text-[11px]">
+              <div class="flex items-center space-x-1">
+                <span>Showing</span>
+                <span class="text-slate-200 font-bold" x-text="oastPageStartItem()"></span>
+                <span>-</span>
+                <span class="text-slate-200 font-bold" x-text="oastPageEndItem()"></span>
+                <span>of</span>
+                <span class="text-orange-400 font-bold" x-text="(filteredOastEvents() || []).length"></span>
+                <span x-show="(filteredOastEvents() || []).length !== (oastEvents || []).length" class="text-slate-500 text-[10px]">
+                  (filtered from <span x-text="(oastEvents || []).length"></span>)
+                </span>
+              </div>
+
+              <!-- Rows Per Page Selector -->
+              <div class="flex items-center space-x-1 pl-2 border-l border-[#1E293B]">
+                <span class="text-slate-500 text-[10px] uppercase">Rows:</span>
+                <select :value="oastPageSize >= 999999 ? 'ALL' : oastPageSize" @change="setOastPageSize($event.target.value)"
+                  class="bg-[#0B0F17] border border-[#1E293B] text-slate-200 text-[11px] rounded px-1.5 py-0.5 focus:outline-none focus:border-orange-500 cursor-pointer">
+                  <option value="10">10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="ALL">All</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Right: Page Navigation Controls -->
+            <div class="flex items-center space-x-1">
+              <!-- First Page -->
+              <button @click="setOastPage(1)" :disabled="oastCurrentPage === 1"
+                :class="oastCurrentPage === 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="First Page">
+                <i data-lucide="chevrons-left" class="w-3.5 h-3.5"></i>
+              </button>
+
+              <!-- Previous Page -->
+              <button @click="setOastPage(oastCurrentPage - 1)" :disabled="oastCurrentPage === 1"
+                :class="oastCurrentPage === 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Previous Page">
+                <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+              </button>
+
+              <!-- Current Page Indicator -->
+              <div
+                class="px-2.5 py-0.5 text-[11px] text-slate-300 flex items-center space-x-1 bg-[#0B0F17] border border-[#1E293B] rounded">
+                <span class="text-slate-500">Page</span>
+                <span class="text-orange-400 font-bold" x-text="oastCurrentPage"></span>
+                <span class="text-slate-500">/</span>
+                <span class="font-semibold" x-text="oastTotalPages()"></span>
+              </div>
+
+              <!-- Next Page -->
+              <button @click="setOastPage(oastCurrentPage + 1)" :disabled="oastCurrentPage >= oastTotalPages()"
+                :class="oastCurrentPage >= oastTotalPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Next Page">
+                <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+              </button>
+
+              <!-- Last Page -->
+              <button @click="setOastPage(oastTotalPages())" :disabled="oastCurrentPage >= oastTotalPages()"
+                :class="oastCurrentPage >= oastTotalPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Last Page">
+                <i data-lucide="chevrons-right" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -3938,7 +4185,7 @@
                 </tr>
               </thead>
               <tbody class="divide-y divide-[#1E293B]/60">
-                <template x-for="r in interceptionRules" :key="r.id">
+                <template x-for="r in paginatedRules()" :key="r.id">
                   <tr class="hover:bg-slate-800/40 transition">
                     <td class="py-2.5 px-3 text-center">
                       <span class="px-1.5 py-0.5 rounded text-[10px] bg-[#1E293B] text-slate-300 font-bold"
@@ -3988,6 +4235,75 @@
                 </tr>
               </tbody>
             </table>
+
+            <!-- STANDARDIZED PAGINATION FOOTER BAR FOR RULES -->
+            <div
+              class="h-10 bg-[#111827] border-t border-[#1E293B] px-3 flex items-center justify-between shrink-0 font-mono text-xs select-none">
+              <!-- Left: Items Info & Rows Per Page Dropdown -->
+              <div class="flex items-center space-x-3 text-slate-400 text-[11px]">
+                <div class="flex items-center space-x-1">
+                  <span>Showing</span>
+                  <span class="text-slate-200 font-bold" x-text="rulesPageStartItem()"></span>
+                  <span>-</span>
+                  <span class="text-slate-200 font-bold" x-text="rulesPageEndItem()"></span>
+                  <span>of</span>
+                  <span class="text-indigo-400 font-bold" x-text="interceptionRules.length"></span>
+                </div>
+
+                <!-- Rows Per Page Selector -->
+                <div class="flex items-center space-x-1 pl-2 border-l border-[#1E293B]">
+                  <span class="text-slate-500 text-[10px] uppercase">Rows:</span>
+                  <select :value="rulesPageSize >= 999999 ? 'ALL' : rulesPageSize" @change="setRulesPageSize($event.target.value)"
+                    class="bg-[#0B0F17] border border-[#1E293B] text-slate-200 text-[11px] rounded px-1.5 py-0.5 focus:outline-none focus:border-indigo-500 cursor-pointer">
+                    <option value="10">10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="ALL">All</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Right: Page Navigation Controls -->
+              <div class="flex items-center space-x-1">
+                <!-- First Page -->
+                <button @click="setRulesPage(1)" :disabled="rulesCurrentPage === 1"
+                  :class="rulesCurrentPage === 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                  class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="First Page">
+                  <i data-lucide="chevrons-left" class="w-3.5 h-3.5"></i>
+                </button>
+
+                <!-- Previous Page -->
+                <button @click="setRulesPage(rulesCurrentPage - 1)" :disabled="rulesCurrentPage === 1"
+                  :class="rulesCurrentPage === 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                  class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Previous Page">
+                  <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+                </button>
+
+                <!-- Current Page Indicator -->
+                <div
+                  class="px-2.5 py-0.5 text-[11px] text-slate-300 flex items-center space-x-1 bg-[#0B0F17] border border-[#1E293B] rounded">
+                  <span class="text-slate-500">Page</span>
+                  <span class="text-indigo-400 font-bold" x-text="rulesCurrentPage"></span>
+                  <span class="text-slate-500">/</span>
+                  <span class="font-semibold" x-text="rulesTotalPages()"></span>
+                </div>
+
+                <!-- Next Page -->
+                <button @click="setRulesPage(rulesCurrentPage + 1)" :disabled="rulesCurrentPage >= rulesTotalPages()"
+                  :class="rulesCurrentPage >= rulesTotalPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                  class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Next Page">
+                  <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+                </button>
+
+                <!-- Last Page -->
+                <button @click="setRulesPage(rulesTotalPages())" :disabled="rulesCurrentPage >= rulesTotalPages()"
+                  :class="rulesCurrentPage >= rulesTotalPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                  class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Last Page">
+                  <i data-lucide="chevrons-right" class="w-3.5 h-3.5"></i>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -4243,7 +4559,7 @@
                 </tr>
               </thead>
               <tbody class="divide-y divide-[#1E293B]/60 font-mono">
-                <template x-for="c in getFilteredBolaCandidates()" :key="c.log_id">
+                <template x-for="c in paginatedBolaCandidates()" :key="c.log_id">
                   <tr class="hover:bg-[#1E293B]/40 transition group">
                     <!-- Endpoint & Method -->
                     <td class="px-4 py-3">
@@ -4328,6 +4644,78 @@
               <p class="text-xs max-w-md mx-auto text-slate-500">
                 Browse or audit target endpoints containing object identifiers (e.g. <code class="text-amber-400">/users/{id}</code> or <code class="text-amber-400">?account_id=123</code>) via the proxy. Proxsynth will automatically populate the access matrix.
               </p>
+            </div>
+          </div>
+
+          <!-- STANDARDIZED PAGINATION FOOTER BAR FOR BOLA MATRIX -->
+          <div
+            class="h-10 bg-[#111827] border-t border-[#1E293B] px-3 flex items-center justify-between shrink-0 font-mono text-xs select-none">
+            <!-- Left: Items Info & Rows Per Page Dropdown -->
+            <div class="flex items-center space-x-3 text-slate-400 text-[11px]">
+              <div class="flex items-center space-x-1">
+                <span>Showing</span>
+                <span class="text-slate-200 font-bold" x-text="bolaPageStartItem()"></span>
+                <span>-</span>
+                <span class="text-slate-200 font-bold" x-text="bolaPageEndItem()"></span>
+                <span>of</span>
+                <span class="text-rose-400 font-bold" x-text="(getFilteredBolaCandidates() || []).length"></span>
+                <span x-show="(getFilteredBolaCandidates() || []).length !== ((bolaMatrixData && bolaMatrixData.candidates) || []).length" class="text-slate-500 text-[10px]">
+                  (filtered from <span x-text="((bolaMatrixData && bolaMatrixData.candidates) || []).length"></span>)
+                </span>
+              </div>
+
+              <!-- Rows Per Page Selector -->
+              <div class="flex items-center space-x-1 pl-2 border-l border-[#1E293B]">
+                <span class="text-slate-500 text-[10px] uppercase">Rows:</span>
+                <select :value="bolaPageSize >= 999999 ? 'ALL' : bolaPageSize" @change="setBolaPageSize($event.target.value)"
+                  class="bg-[#0B0F17] border border-[#1E293B] text-slate-200 text-[11px] rounded px-1.5 py-0.5 focus:outline-none focus:border-rose-500 cursor-pointer">
+                  <option value="10">10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="ALL">All</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Right: Page Navigation Controls -->
+            <div class="flex items-center space-x-1">
+              <!-- First Page -->
+              <button @click="setBolaPage(1)" :disabled="bolaCurrentPage === 1"
+                :class="bolaCurrentPage === 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="First Page">
+                <i data-lucide="chevrons-left" class="w-3.5 h-3.5"></i>
+              </button>
+
+              <!-- Previous Page -->
+              <button @click="setBolaPage(bolaCurrentPage - 1)" :disabled="bolaCurrentPage === 1"
+                :class="bolaCurrentPage === 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Previous Page">
+                <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+              </button>
+
+              <!-- Current Page Indicator -->
+              <div
+                class="px-2.5 py-0.5 text-[11px] text-slate-300 flex items-center space-x-1 bg-[#0B0F17] border border-[#1E293B] rounded">
+                <span class="text-slate-500">Page</span>
+                <span class="text-rose-400 font-bold" x-text="bolaCurrentPage"></span>
+                <span class="text-slate-500">/</span>
+                <span class="font-semibold" x-text="bolaTotalPages()"></span>
+              </div>
+
+              <!-- Next Page -->
+              <button @click="setBolaPage(bolaCurrentPage + 1)" :disabled="bolaCurrentPage >= bolaTotalPages()"
+                :class="bolaCurrentPage >= bolaTotalPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Next Page">
+                <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+              </button>
+
+              <!-- Last Page -->
+              <button @click="setBolaPage(bolaTotalPages())" :disabled="bolaCurrentPage >= bolaTotalPages()"
+                :class="bolaCurrentPage >= bolaTotalPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Last Page">
+                <i data-lucide="chevrons-right" class="w-3.5 h-3.5"></i>
+              </button>
             </div>
           </div>
         </div>
@@ -4503,7 +4891,7 @@
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-[#1E293B]/60 font-mono">
-                  <template x-for="f in (campaignResults?.findings_summary || [])" :key="f.id">
+                  <template x-for="f in paginatedCampaignFindings()" :key="f.id">
                     <tr class="hover:bg-[#1E293B]/40 transition">
                       <td class="px-3 py-2.5">
                         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold"
@@ -4540,6 +4928,75 @@
                 <p class="text-[11px] max-w-sm mx-auto text-slate-500">
                   Enter a target URL above and click "Launch Full Autonomous Campaign" to initiate the zero-human testing loop.
                 </p>
+              </div>
+            </div>
+
+            <!-- STANDARDIZED PAGINATION FOOTER BAR FOR CAMPAIGN FINDINGS -->
+            <div
+              class="h-10 bg-[#111827] border-t border-[#1E293B] px-3 flex items-center justify-between shrink-0 font-mono text-xs select-none">
+              <!-- Left: Items Info & Rows Per Page Dropdown -->
+              <div class="flex items-center space-x-3 text-slate-400 text-[11px]">
+                <div class="flex items-center space-x-1">
+                  <span>Showing</span>
+                  <span class="text-slate-200 font-bold" x-text="campaignFindingsPageStartItem()"></span>
+                  <span>-</span>
+                  <span class="text-slate-200 font-bold" x-text="campaignFindingsPageEndItem()"></span>
+                  <span>of</span>
+                  <span class="text-amber-400 font-bold" x-text="campaignFindingsList().length"></span>
+                </div>
+
+                <!-- Rows Per Page Selector -->
+                <div class="flex items-center space-x-1 pl-2 border-l border-[#1E293B]">
+                  <span class="text-slate-500 text-[10px] uppercase">Rows:</span>
+                  <select :value="campaignFindingsPageSize >= 999999 ? 'ALL' : campaignFindingsPageSize" @change="setCampaignFindingsPageSize($event.target.value)"
+                    class="bg-[#0B0F17] border border-[#1E293B] text-slate-200 text-[11px] rounded px-1.5 py-0.5 focus:outline-none focus:border-amber-500 cursor-pointer">
+                    <option value="10">10</option>
+                    <option value="15">15</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="ALL">All</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Right: Page Navigation Controls -->
+              <div class="flex items-center space-x-1">
+                <!-- First Page -->
+                <button @click="setCampaignFindingsPage(1)" :disabled="campaignFindingsCurrentPage === 1"
+                  :class="campaignFindingsCurrentPage === 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                  class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="First Page">
+                  <i data-lucide="chevrons-left" class="w-3.5 h-3.5"></i>
+                </button>
+
+                <!-- Previous Page -->
+                <button @click="setCampaignFindingsPage(campaignFindingsCurrentPage - 1)" :disabled="campaignFindingsCurrentPage === 1"
+                  :class="campaignFindingsCurrentPage === 1 ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                  class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Previous Page">
+                  <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+                </button>
+
+                <!-- Current Page Indicator -->
+                <div
+                  class="px-2.5 py-0.5 text-[11px] text-slate-300 flex items-center space-x-1 bg-[#0B0F17] border border-[#1E293B] rounded">
+                  <span class="text-slate-500">Page</span>
+                  <span class="text-amber-400 font-bold" x-text="campaignFindingsCurrentPage"></span>
+                  <span class="text-slate-500">/</span>
+                  <span class="font-semibold" x-text="campaignFindingsTotalPages()"></span>
+                </div>
+
+                <!-- Next Page -->
+                <button @click="setCampaignFindingsPage(campaignFindingsCurrentPage + 1)" :disabled="campaignFindingsCurrentPage >= campaignFindingsTotalPages()"
+                  :class="campaignFindingsCurrentPage >= campaignFindingsTotalPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                  class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Next Page">
+                  <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+                </button>
+
+                <!-- Last Page -->
+                <button @click="setCampaignFindingsPage(campaignFindingsTotalPages())" :disabled="campaignFindingsCurrentPage >= campaignFindingsTotalPages()"
+                  :class="campaignFindingsCurrentPage >= campaignFindingsTotalPages() ? 'opacity-30 cursor-not-allowed text-slate-600' : 'hover:bg-[#1E293B] text-slate-300 hover:text-white'"
+                  class="p-1 rounded bg-[#0B0F17] border border-[#1E293B] transition" title="Last Page">
+                  <i data-lucide="chevrons-right" class="w-3.5 h-3.5"></i>
+                </button>
               </div>
             </div>
           </div>
@@ -6759,6 +7216,8 @@
           fuzzerAttackResults: null,
           selectedFuzzPreview: null,
           fuzzerPayloadsMap: {},
+          fuzzerCurrentPage: 1,
+          fuzzerPageSize: 50,
 
           // Scope & Guardrails Form
           scopeForm: {
@@ -6820,6 +7279,8 @@
 
           // Interception Rules State
           interceptionRules: [],
+          rulesCurrentPage: 1,
+          rulesPageSize: 25,
           showNewRuleModal: false,
           newRuleForm: {
             name: '',
@@ -8222,6 +8683,7 @@
               });
               if (res.ok) {
                 this.fuzzerAttackResults = await res.json();
+                this.fuzzerCurrentPage = 1;
               } else {
                 const err = await res.json();
                 alert(`Fuzzer attack failed: ${err.detail || 'Execution error'}`);
@@ -8231,6 +8693,49 @@
             } finally {
               this.fuzzerRunning = false;
             }
+          },
+
+          fuzzerResultsList() {
+            return (this.fuzzerAttackResults && this.fuzzerAttackResults.results) ? this.fuzzerAttackResults.results : [];
+          },
+
+          fuzzerTotalPages() {
+            if (this.fuzzerPageSize >= 999999) return 1;
+            const list = this.fuzzerResultsList();
+            return Math.max(1, Math.ceil(list.length / this.fuzzerPageSize));
+          },
+
+          paginatedFuzzerResults() {
+            const list = this.fuzzerResultsList();
+            if (!list.length) return [];
+            if (this.fuzzerPageSize >= 999999) return list;
+            const start = (this.fuzzerCurrentPage - 1) * this.fuzzerPageSize;
+            return list.slice(start, start + this.fuzzerPageSize);
+          },
+
+          setFuzzerPage(p) {
+            const total = this.fuzzerTotalPages();
+            this.fuzzerCurrentPage = Math.max(1, Math.min(total, p));
+            this.$nextTick(() => { if (window.lucide) window.lucide.createIcons(); });
+          },
+
+          setFuzzerPageSize(sz) {
+            this.fuzzerPageSize = sz === 'ALL' ? 999999 : parseInt(sz, 10);
+            this.fuzzerCurrentPage = 1;
+            this.$nextTick(() => { if (window.lucide) window.lucide.createIcons(); });
+          },
+
+          fuzzerPageStartItem() {
+            const list = this.fuzzerResultsList();
+            if (!list.length) return 0;
+            return (this.fuzzerCurrentPage - 1) * (this.fuzzerPageSize >= 999999 ? list.length : this.fuzzerPageSize) + 1;
+          },
+
+          fuzzerPageEndItem() {
+            const list = this.fuzzerResultsList();
+            if (!list.length) return 0;
+            if (this.fuzzerPageSize >= 999999) return list.length;
+            return Math.min(this.fuzzerCurrentPage * this.fuzzerPageSize, list.length);
           },
 
           // SCOPE & SETTINGS ACTIONS
@@ -9600,6 +10105,45 @@
             } catch (e) { }
           },
 
+          rulesTotalPages() {
+            if (this.rulesPageSize >= 999999) return 1;
+            const list = this.interceptionRules || [];
+            return Math.max(1, Math.ceil(list.length / this.rulesPageSize));
+          },
+
+          paginatedRules() {
+            const list = this.interceptionRules || [];
+            if (!list.length) return [];
+            if (this.rulesPageSize >= 999999) return list;
+            const start = (this.rulesCurrentPage - 1) * this.rulesPageSize;
+            return list.slice(start, start + this.rulesPageSize);
+          },
+
+          setRulesPage(p) {
+            const total = this.rulesTotalPages();
+            this.rulesCurrentPage = Math.max(1, Math.min(total, p));
+            this.$nextTick(() => { if (window.lucide) window.lucide.createIcons(); });
+          },
+
+          setRulesPageSize(sz) {
+            this.rulesPageSize = sz === 'ALL' ? 999999 : parseInt(sz, 10);
+            this.rulesCurrentPage = 1;
+            this.$nextTick(() => { if (window.lucide) window.lucide.createIcons(); });
+          },
+
+          rulesPageStartItem() {
+            const list = this.interceptionRules || [];
+            if (!list.length) return 0;
+            return (this.rulesCurrentPage - 1) * (this.rulesPageSize >= 999999 ? list.length : this.rulesPageSize) + 1;
+          },
+
+          rulesPageEndItem() {
+            const list = this.interceptionRules || [];
+            if (!list.length) return 0;
+            if (this.rulesPageSize >= 999999) return list.length;
+            return Math.min(this.rulesCurrentPage * this.rulesPageSize, list.length);
+          },
+
           async toggleInterceptionRule(id) {
             try {
               const resp = await fetch(`/api/rules/${id}/toggle`, { method: 'POST' });
@@ -9741,14 +10285,61 @@
           bolaMatrixData: { project: 'default', roles: [], total_candidates: 0, vulnerabilities_detected: 0, candidates: [] },
           bolaScanning: false,
           bolaFilterText: '',
+          bolaCurrentPage: 1,
+          bolaPageSize: 25,
           bflaScanning: false,
           campaignTargetUrl: '',
           campaignMaxPages: 15,
           campaignModes: ['spider', 'js_mine', 'oast_spray', 'bfla_audit', 'mass_assignment', 'business_logic', 'verify_gate'],
           campaignRunning: false,
           campaignResults: null,
+          campaignFindingsCurrentPage: 1,
+          campaignFindingsPageSize: 15,
           authRecipe: { login_url: '', method: 'POST', payload: '{\n  "username": "admin",\n  "password": "admin123"\n}', token_json_path: 'token', cookie_names: 'session, token' },
           authTesting: false,
+
+          campaignFindingsList() {
+            return (this.campaignResults && this.campaignResults.findings_summary) ? this.campaignResults.findings_summary : [];
+          },
+
+          campaignFindingsTotalPages() {
+            if (this.campaignFindingsPageSize >= 999999) return 1;
+            const list = this.campaignFindingsList();
+            return Math.max(1, Math.ceil(list.length / this.campaignFindingsPageSize));
+          },
+
+          paginatedCampaignFindings() {
+            const list = this.campaignFindingsList();
+            if (!list.length) return [];
+            if (this.campaignFindingsPageSize >= 999999) return list;
+            const start = (this.campaignFindingsCurrentPage - 1) * this.campaignFindingsPageSize;
+            return list.slice(start, start + this.campaignFindingsPageSize);
+          },
+
+          setCampaignFindingsPage(p) {
+            const total = this.campaignFindingsTotalPages();
+            this.campaignFindingsCurrentPage = Math.max(1, Math.min(total, p));
+            this.$nextTick(() => { if (window.lucide) window.lucide.createIcons(); });
+          },
+
+          setCampaignFindingsPageSize(sz) {
+            this.campaignFindingsPageSize = sz === 'ALL' ? 999999 : parseInt(sz, 10);
+            this.campaignFindingsCurrentPage = 1;
+            this.$nextTick(() => { if (window.lucide) window.lucide.createIcons(); });
+          },
+
+          campaignFindingsPageStartItem() {
+            const list = this.campaignFindingsList();
+            if (!list.length) return 0;
+            return (this.campaignFindingsCurrentPage - 1) * (this.campaignFindingsPageSize >= 999999 ? list.length : this.campaignFindingsPageSize) + 1;
+          },
+
+          campaignFindingsPageEndItem() {
+            const list = this.campaignFindingsList();
+            if (!list.length) return 0;
+            if (this.campaignFindingsPageSize >= 999999) return list.length;
+            return Math.min(this.campaignFindingsCurrentPage * this.campaignFindingsPageSize, list.length);
+          },
 
           toggleCampaignMode(mode) {
             if (this.campaignModes.includes(mode)) {
@@ -10081,6 +10672,45 @@
               (c.resource_id && c.resource_id.toLowerCase().includes(q)) ||
               (c.url && c.url.toLowerCase().includes(q))
             );
+          },
+
+          bolaTotalPages() {
+            if (this.bolaPageSize >= 999999) return 1;
+            const list = this.getFilteredBolaCandidates() || [];
+            return Math.max(1, Math.ceil(list.length / this.bolaPageSize));
+          },
+
+          paginatedBolaCandidates() {
+            const list = this.getFilteredBolaCandidates() || [];
+            if (!list.length) return [];
+            if (this.bolaPageSize >= 999999) return list;
+            const start = (this.bolaCurrentPage - 1) * this.bolaPageSize;
+            return list.slice(start, start + this.bolaPageSize);
+          },
+
+          setBolaPage(p) {
+            const total = this.bolaTotalPages();
+            this.bolaCurrentPage = Math.max(1, Math.min(total, p));
+            this.$nextTick(() => { if (window.lucide) window.lucide.createIcons(); });
+          },
+
+          setBolaPageSize(sz) {
+            this.bolaPageSize = sz === 'ALL' ? 999999 : parseInt(sz, 10);
+            this.bolaCurrentPage = 1;
+            this.$nextTick(() => { if (window.lucide) window.lucide.createIcons(); });
+          },
+
+          bolaPageStartItem() {
+            const list = this.getFilteredBolaCandidates() || [];
+            if (!list.length) return 0;
+            return (this.bolaCurrentPage - 1) * (this.bolaPageSize >= 999999 ? list.length : this.bolaPageSize) + 1;
+          },
+
+          bolaPageEndItem() {
+            const list = this.getFilteredBolaCandidates() || [];
+            if (!list.length) return 0;
+            if (this.bolaPageSize >= 999999) return list.length;
+            return Math.min(this.bolaCurrentPage * this.bolaPageSize, list.length);
           },
 
           // ==========================================

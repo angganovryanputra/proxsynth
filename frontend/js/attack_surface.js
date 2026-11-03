@@ -8,6 +8,8 @@ window.AttackSurfaceModule = {
       attackSurfaceData: { summary: {}, assets: [] },
       attackSurfaceSearch: '',
       attackSurfaceStatusFilter: 'ALL',
+      assetCurrentPage: 1,
+      assetPageSize: 10,
       selectedAssetId: null,
       showAddAssetModal: false,
       newAssetForm: {
@@ -75,6 +77,45 @@ window.AttackSurfaceModule = {
         }
         return true;
       });
+    },
+
+    assetTotalPages() {
+      if (this.assetPageSize >= 999999) return 1;
+      const list = this.filteredAssets() || [];
+      return Math.max(1, Math.ceil(list.length / this.assetPageSize));
+    },
+
+    paginatedAssets() {
+      const list = this.filteredAssets() || [];
+      if (!list.length) return [];
+      if (this.assetPageSize >= 999999) return list;
+      const start = (this.assetCurrentPage - 1) * this.assetPageSize;
+      return list.slice(start, start + this.assetPageSize);
+    },
+
+    setAssetPage(p) {
+      const total = this.assetTotalPages();
+      this.assetCurrentPage = Math.max(1, Math.min(total, p));
+      this.$nextTick(() => { if (window.lucide) window.lucide.createIcons(); });
+    },
+
+    setAssetPageSize(sz) {
+      this.assetPageSize = sz === 'ALL' ? 999999 : parseInt(sz, 10);
+      this.assetCurrentPage = 1;
+      this.$nextTick(() => { if (window.lucide) window.lucide.createIcons(); });
+    },
+
+    assetPageStartItem() {
+      const list = this.filteredAssets() || [];
+      if (!list.length) return 0;
+      return (this.assetCurrentPage - 1) * (this.assetPageSize >= 999999 ? list.length : this.assetPageSize) + 1;
+    },
+
+    assetPageEndItem() {
+      const list = this.filteredAssets() || [];
+      if (!list.length) return 0;
+      if (this.assetPageSize >= 999999) return list.length;
+      return Math.min(this.assetCurrentPage * this.assetPageSize, list.length);
     },
 
     async saveNewAsset() {

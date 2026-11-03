@@ -14,6 +14,8 @@ window.OastModule = {
       isGeneratingOast: false,
       oastSearchQuery: '',
       oastProtocols: { http: { active: true }, dns: { active: false }, ldap: { active: false } },
+      oastCurrentPage: 1,
+      oastPageSize: 25,
 
       // P2: Autonomous Canary Sprayer UI State
       showOastSprayModal: false,
@@ -191,6 +193,49 @@ window.OastModule = {
           (ev.path && ev.path.toLowerCase().includes(q)) ||
           (ev.request_body && ev.request_body.toLowerCase().includes(q));
       });
+    },
+
+    oastTotalPages() {
+      if (this.oastPageSize >= 999999) return 1;
+      const list = this.filteredOastEvents() || [];
+      return Math.max(1, Math.ceil(list.length / this.oastPageSize));
+    },
+
+    paginatedOastEvents() {
+      const list = this.filteredOastEvents() || [];
+      if (!list.length) return [];
+      if (this.oastPageSize >= 999999) return list;
+      const start = (this.oastCurrentPage - 1) * this.oastPageSize;
+      return list.slice(start, start + this.oastPageSize);
+    },
+
+    setOastPage(p) {
+      const total = this.oastTotalPages();
+      this.oastCurrentPage = Math.max(1, Math.min(total, p));
+      this.$nextTick(() => {
+        if (window.lucide) window.lucide.createIcons();
+      });
+    },
+
+    setOastPageSize(sz) {
+      this.oastPageSize = sz === 'ALL' ? 999999 : parseInt(sz, 10);
+      this.oastCurrentPage = 1;
+      this.$nextTick(() => {
+        if (window.lucide) window.lucide.createIcons();
+      });
+    },
+
+    oastPageStartItem() {
+      const list = this.filteredOastEvents() || [];
+      if (!list.length) return 0;
+      return (this.oastCurrentPage - 1) * (this.oastPageSize >= 999999 ? list.length : this.oastPageSize) + 1;
+    },
+
+    oastPageEndItem() {
+      const list = this.filteredOastEvents() || [];
+      if (!list.length) return 0;
+      if (this.oastPageSize >= 999999) return list.length;
+      return Math.min(this.oastCurrentPage * this.oastPageSize, list.length);
     }
   }
 };
