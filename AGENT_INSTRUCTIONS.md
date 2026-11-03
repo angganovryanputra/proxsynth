@@ -1,9 +1,9 @@
 # ⚡ PROXSYNTH MCP — AUTONOMOUS AGENT INTEGRATION & OPERATIONAL DIRECTIVE
 ### Comprehensive Guide & Cognitive Decision Framework for AI Pentesting Agents (Claude Code / OpenCode / Hermes / Cursor / Windsurf / Antigravity)
 
-> **Release Version**: `v0.2.0-beta` (Autonomous Cognitive Testing Release)  
+> **Release Version**: `v0.3.0-beta` (Autonomous Cognitive Testing Release)  
 > **Protocol**: Model Context Protocol (FastMCP 2.0+)  
-> **Registered Tools**: **104 Active FastMCP Security Tools (Full Mode) | 18 Consolidated Meta-Tools (Power Mode ~82.7%) | 9 Super-Tools (Cognitive Pentest Hexagon ~91.3% - 95% Token Reduction)**  
+> **Registered Tools**: **104 Active FastMCP Security Tools (Full Mode) | 18 Consolidated Meta-Tools (Power Mode ~82.7%) | 6 Super-Tools / 9 Total (Cognitive Pentest Hexagon ~91.3% - 95% Token Reduction)**  
 > **Default Ports**: FastAPI Dashboard & API `:8000` | Forward Interception Proxy `:8088` | DNS OAST `:5353` | LDAP OAST `:1390`  
 
 This operational document specifies how autonomous AI agents interface with the **Proxynth Security Testing Gateway**, autonomously navigate attack surfaces across Web, REST/GraphQL APIs, and Network Infrastructure, make deterministic testing decisions, and execute zero-human-intervention security campaigns.
@@ -86,8 +86,8 @@ Configure the Proxynth MCP server in your agent client environment:
 Embed the following directive directly into your agent's system prompt or `.cursorrules` / `.windsurfrules`:
 
 ```text
-[SECURITY TESTING DIRECTIVE — PROXSYNTH MCP v0.1.0-beta]
-You are connected to the Proxynth Security Testing Gateway & Interception Platform via 76 FastMCP Tools:
+[SECURITY TESTING DIRECTIVE — PROXSYNTH MCP v0.3.0-beta]
+You are connected to the Proxynth Security Testing Gateway & Interception Platform via FastMCP (Hexagon / Power / Full Mode):
 
 1. Primary Network Interaction:
    Always prioritize the `send_http_request` tool when interacting with target HTTP/HTTPS endpoints. Do NOT run bare terminal `curl` commands unless testing transport-layer edge cases.

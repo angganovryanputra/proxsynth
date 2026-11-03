@@ -3,12 +3,14 @@
 > **An Agent-First HTTP/HTTPS Interception Proxy, FastMCP Security Testing Gateway, and Autonomous Bug Bounty Engine.**  
 > Engineered specifically for Autonomous AI Pentesting Agents (*Claude Code*, *Cursor*, *Windsurf*, *OpenCode*, *Hermes*, and *Antigravity*) communicating via the **Model Context Protocol (FastMCP 2.0+)**.
 
-[![Release](https://img.shields.io/badge/Release-v0.2.0--beta-orange.svg)](#-overview)
+[![Release](https://img.shields.io/badge/Release-v0.3.0--beta-orange.svg)](#-overview)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
-[![Cognitive Hexagon](https://img.shields.io/badge/Cognitive%20Hexagon-6%20Super--Tools%20(95%25%20Token%20Cut)-ec4899.svg)](#-the-cognitive-pentest-hexagon-mode-hexagon)
-[![FastMCP Tools](https://img.shields.io/badge/FastMCP%20Tools-104%20Registered%20(Full%20Mode)-8b5cf6.svg)](#-complete-fastmcp-tools-reference-104-tools)
+[![Cognitive Hexagon](https://img.shields.io/badge/Cognitive%20Hexagon-6%20Super--Tools%20(95%25%20Token%20Cut)-ec4899.svg)](#12-the-cognitive-pentest-hexagon-mode-hexagon)
+[![FastMCP Tools](https://img.shields.io/badge/FastMCP%20Tools-104%20Registered%20(Full%20Mode)-8b5cf6.svg)](#-complete-fastmcp-tools-reference-98-tools)
 [![Power Mode](https://img.shields.io/badge/Power--Mode-18%20Meta--Tools%20(82.7%25%20Token%20Cut)-10b981.svg)](#option-b-power-mode-18-consolidated-meta-tools)
-[![Two-Tier Orchestrator](https://img.shields.io/badge/Access%20Control-Two--Tier%20Orchestrator%20(3--Way%20Swap)-ec4899.svg)](#-two-tier-hybrid-access-control--business-logic-orchestrator)
+[![Two-Tier Orchestrator](https://img.shields.io/badge/Access%20Control-Two--Tier%20Orchestrator%20(3--Way%20Swap)-ec4899.svg)](#11-two-tier-hybrid-access-control--business-logic-orchestrator)
+[![Interactive Workbenches](https://img.shields.io/badge/UI%20Workbenches-Dual--Pane%20%2B%20Splitters-0ea5e9.svg)](#13-interactive-human-in-the-loop-pentest-workbenches--dual-pane-ui)
+[![API Guardrails](https://img.shields.io/badge/API%20Guardrails-Idempotency%20%2B%20RFC%207807-6366f1.svg)](#14-enterprise-api-contract-standardization--guardrails)
 [![FastAPI](https://img.shields.io/badge/FastAPI-High%20Performance-009688.svg)](https://fastapi.tiangolo.com)
 [![Auto-Pilot](https://img.shields.io/badge/Auto--Pilot-7--Phase%20Closed%20Loop-e11d48.svg)](#1-autonomous-closed-loop-auto-pilot-state-machine)
 [![Worker Swarm](https://img.shields.io/badge/Worker%20Swarm-Distributed%20%2B%20Adaptive%20Rate%20Limit-f59e0b.svg)](#2-distributed-multi-agent-swarm-worker-pool)
@@ -407,6 +409,79 @@ Solves the critical problem of broken access control (BOLA, BFLA, Broken ACL, an
 
 ---
 
+### 12. The Cognitive Pentest Hexagon (Mode: `hexagon`)
+* **Module:** [`backend/cognitive_hexagon.py`](file:///D:/0x13%20PROJECT/Proxsynth/backend/cognitive_hexagon.py)
+* **Registered Super-Tools:** 6 Core Super-Tools (9 Total with Project Context)
+* **Prompt Schema Token Reduction:** **~91.3% - 95% Savings** (~1,800 tokens vs ~36,000 tokens)
+
+Standard MCP servers expose 90+ granular functions, forcing the LLM to spend precious tokens memorizing fragile argument combinations. The Cognitive Pentest Hexagon reorganizes Proxsynth into **6 Intent-Driven Facets**:
+
+```text
+                       ┌─────────────────────────┐
+                       │     PROXSYNTH_RECON     │
+                       │ (Subdomains, Ports,     │
+                       │  JS, OpenAPI, Health)   │
+                       └────────────┬────────────┘
+                                    │
+       ┌────────────────────────────┼────────────────────────────┐
+       │                            │                            │
+       ▼                            ▼                            ▼
+┌──────────────┐             ┌──────────────┐             ┌──────────────┐
+│  PROXSYNTH_  │             │  PROXSYNTH_  │             │  PROXSYNTH_  │
+│   TRAFFIC    │ ◄────────── │  AUTONOMOUS_ │ ──────────► │    AUDIT     │
+│ (Inspect,    │             │     STEP     │             │(BOLA, BFLA,  │
+│  Diff, Send) │             │ (Auto-Loop)  │             │ SQLi, Race)  │
+└──────────────┘             └──────────────┘             └──────────────┘
+       ▲                            ▲                            ▲
+       │                            │                            │
+       └────────────────────────────┼────────────────────────────┘
+                                    │
+       ┌────────────────────────────┴────────────────────────────┐
+       ▼                                                         ▼
+┌─────────────────────────┐                   ┌─────────────────────────┐
+│    PROXSYNTH_SESSION    │                   │ PROXSYNTH_VERIFY_EXPORT │
+│ (Identities, HITL 2FA,  │                   │ (DOM Screenshot Oracle, │
+│  Token Auto-Refresh)    │                   │  Nuclei YAML, PoC Rpt)  │
+└─────────────────────────┘                   └─────────────────────────┘
+```
+
+1. **`proxsynth_recon`**: Surface mapping, passive scope expansion (`crt.sh`), port scanning, JS bundle scraping, and OpenAPI ingestion via a single `mode="auto" | "passive" | "active"` intent router.
+2. **`proxsynth_traffic`**: Unified traffic workbench supporting raw/semantic diffing, request replay, and parameter distillation.
+3. **`proxsynth_audit`**: Multi-vector vulnerability audit orchestrating BOLA/IDOR, BFLA, SQLi, SSRF, JWT, and Race Conditions based on architectural heuristic profiling.
+4. **`proxsynth_session`**: Cross-identity authentication manager supporting primary/attacker/victim identity swapping, CSRF vaulting, and HITL browser sessions.
+5. **`proxsynth_verify_and_export`**: Deterministic verification gate uniting the Playwright Headless Chromium DOM oracle (with screenshot evidence), PoC generator, and ProjectDiscovery Nuclei v2/v3 YAML exporter.
+6. **`proxsynth_autonomous_step`**: Autonomous cognitive stepping engine evaluating the current state, resolving highest-priority hypotheses, executing targeted probes, and returning structured telemetry (`metrics` and `findings_summary`).
+
+---
+
+### 13. Interactive Human-in-the-Loop Pentest Workbenches & Dual-Pane UI
+* **Dashboard URL:** `http://127.0.0.1:8000`
+* **Template UI:** [`frontend/index.html`](file:///D:/0x13%20PROJECT/Proxsynth/frontend/index.html)
+
+Proxsynth v0.3.0 introduces a state-of-the-art interactive pentesting frontend engineered for high-speed analysis and zero-lag workflows:
+* **Synchronized Dual-Pane Split Inspector:** Dual-pane request and response inspection with draggable resize splitter (`repeaterSplitRatio`), synchronized scrolling, raw/beautified code toggles, and token-saving distillation.
+* **Intercept Console with Raw Header Editor:** Live request trap supporting raw HTTP header textarea modification, inline body manipulation, and forward payload enrichment before dispatching to target servers.
+* **Parameter Fuzzer with Live Abort Controller:** Multi-threaded fuzzing engine with cancellation event registry and live Abort button (`POST /api/fuzzer/abort`) for instant attack interruption without leaving dangling background threads.
+* **Scope Guardrails Sandbox Evaluator:** Interactive sandbox card (`POST /api/scope/test`) for real-time validation of target URLs against scope boundaries and anti-destructive route blacklists (`/logout`, `/delete-account`, `/reset-db`, `/purge`).
+* **Repeater Multi-Tab Studio:** Burp Suite-style tab management with draggable split layout, automatic diffing against baseline responses, and `follow_redirects` toggle.
+* **OpenAPI / Swagger Sandbox Explorer:** Live endpoint explorer with 1-click OpenAPI/Swagger import modal (`POST /api/openapi/import`) from raw JSON/YAML or remote spec URLs, supporting immediate dispatch to Repeater and Fuzzer.
+* **Traffic Proxy Filter Presets & Response Search:** Quick filter buttons (`All`, `In-Scope`, `APIs / JSON`, `Errors (4xx/5xx)`, `Hide Static`), in-page Response Body Search with `<mark>` visual match highlighting, and passive technology fingerprinting (`Nginx`, `Express`, `Django`, `Next.js`, `Cloudflare`).
+* **Standardized 60 FPS Table Pagination:** Paginated navigation with per-page density controls (`25`, `50`, `100`, `250`, `All`) standardized across all 14 menu views (Proxy History, Findings, Attack Surface, OAST Events, Fuzzer, Intercept, etc.) preventing DOM lagging during high-throughput fuzzing.
+
+---
+
+### 14. Enterprise API Contract Standardization & Guardrails
+* **Modules:** [`backend/app.py`](file:///D:/0x13%20PROJECT/Proxsynth/backend/app.py) & [`backend/intercept_manager.py`](file:///D:/0x13%20PROJECT/Proxsynth/backend/intercept_manager.py)
+
+Proxsynth strictly adheres to enterprise-grade API design and security testing guardrails:
+* **RFC 7807 Unified Error Envelopes:** All REST endpoints return standardized structured JSON errors (`{"error": {"code": "...", "message": "...", "details": ...}}`) with backward-compatible `.detail` fields for legacy clients.
+* **Idempotency-Key Concurrency Guard:** Mutation endpoints (`POST /api/campaign/run`, `POST /api/fuzzer/run`) inspect the `Idempotency-Key` header, guarding against duplicate concurrent invocations (`409 Conflict`), payload mismatch tamperings (`422 Unprocessable`), and returning cached execution results on retries.
+* **CVSS v4.0 & MITRE ATT&CK Mapping:** Verified findings automatically compute official **CVSS v4.0** base scores and map techniques against the latest **MITRE ATT&CK Enterprise & Mobile Matrix**.
+
+---
+
+---
+
 ## ⌨️ Agentic CLI Execution Wrappers (`proxsynth-exec`)
 
 When deploying AI agents that run external terminal tools (`nmap`, `nuclei`, `curl`, `ffuf`, `sqlmap`, or custom scripts), tools often bypass environment proxy variables.
@@ -572,7 +647,10 @@ The Proxsynth Gateway exposes an enterprise FastAPI REST and WebSocket engine:
 | `/api/oracle/verify-dom` | `POST` | Oracle | Sandboxed Playwright DOM execution verification with screenshot capture. |
 | `/api/telemetry/cli-event` | `POST` | Telemetry | Real-time CLI log ingestion from `proxsynth-exec` execution wrappers. |
 | `/api/findings/{id}/report` | `GET` | Triage | Generates complete HackerOne / Bug Bounty Markdown vulnerability report. |
-| `/api/campaign/run` | `POST` | Campaign | Launches 12-track autonomous pentest campaign in background. |
+| `/api/campaign/run` | `POST` | Campaign | Launches autonomous pentest campaign (Classic Pipeline or Cognitive Hexagon). |
+| `/api/fuzzer/abort` | `POST` | Fuzzer | Signals and aborts running parameter fuzzing attacks in real time. |
+| `/api/scope/test` | `POST` | Guardrails | Interactive scope sandbox evaluating URL boundaries and dangerous route patterns. |
+| `/api/openapi/import` | `POST` | OpenAPI | 1-Click OpenAPI/Swagger specification importer from raw JSON/YAML or URL. |
 | `/api/rules` | `GET` / `POST` | Proxy | Lists, adds, or updates forward proxy interception and mock rules. |
 | `/ws/terminal` | `WS` | Real-Time | Bidirectional live terminal telemetry and attack graph event streaming. |
 | `/ws` | `WS` | Real-Time | Live HTTP traffic interception, breakpoints, and log streaming. |

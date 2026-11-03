@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Proxsynth (`v0.2.0-beta`) is an interception proxy and security-testing gateway purpose-built for **autonomous AI pentesting agents** that talk to it over the **Model Context Protocol (FastMCP)**. It exposes three operational tiers:
+Proxsynth (`v0.3.0-beta`) is an interception proxy and security-testing gateway purpose-built for **autonomous AI pentesting agents** that talk to it over the **Model Context Protocol (FastMCP)**. It exposes three operational tiers:
 1. **The Cognitive Pentest Hexagon (`PROXSYNTH_TOOL_MODE=hexagon`)**: 6 high-leverage intent-driven super-tools (9 total tools including project context) that reduce prompt schema token overhead by **~91.3% - 95%** with deterministic heuristic auto-decision routing (`proxsynth_recon`, `proxsynth_traffic`, `proxsynth_audit`, `proxsynth_session`, `proxsynth_verify_and_export`, `proxsynth_autonomous_step`).
 2. **Power Mode (`PROXSYNTH_TOOL_MODE=power`)**: 18 consolidated domain meta-tools reducing prompt overhead by ~82.7%.
 3. **Full Mode (`PROXSYNTH_TOOL_MODE=full`)**: 104 modular FastMCP tools for granular, fine-grained control.
 
-Features cover traffic inspection, TLS-MITM forward proxy with WAF auto-healing, multi-protocol OAST with HMAC webhooks, Playwright DOM/XSS screenshot verification, the Two-Tier Access Control & Business Logic Orchestrator (3-Way Identity Swapping + Secondary State Verification), authz/injection/logic audit engines, an autonomous 7-phase closed-loop Auto-Pilot state machine, a distributed Swarm Worker Pool with adaptive domain rate-limiting, and an agent "hypothesis ledger" working memory backed by a FastAPI dashboard and a shared SQLite store. It is an authorized-testing tool; treat all target traffic it handles as scoped engagement data.
+Features cover traffic inspection, TLS-MITM forward proxy with WAF auto-healing, multi-protocol OAST with HMAC webhooks, Playwright DOM/XSS screenshot verification, the Two-Tier Access Control & Business Logic Orchestrator (3-Way Identity Swapping + Secondary State Verification), authz/injection/logic audit engines, an autonomous 7-phase closed-loop Auto-Pilot state machine, a distributed Swarm Worker Pool with adaptive domain rate-limiting, and an agent "hypothesis ledger" working memory backed by a FastAPI dashboard and a shared SQLite store. The v0.3.0 update adds synchronized dual-pane split inspectors with draggable dividers, raw headers interception, live fuzzer abort controllers, interactive scope guardrail evaluators, OpenAPI sandbox explorers, RFC 7807 error envelopes, and RFC Idempotency-Key concurrency guards. It is an authorized-testing tool; treat all target traffic it handles as scoped engagement data.
 
 ## Architecture (the big picture)
 
