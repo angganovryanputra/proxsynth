@@ -10,6 +10,9 @@ import time
 import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+import urllib.parse
+
+from backend.adaptive_limiter import get_domain_rate_limiter, AdaptiveDomainRateLimiter
 
 logger = logging.getLogger("proxsynth.worker_swarm")
 
@@ -44,6 +47,7 @@ class WorkerSwarm:
         self._lock = asyncio.Lock()
         self.active_workers: int = 0
         self.is_running: bool = False
+        self.rate_limiter: AdaptiveDomainRateLimiter = get_domain_rate_limiter()
 
     async def _emit_telemetry(self, worker_id: int, message: str, level: str = "INFO"):
         """Broadcasts worker status to WebSocket terminal."""
@@ -80,6 +84,15 @@ class WorkerSwarm:
             start_t = time.time()
             findings_found = 0
             status = "SUCCESS"
+
+            # Per-domain rate-limit throttling
+            target_domain = target
+            if "://" in target:
+                try:
+                    target_domain = urllib.parse.urlparse(target).netloc
+                except Exception:
+                    target_domain = target
+            await self.rate_limiter.acquire(target_domain)
 
             if mock_mode:
                 await asyncio.sleep(0.01)
@@ -143,6 +156,7 @@ class WorkerSwarm:
             "concurrency": self.concurrency,
             "total_targets": len(self.targets),
             "processed_count": len(self.processed_targets),
+            "processed_targets": self.processed_targets,
             "total_findings": total_findings,
             "total_duration_seconds": total_duration,
             "worker_reports": self.worker_reports
