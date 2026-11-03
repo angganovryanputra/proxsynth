@@ -270,7 +270,10 @@ async def audit_numeric_business_logic(
 
 @proxsynth_tool(name="run_two_tier_access_control_orchestrator")
 async def run_two_tier_access_control_orchestrator(
-    target_base: str,
+    target_base: Optional[str] = None,
+    user_a_role: str = "user_a",
+    user_b_role: str = "user_b",
+    auto_exploit: bool = True,
     token_a: Optional[str] = None,
     token_b: Optional[str] = None,
     cookies_a: Optional[str] = None,
@@ -280,7 +283,7 @@ async def run_two_tier_access_control_orchestrator(
     endpoints: Optional[List[Dict[str, Any]]] = None,
     project: Optional[str] = None,
     test_unauthenticated: bool = True,
-    export_nuclei: bool = True
+    export_nuclei: Optional[bool] = None
 ) -> str:
     """
     [AUTONOMOUS: HIGH-LEVERAGE TWO-TIER ORCHESTRATOR]
@@ -292,7 +295,10 @@ async def run_two_tier_access_control_orchestrator(
       and automatically synthesizes reproducible ProjectDiscovery Nuclei YAML templates.
     """
     from backend.access_control_orchestrator import AccessControlOrchestrator
+    from backend.database import SessionLocal, ActiveSession
     proj = _resolve_project(project, allow_all=False)
+    target = target_base or "http://127.0.0.1:8000"
+    should_export = auto_exploit if export_nuclei is None else export_nuclei
 
     sess_a = {
         "token": token_a,
@@ -305,13 +311,40 @@ async def run_two_tier_access_control_orchestrator(
         "auth_headers": auth_headers_b or {}
     }
 
+    # Auto-resolve from ActiveSession if direct credentials omitted
+    if not token_a and not cookies_a:
+        db = SessionLocal()
+        try:
+            rec_a = db.query(ActiveSession).filter(ActiveSession.project == proj, ActiveSession.role == user_a_role).first()
+            if rec_a:
+                sess_a["token"] = rec_a.session_token
+                sess_a["raw_cookie_str"] = rec_a.cookies
+                if rec_a.headers:
+                    try:
+                        sess_a["auth_headers"] = json.loads(rec_a.headers) if isinstance(rec_a.headers, str) else rec_a.headers
+                    except Exception:
+                        pass
+            rec_b = db.query(ActiveSession).filter(ActiveSession.project == proj, ActiveSession.role == user_b_role).first()
+            if rec_b:
+                sess_b["token"] = rec_b.session_token
+                sess_b["raw_cookie_str"] = rec_b.cookies
+                if rec_b.headers:
+                    try:
+                        sess_b["auth_headers"] = json.loads(rec_b.headers) if isinstance(rec_b.headers, str) else rec_b.headers
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        finally:
+            db.close()
+
     orchestrator = AccessControlOrchestrator(project=proj)
     res = await orchestrator.execute_full_campaign(
-        target_base=target_base,
+        target_base=target,
         session_a=sess_a,
         session_b=sess_b,
         endpoints=endpoints,
         test_unauthenticated=test_unauthenticated,
-        export_nuclei=export_nuclei
+        export_nuclei=should_export
     )
     return json.dumps(res, indent=2)

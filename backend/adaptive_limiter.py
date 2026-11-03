@@ -34,11 +34,17 @@ class AdaptiveDomainRateLimiter:
         if "://" in clean:
             try:
                 parsed = urllib.parse.urlparse(clean)
-                clean = parsed.netloc or parsed.path
+                clean = parsed.hostname or parsed.netloc or parsed.path
             except Exception:
                 pass
-        if ":" in clean:
-            clean = clean.split(":")[0]
+        elif ":" in clean:
+            try:
+                if clean.startswith("[") and "]" in clean:
+                    clean = clean.split("]")[0].lstrip("[")
+                else:
+                    clean = clean.split(":")[0]
+            except Exception:
+                pass
         return clean or "default"
 
     def _get_bucket(self, domain: str) -> Dict[str, Any]:
@@ -73,8 +79,14 @@ class AdaptiveDomainRateLimiter:
         """
         bucket = self._get_bucket(domain)
         async with bucket["lock"]:
-            bucket["consecutive_429s"] += 1
             now = time.time()
+            # Decay/reset consecutive count if previous rate limit was over 30s ago
+            last_time = bucket.get("last_429_time", 0.0)
+            if now - last_time > 30.0:
+                bucket["consecutive_429s"] = 1
+            else:
+                bucket["consecutive_429s"] += 1
+            bucket["last_429_time"] = now
 
             if retry_after is not None and retry_after > 0:
                 delay = min(float(retry_after), 8.0)
@@ -90,6 +102,12 @@ class AdaptiveDomainRateLimiter:
                 f"(Consecutive 429s: {bucket['consecutive_429s']})"
             )
             return delay
+
+    def record_success(self, domain: str) -> None:
+        """Records a successful HTTP response, decaying the consecutive rate-limit counter."""
+        bucket = self._get_bucket(domain)
+        if bucket.get("consecutive_429s", 0) > 0:
+            bucket["consecutive_429s"] = max(0, bucket["consecutive_429s"] - 1)
 
     async def acquire(self, domain: str) -> None:
         """

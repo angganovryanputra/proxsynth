@@ -175,7 +175,8 @@ class AccessControlOrchestrator:
         target: Dict[str, Any],
         resp_a: Dict[str, Any],
         resp_b: Dict[str, Any],
-        resp_unauth: Dict[str, Any]
+        resp_unauth: Dict[str, Any],
+        secondary_verification: Optional[Dict[str, Any]] = None
     ) -> ThreeWayDifferentialResult:
         """
         Deterministic Core: Computes structural response similarity, soft-error suppression,
@@ -257,6 +258,13 @@ class AccessControlOrchestrator:
                     f"[BUSINESS LOGIC ANOMALY] State mutation permitted across non-primary identity (HTTP {status_b})."
                 )
 
+        if secondary_verification and secondary_verification.get("verified"):
+            evidence_parts.append(
+                f"[SECONDARY STATE VERIFIED] Post-mutation probe confirmed state change on server (HTTP {secondary_verification.get('status_code')})."
+            )
+            if is_bola or is_bfla or is_logic:
+                confidence = "CRITICAL"
+
         return ThreeWayDifferentialResult(
             url=url,
             method=method,
@@ -272,6 +280,7 @@ class AccessControlOrchestrator:
             is_logic_anomaly=is_logic,
             structural_similarity_ab=sim_ab,
             confidence=confidence,
+            secondary_verification=secondary_verification,
             evidence="\n".join(evidence_parts)
         )
 
@@ -333,10 +342,23 @@ class AccessControlOrchestrator:
 
         local_client = client is None
         c = client or httpx.AsyncClient(verify=False, follow_redirects=False, timeout=8.0, trust_env=False)
+        sec_verif = None
         try:
             res_a = await _req(c, headers_a)
             res_b = await _req(c, headers_b)
             res_u = await _req(c, headers_u) if test_unauth else {"status_code": 401, "body": ""}
+
+            # Secondary State Re-Verification: For mutating actions, verify state modification with subsequent GET
+            if target.mutating and res_b.get("status_code") in [200, 201, 204]:
+                try:
+                    sec_res = await c.request("GET", target.url, headers=headers_a)
+                    sec_verif = {
+                        "verified": True,
+                        "status_code": sec_res.status_code,
+                        "body_preview": (sec_res.text or "")[:500]
+                    }
+                except Exception as ex:
+                    sec_verif = {"verified": False, "error": str(ex)}
         finally:
             if local_client:
                 await c.aclose()
@@ -347,7 +369,7 @@ class AccessControlOrchestrator:
             "sensitivity": target.sensitivity,
             "mutating": target.mutating
         }
-        return self.compute_three_way_diff(target_dict, res_a, res_b, res_u)
+        return self.compute_three_way_diff(target_dict, res_a, res_b, res_u, secondary_verification=sec_verif)
 
     async def execute_full_campaign(
         self,
@@ -539,6 +561,8 @@ def evaluate_access_control_anomalies(
                 http_log = HttpLog(
                     project=project,
                     url=anomaly.url,
+                    host=parsed.netloc or "default",
+                    path=path,
                     method=anomaly.method,
                     status_code=anomaly.status_b if not anomaly.is_unauth_anomaly else anomaly.status_unauth,
                     response_body=(anomaly.body_b if not anomaly.is_unauth_anomaly else anomaly.body_unauth)[:2000]

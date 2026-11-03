@@ -157,6 +157,7 @@
 
       <!-- Collapse / Expand Toggle Button -->
       <button x-show="sidebarExpanded" @click="toggleSidebar()"
+        aria-label="Collapse Sidebar (Ctrl+B)"
         class="p-1.5 rounded-lg hover:bg-[#1E293B] text-slate-400 hover:text-slate-200 transition"
         title="Collapse Sidebar (Ctrl+B)">
         <i data-lucide="panel-left-close" class="w-4 h-4"></i>
@@ -171,13 +172,16 @@
             <i data-lucide="folder-git-2" class="w-3.5 h-3.5 text-indigo-400"></i>
             <span class="font-bold text-slate-300">Project Scope</span>
           </span>
-          <button @click="openNewProjectModal = true" class="text-indigo-400 hover:text-indigo-300 font-bold px-1.5 py-0.2 rounded hover:bg-indigo-950/60 transition flex items-center space-x-1"
+          <button @click="openNewProjectModal = true"
+            aria-label="Create New Project"
+            class="text-indigo-400 hover:text-indigo-300 font-bold px-1.5 py-0.2 rounded hover:bg-indigo-950/60 transition flex items-center space-x-1"
             title="Create New Project">
             <span class="text-xs">+</span>
             <span class="text-[9px]">NEW</span>
           </button>
         </div>
         <select x-model="selectedProject" @change="onProjectChange()"
+          aria-label="Target Project Scope Selector"
           class="w-full bg-[#0B0F17] text-xs text-sky-300 font-mono font-semibold focus:outline-none cursor-pointer border border-[#1E293B] hover:border-slate-700 focus:border-sky-500 rounded px-2 py-1 truncate">
           <option value="ALL">🌐 ALL PROJECTS (Global Scope)</option>
           <template x-for="p in projects" :key="p.id">
@@ -190,6 +194,7 @@
     <!-- Project Scope Trigger (Collapsed Mode) -->
     <div x-show="!sidebarExpanded" class="pt-2.5 pb-1 flex justify-center shrink-0">
       <button @click="toggleSidebar()"
+        aria-label="Target Project Scope: Click to expand sidebar"
         class="w-10 h-10 rounded-lg bg-[#111827] border border-[#1E293B] hover:border-indigo-500/60 flex items-center justify-center text-indigo-400 hover:text-indigo-300 shadow-sm transition"
         :title="'Target Project Scope: ' + selectedProject + ' (Click to expand)'">
         <i data-lucide="folder-git-2" class="w-4 h-4"></i>
@@ -4997,13 +5002,21 @@
   <!-- MODALS -->
   <!-- Create Project Modal -->
   <div x-show="openNewProjectModal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="create-project-title"
+    @keydown.escape.window="openNewProjectModal = false"
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
     <div @click.away="openNewProjectModal = false"
       class="w-full max-w-md bg-[#111827] border border-[#1E293B] rounded-xl p-6 space-y-4">
-      <h3 class="text-sm font-bold text-slate-100">Create New Project</h3>
-      <input type="text" x-model="newProjectForm.name" @keydown.enter="createProject()" placeholder="Project slug (e.g. client-alpha)"
+      <h3 id="create-project-title" class="text-sm font-bold text-slate-100">Create New Project</h3>
+      <input type="text" x-model="newProjectForm.name" @keydown.enter="createProject()"
+        aria-label="Project slug (e.g. client-alpha)"
+        placeholder="Project slug (e.g. client-alpha)"
         class="w-full bg-[#0B0F17] border border-[#1E293B] rounded px-3 py-2 text-xs font-mono text-slate-200">
-      <textarea x-model="newProjectForm.description" placeholder="Description" rows="2"
+      <textarea x-model="newProjectForm.description"
+        aria-label="Project description"
+        placeholder="Description" rows="2"
         class="w-full bg-[#0B0F17] border border-[#1E293B] rounded px-3 py-2 text-xs font-mono text-slate-200"></textarea>
       <div class="flex justify-end space-x-2">
         <button @click="openNewProjectModal = false" class="px-3 py-1.5 text-xs text-slate-400">Cancel</button>
@@ -6205,13 +6218,18 @@
     <!-- GLOBAL COMMAND PALETTE MODAL (Ctrl+K / Cmd+K)                               -->
     <!-- ========================================================================= -->
     <div x-show="showCommandPalette"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Universal Command Palette"
+      @keydown.escape.window="showCommandPalette = false"
       class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-start justify-center pt-20 p-4 select-text font-mono text-xs"
       x-cloak>
       <div @click.away="showCommandPalette = false"
         class="bg-[#111827] border border-[#1E293B] rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden flex flex-col">
         <div class="p-3.5 bg-[#0B0F17] border-b border-[#1E293B] flex items-center space-x-3">
-          <i data-lucide="search" class="w-4 h-4 text-sky-400"></i>
+          <i data-lucide="search" class="w-4 h-4 text-sky-400" aria-hidden="true"></i>
           <input type="text" x-model="commandPaletteQuery" x-ref="paletteInput"
+            aria-label="Type a command, navigate module, or jump to log #"
             placeholder="Type a command, navigate module, or jump to log #..."
             class="w-full bg-transparent text-slate-100 placeholder-slate-500 focus:outline-none text-xs">
           <kbd class="px-2 py-0.5 rounded bg-[#111827] border border-[#1E293B] text-[10px] text-slate-400">ESC</kbd>

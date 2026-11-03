@@ -485,6 +485,7 @@ async def manage_attack_surface(
 @proxsynth_tool(name="analyze_and_diff_traffic")
 async def analyze_and_diff_traffic(
     mode: Literal["semantic_diff", "raw_diff", "distill_noise", "cluster_patterns", "strip_noise"] = "semantic_diff",
+    action: Optional[str] = None,
     log_id_a: Optional[int] = None,
     log_id_b: Optional[int] = None,
     text_a: Optional[str] = None,
@@ -500,8 +501,11 @@ async def analyze_and_diff_traffic(
     from backend.body_distiller import distill_response_body
     from backend.analyzer import analyze_traffic
     target_project = _resolve_project(project, allow_all=True)
+    effective_mode = (action or mode).strip().lower()
+    if effective_mode not in ["semantic_diff", "raw_diff", "distill_noise", "cluster_patterns", "strip_noise"]:
+        effective_mode = "semantic_diff"
 
-    if mode == "semantic_diff":
+    if effective_mode == "semantic_diff":
         db = SessionLocal()
         b_a, b_b = (text_a or ""), (text_b or "")
         try:
@@ -529,7 +533,7 @@ async def analyze_and_diff_traffic(
             "diff_summary": diff_res.get("diff_summary", "")
         }, indent=2)
 
-    elif mode in ["distill_noise", "strip_noise"]:
+    elif effective_mode in ["distill_noise", "strip_noise"]:
         body_to_distill = text_a or ""
         if log_id_a and not body_to_distill:
             db = SessionLocal()
@@ -551,7 +555,7 @@ async def analyze_and_diff_traffic(
             "noise_stripped": noise_stripped
         }, indent=2)
 
-    elif mode == "cluster_patterns":
+    elif effective_mode == "cluster_patterns":
         db = SessionLocal()
         patterns = []
         try:
@@ -717,12 +721,41 @@ async def manage_session_vault(
 
     elif action in ["audit_access_matrix", "audit_access_control"]:
         from backend.access_control_orchestrator import AccessControlOrchestrator
+        from backend.database import ActiveSession
         target_base = domain or "http://127.0.0.1:8000"
         if "://" not in target_base:
             target_base = f"https://{target_base}"
 
-        sess_a = {"token": token_value, "raw_cookie_str": cookies}
-        sess_b = {"token": token_name}
+        sess_a = {"token": token_value, "raw_cookie_str": cookies, "auth_headers": {}}
+        sess_b = {"token": token_name, "raw_cookie_str": "", "auth_headers": {}}
+
+        # Auto-lookup stored multi-persona vault identities from ActiveSession if tokens omitted
+        db = SessionLocal()
+        try:
+            if not token_value and role:
+                rec_a = db.query(ActiveSession).filter(ActiveSession.project == target_project, ActiveSession.role == role).first()
+                if rec_a:
+                    sess_a["token"] = rec_a.session_token
+                    sess_a["raw_cookie_str"] = rec_a.cookies
+                    if rec_a.headers:
+                        try:
+                            sess_a["auth_headers"] = json.loads(rec_a.headers) if isinstance(rec_a.headers, str) else rec_a.headers
+                        except Exception:
+                            pass
+            if not token_name:
+                rec_b = db.query(ActiveSession).filter(ActiveSession.project == target_project, ActiveSession.role.in_(["user_b", "attacker", "admin"])).first()
+                if rec_b:
+                    sess_b["token"] = rec_b.session_token
+                    sess_b["raw_cookie_str"] = rec_b.cookies
+                    if rec_b.headers:
+                        try:
+                            sess_b["auth_headers"] = json.loads(rec_b.headers) if isinstance(rec_b.headers, str) else rec_b.headers
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+        finally:
+            db.close()
 
         orchestrator = AccessControlOrchestrator(project=target_project)
         res = await orchestrator.execute_full_campaign(
@@ -759,30 +792,35 @@ async def manage_oast_and_tunnels(
     from backend.oast_sprayer import spray_oast_canaries
     from backend.tunnel_manager import start_public_tunnel, get_tunnel_status, stop_public_tunnel
 
-    target_project = _resolve_project(project, allow_all=(action == "poll_callbacks"))
+    target_project = _resolve_project(project, allow_all=(action in ["poll_callbacks", "poll", "poll_events"]))
+    act = action
+    if act == "spray":
+        act = "spray_canaries"
+    elif act in ["poll", "poll_events"]:
+        act = "poll_callbacks"
 
-    if action == "generate_token":
+    if act == "generate_token":
         tok = generate_oast_token(project=target_project, vuln_type=vuln_type)
         return json.dumps(tok, indent=2)
 
-    elif action == "spray_canaries":
+    elif act == "spray_canaries":
         if not target_url:
             return json.dumps({"status": "FAILED", "error": "target_url required for spray_canaries."})
         res = await spray_oast_canaries(target_url=target_url, vuln_type=vuln_type, project=target_project)
         return json.dumps(res, indent=2)
 
-    elif action == "poll_callbacks":
+    elif act == "poll_callbacks":
         events = await poll_oast_events(token=token or "", project=target_project)
         return json.dumps({"project": target_project, "events_count": len(events), "events": events}, indent=2)
 
-    elif action == "tunnel_setup":
+    elif act == "tunnel_setup":
         tun = await start_public_tunnel(provider=provider, local_port=8000, project=target_project)
         return json.dumps(tun, indent=2)
 
-    elif action == "tunnel_status":
+    elif act == "tunnel_status":
         return json.dumps(get_tunnel_status(), indent=2)
 
-    elif action == "tunnel_close":
+    elif act == "tunnel_close":
         res = await stop_public_tunnel()
         return json.dumps({"status": "SUCCESS" if res else "NOT_RUNNING"}, indent=2)
 

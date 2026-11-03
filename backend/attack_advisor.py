@@ -47,17 +47,17 @@ _DEBUG_PARAM_PATTERN = re.compile(
 )
 
 _MODULAR_TO_POWER_MAP = {
-    "test_bola_idor": ("analyze_and_diff_traffic", {"action": "semantic_diff"}),
-    "audit_bfla_permissions": ("manage_pentest_execution", {"action": "replay"}),
-    "audit_mass_assignment": ("manage_pentest_execution", {"action": "replay"}),
-    "spray_oast_canaries": ("manage_oast_and_tunnels", {"action": "spray"}),
-    "fuzz_numeric_logic": ("manage_pentest_execution", {"action": "replay"}),
-    "test_jwt_security": ("manage_session_vault", {"action": "tamper_jwt"}),
+    "test_bola_idor": ("analyze_and_diff_traffic", {"mode": "semantic_diff", "action": "semantic_diff"}),
+    "audit_bfla_permissions": ("manage_pentest_execution", {"action": "execute"}),
+    "audit_mass_assignment": ("manage_pentest_execution", {"action": "execute"}),
+    "spray_oast_canaries": ("manage_oast_and_tunnels", {"action": "spray_canaries"}),
+    "fuzz_numeric_logic": ("manage_pentest_execution", {"action": "execute"}),
+    "test_jwt_security": ("manage_session_vault", {"action": "list_identities"}),
     "inspect_graphql_endpoint": ("manage_pentest_execution", {"action": "execute"}),
     "audit_file_upload": ("manage_pentest_execution", {"action": "execute"}),
-    "run_smart_param_fuzz": ("manage_pentest_execution", {"action": "replay"}),
+    "run_smart_param_fuzz": ("manage_pentest_execution", {"action": "execute"}),
     "send_http_request": ("manage_pentest_execution", {"action": "execute"}),
-    "verify_vulnerability_with_oracle": ("analyze_and_diff_traffic", {"action": "semantic_diff"})
+    "verify_vulnerability_with_oracle": ("analyze_and_diff_traffic", {"mode": "semantic_diff", "action": "semantic_diff"})
 }
 
 

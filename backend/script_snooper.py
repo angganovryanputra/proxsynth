@@ -183,6 +183,10 @@ class WorkspaceKernelWatcher:
                         self._handle(event.src_path)
 
                 def _handle(self, path):
+                    norm_path = path.replace("\\", "/")
+                    path_parts = set(norm_path.split("/"))
+                    if any(ex in path_parts for ex in _EXCLUDED_DIRS):
+                        return
                     _, ext = os.path.splitext(path)
                     if ext.lower() in _WATCH_EXTENSIONS:
                         if self.callback:
@@ -265,19 +269,27 @@ def start_script_snooper():
         return
     _is_running = True
 
+    try:
+        main_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        try:
+            main_loop = asyncio.get_event_loop()
+        except Exception:
+            main_loop = None
+
     # Try starting native kernel event observer
     if _kernel_watcher is None:
         def _on_kernel_event(path):
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.run_coroutine_threadsafe(ingest_script_file(path), loop)
-            except Exception:
-                pass
+                target_loop = main_loop
+                if target_loop and target_loop.is_running():
+                    asyncio.run_coroutine_threadsafe(ingest_script_file(path), target_loop)
+            except Exception as e:
+                logger.debug(f"Watchdog event dispatch error: {e}")
         _kernel_watcher = WorkspaceKernelWatcher(on_change_callback=_on_kernel_event)
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = main_loop or asyncio.get_event_loop()
         _snooper_task = loop.create_task(_snooper_loop())
     except Exception as ex:
         logger.warning(f"Failed to start script snooper: {ex}")
