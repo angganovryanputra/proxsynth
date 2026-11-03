@@ -39,7 +39,78 @@ Traditional penetration testing proxies (*Burp Suite*, *Caido*, *mitmproxy*, *OW
 
 ---
 
-## 🏗️ System Architecture
+## 🏗️ System Architecture & Visual Workflows
+
+### 1. End-to-End Autonomous Pentest Architecture
+
+```mermaid
+flowchart TD
+    subgraph S1["1. INGESTION & INTERFACE TIER"]
+        A1["AI Pentesting Agents<br/>(Claude Code / Cursor / Windsurf / Antigravity)"] -->|FastMCP 2.0 JSON-RPC| B["PROXSYNTH GATEWAY (:8000)"]
+        A2["Human Security Operator<br/>(Cyberpunk SOC Web Console)"] -->|REST API / Web UI| B
+        A3["External CLI Tools<br/>(curl / nmap / nuclei / sqlmap)"] -->|proxsynth-exec & sitecustomize| C1["Forward MITM Proxy (:8088)"]
+    end
+
+    subgraph S2["2. GUARDRAILS & INPUT GATE"]
+        B --> G1{"Scope & Guardrails<br/>URL Evaluator"}
+        G1 -->|Blocked Pattern / Dangerous Route| G2["Reject: 403 Restricted<br/>(/delete-account, /reset-db, /purge, /logout)"]
+        G1 -->|Authorized In-Scope| G3{"Idempotency & Rate Gate"}
+        G3 -->|Duplicate Key In-Progress| G4["409 Conflict / 422 Mismatch"]
+        G3 -->|Valid Request| HEX
+    end
+
+    subgraph S3["3. COGNITIVE ORCHESTRATION ENGINE"]
+        HEX["Cognitive Pentest Hexagon<br/>(PROXSYNTH_TOOL_MODE=hexagon, ~95% Token Reduction)"]
+        HEX --- H1["proxsynth_recon<br/>(Passive CT, Port Scan, JS Miner, Shadow Routes)"]
+        HEX --- H2["proxsynth_traffic<br/>(Semantic Diffing, Distiller, WAF Auto-Heal)"]
+        HEX --- H3["proxsynth_audit<br/>(Two-Tier Orchestrator, BOLA, BFLA, Logic, Fuzzing)"]
+        HEX --- H4["proxsynth_session<br/>(3-Way Identity Swap: User A / User B / Anon)"]
+        HEX --- H5["proxsynth_verify_and_export<br/>(DOM Oracle Proof, Nuclei YAML, CVSS v4.0)"]
+        HEX --- H6["proxsynth_autonomous_step<br/>(Hypothesis Working Memory & State Machine)"]
+    end
+
+    subgraph S4["4. EXECUTION & ACTIVE TESTING CORE"]
+        HEX --> C1
+        C1 -->|Dynamic WAF Bypass| TGT["Target Systems & APIs<br/>(Web, REST, GraphQL, Infra)"]
+        C1 -->|Token Expired 401| CR["Session Auto-Refresher<br/>(Zero-Human Re-Auth)"]
+        CR -->|X-Proxsynth-Session-Refreshed| TGT
+        HEX --> OAST["In-House OAST Engine<br/>(DNS :5353 / LDAP :1390 / HTTP)"]
+        TGT -.->|Blind SSRF / JNDI Callback| OAST
+        HEX --> SWRM["Distributed Swarm Workers<br/>(Adaptive Token-Bucket Limiter)"]
+        SWRM --> TGT
+    end
+
+    subgraph S5["5. DETERMINISTIC VERIFICATION GATE"]
+        TGT --> VG["Verification Gate"]
+        VG -->|XSS Candidate| DOM["Sandboxed Chromium DOM Oracle<br/>(Alert/Sink Execution + Screenshot Proof)"]
+        VG -->|BOLA / Logic Delta| ORAC["Structural & Statistical Differential Oracle<br/>(Welch's t-test + Soft-Error Evaluation)"]
+        DOM -->|Immutable Evidence| EV["evidence/xss_proof_{hash}.png"]
+    end
+
+    subgraph S6["6. PERSISTENCE & LIVE OBSERVABILITY"]
+        VG --> DB[("SQLite WAL State Store<br/>(proxsynth.db)")]
+        DB --> WS["Real-time WebSocket Broadcaster<br/>(/ws, /ws/terminal)"]
+        WS --> UI["Cyberpunk SOC Dashboard (:8000)<br/>- Dual-Pane Split Inspector<br/>- Intercept Headers Editor<br/>- Fuzzer Abort Controller<br/>- Interactive Cytoscape Attack Graph<br/>- Paginated Tables (60 FPS)"]
+        DB --> EXP["Export Engine<br/>- ProjectDiscovery Nuclei v2/v3 YAML<br/>- Standalone Python PoC Scripts<br/>- Bug Bounty Markdown (CVSS v4.0 & MITRE ATT&CK)"]
+    end
+```
+
+### 2. Operational Pentest Lifecycle (Step-by-Step User Journey)
+
+```mermaid
+flowchart LR
+    P1["1. Target Entry & Scope<br/>(Host / Subnet / OpenAPI)"] -->|Passive CT & Port Scan| P2["2. Attack Surface Mapping<br/>(Routes & Services Graph)"]
+    P2 -->|Route Inference & JS Mining| P3["3. Cognitive Hypothesis<br/>(Working Memory Ledger)"]
+    P3 -->|3-Way Swapping & Replay| P4["4. Targeted Auditing<br/>(BOLA, BFLA, Logic, Fuzz)"]
+    P4 -->|Differential & DOM Proof| P5["5. Deterministic Verification<br/>(Screenshots & Welch t-test)"]
+    P5 -->|CVSS v4.0 & Nuclei YAML| P6["6. Verified Exploit Dossier<br/>(1-Click PoC & CI Report)"]
+
+    classDef step fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
+    class P1,P2,P3,P4,P5,P6 step;
+```
+
+<details>
+<summary><b>📐 View Text-Based ASCII System Architecture</b></summary>
 
 ```text
  ┌───────────────────────────────────────────────────────────────────────────────┐
@@ -48,15 +119,15 @@ Traditional penetration testing proxies (*Burp Suite*, *Caido*, *mitmproxy*, *OW
  └───────────────────────┬───────────────────────────────┬───────────────────────┘
                          │                               │
        FastMCP JSON-RPC  │                               │ CLI Script Execution (proxsynth-exec)
-       (Power / Full)    │                               │ Transparent sitecustomize.py (:8088)
+       (Hexagon / Power) │                               │ Transparent sitecustomize.py (:8088)
                          ▼                               ▼
  ┌───────────────────────────────────────────────────────────────────────────────┐
  │                           PROXSYNTH GATEWAY ENGINE                            │
  │  ┌──────────────────────────────────────────┐┌─────────────────────────────┐  │
- │  │      FastMCP Dual-Mode Tool Registry     ││      Forward MITM Proxy     │  │
- │  │ - Power Mode: 11 Consolidated Meta-Tools ││ - Port 8088 (TLS MITM)      │  │
- │  │ - Full Mode: 98 Modular Granular Tools   ││ - Dynamic WAF Evasion       │  │
- │  │ - FastMCP 2.0+ Standard ToolAnnotations  ││ - Session Auto-Refresher    │  │
+ │  │      FastMCP Tri-Tier Tool Registry      ││      Forward MITM Proxy     │  │
+ │  │ - Hexagon Mode: 6 Intent Super-Tools     ││ - Port 8088 (TLS MITM)      │  │
+ │  │ - Power Mode  : 18 Domain Meta-Tools     ││ - Dynamic WAF Evasion       │  │
+ │  │ - Full Mode   : 104 Granular Tools       ││ - Session Auto-Refresher    │  │
  │  └────────────────────┬─────────────────────┘└──────────────┬──────────────┘  │
  │                       │                                     │                 │
  │                       └──────────────────┬──────────────────┘                 │
@@ -64,10 +135,10 @@ Traditional penetration testing proxies (*Burp Suite*, *Caido*, *mitmproxy*, *OW
  │  ┌─────────────────────────────────────────────────────────────────────────┐  │
  │  │                     COGNITIVE TESTING & AUDIT CORE                      │  │
  │  │ 1. Autonomous Closed-Loop Auto-Pilot Engine (7-Phase Self-Driving Loop) │  │
- │  │ 2. Distributed Multi-Agent Swarm Worker Pool (Concurrent Queue Runner)  │  │
- │  │ 3. In-House OAST Multi-Protocol Listener (HTTP / DNS :5353 / LDAP :1390)│  │
- │  │ 4. Deterministic Playwright DOM Oracle with Visual Screenshot Proof     │  │
- │  │ 5. Session State Auto-Refresher (Replays Login, 401 Auto-Healing)       │  │
+ │  │ 2. Two-Tier Access Control Orchestrator (3-Way Identity Swapping)       │  │
+ │  │ 3. Distributed Swarm Worker Pool (Adaptive Token-Bucket Rate Limiter)   │  │
+ │  │ 4. In-House OAST Multi-Protocol Listener (HTTP / DNS :5353 / LDAP :1390)│  │
+ │  │ 5. Deterministic Playwright DOM Oracle with Visual Screenshot Proof     │  │
  │  │ 6. Target Context-Aware Memory & Golden Payload RAG (PHP, Node, Java..) │  │
  │  │ 7. Deep AST Pentest Script Snooper (Files & Inline `python -c` / `node`)│  │
  │  │ 8. Multi-Step Exploit Chainer & Automatic Nuclei v2/v3 YAML Exporter    │  │
@@ -83,10 +154,13 @@ Traditional penetration testing proxies (*Burp Suite*, *Caido*, *mitmproxy*, *OW
                                             ▼
  ┌───────────────────────────────────────────────────────────────────────────────┐
  │               Cyberpunk SOC Web Dashboard & Live Cytoscape Map                │
+ │   - Dual-Pane Synchronized Split Inspector      - Intercept Headers Editor    │
  │   - Interactive Attack Graph (D3 / Cytoscape)   - Real-Time Web Terminal / WS │
  │   - Hypothesis Kanban Board                     - OWASP CI/CD Scorecard & HAR │
  └───────────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 ---
 
