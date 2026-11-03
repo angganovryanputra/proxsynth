@@ -96,6 +96,143 @@ def generate_nuclei_template(
     return yaml.dump(template_dict, sort_keys=False, indent=2)
 
 
+def generate_multistep_nuclei_template(
+    template_id: str,
+    name: str,
+    steps: List[Dict[str, Any]],
+    severity: str = "high",
+    author: str = "Proxsynth Autonomous Engine",
+    description: str = "",
+    tags: Optional[Union[List[str], str]] = None
+) -> str:
+    """
+    Generates a ProjectDiscovery Nuclei v2/v3 YAML template with sequential multi-request HTTP steps,
+    supporting internal extractors (dynamic nonce / token capture) and variable references across steps.
+    """
+    clean_id = _slugify(template_id)
+    clean_severity = severity.strip().lower()
+    if clean_severity not in ["critical", "high", "medium", "low", "info"]:
+        clean_severity = "high"
+
+    tag_list = tags if isinstance(tags, list) else [t.strip() for t in (tags or "").split(",") if t.strip()]
+    if "proxsynth" not in tag_list:
+        tag_list.append("proxsynth")
+
+    http_blocks: List[Dict[str, Any]] = []
+
+    for step in steps:
+        raw_path = step.get("path", "/")
+        path_list: List[str] = []
+        raw_paths = [raw_path] if isinstance(raw_path, str) else raw_path
+        for p in raw_paths:
+            if not p.startswith("{{BaseURL}}"):
+                if not p.startswith("/"):
+                    p = "/" + p
+                p = f"{{{{BaseURL}}}}{p}"
+            path_list.append(p)
+
+        block: Dict[str, Any] = {
+            "method": step.get("method", "GET").upper(),
+            "path": path_list
+        }
+
+        if step.get("headers"):
+            block["headers"] = step["headers"]
+
+        if step.get("body") and block["method"] in ["POST", "PUT", "PATCH", "DELETE"]:
+            block["body"] = step["body"]
+
+        if step.get("extractors"):
+            block["extractors"] = step["extractors"]
+
+        if step.get("matchers"):
+            block["matchers"] = step["matchers"]
+            if len(step["matchers"]) > 1:
+                block["matchers-condition"] = step.get("matchers-condition", "and")
+
+        http_blocks.append(block)
+
+    template_dict = {
+        "id": clean_id,
+        "info": {
+            "name": name or f"Proxsynth Multi-Step Template: {clean_id}",
+            "author": author or "Proxsynth Autonomous Engine",
+            "severity": clean_severity,
+            "description": description or f"Multi-step verification template for {clean_id}",
+            "tags": ",".join(tag_list)
+        },
+        "http": http_blocks
+    }
+
+    return yaml.dump(template_dict, sort_keys=False, indent=2)
+
+
+def export_multistep_finding_to_nuclei(
+    finding_id: int,
+    additional_log_ids: Optional[List[int]] = None,
+    template_id: Optional[str] = None,
+    name: Optional[str] = None,
+    severity: Optional[str] = None
+) -> str:
+    """
+    Synthesizes a multi-step Nuclei template from a finding and related HTTP transactions.
+    """
+    db = SessionLocal()
+    try:
+        finding = db.query(Finding).filter(Finding.id == finding_id).first()
+        if not finding:
+            raise ValueError(f"Finding #{finding_id} not found in database.")
+
+        log_ids = [finding.log_id] if finding.log_id else []
+        if additional_log_ids:
+            for lid in additional_log_ids:
+                if lid not in log_ids:
+                    log_ids.append(lid)
+
+        steps: List[Dict[str, Any]] = []
+        for lid in log_ids:
+            log = db.query(HttpLog).filter(HttpLog.id == lid).first()
+            if not log:
+                continue
+            parsed = urlparse(log.url)
+            p = parsed.path or "/"
+            if parsed.query:
+                p += f"?{parsed.query}"
+
+            headers = {}
+            if log.request_headers:
+                try:
+                    hdrs = json.loads(log.request_headers) if isinstance(log.request_headers, str) else log.request_headers
+                    for k, v in hdrs.items():
+                        if k.lower() not in ["host", "content-length", "cookie", "user-agent", "accept-encoding"]:
+                            headers[k] = v
+                except Exception:
+                    pass
+
+            step = {
+                "method": log.method or "GET",
+                "path": p,
+                "headers": headers if headers else None,
+                "body": log.request_body if log.request_body else None,
+                "matchers": [{"type": "status", "status": [log.status_code]}] if log.status_code else None
+            }
+            steps.append(step)
+
+        if not steps:
+            return export_finding_to_nuclei(finding_id, template_id, name, severity)
+
+        slug_id = template_id or _slugify(f"{finding.title}-chain")
+        return generate_multistep_nuclei_template(
+            template_id=slug_id,
+            name=name or finding.title,
+            steps=steps,
+            severity=(severity or finding.severity or "high").lower(),
+            description=finding.description or f"Multi-step verification for {finding.title}"
+        )
+    finally:
+        db.close()
+
+
 def export_finding_to_nuclei(
     finding_id: int,
     template_id: Optional[str] = None,
