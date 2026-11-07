@@ -2753,7 +2753,7 @@
             <button @click="selectedFuzzPreview = null" class="text-slate-500 hover:text-white">✕</button>
           </div>
           <div
-            class="flex-1 overflow-y-auto bg-[#0B0F17] border border-[#1E293B] rounded p-2 text-slate-300 whitespace-pre-wrap select-text text-[11px]"
+            class="ds-codeview flex-1 text-[11px] select-text"
             x-text="selectedFuzzPreview ? selectedFuzzPreview.preview : ''"></div>
         </div>
       </div>
@@ -3240,7 +3240,7 @@
                       class="text-[10px] text-slate-500 hover:text-slate-300 underline">Copy Output</button>
                   </div>
                   <pre
-                    class="w-full bg-[#0B0F17] border border-[#1E293B] rounded-lg p-3 text-slate-200 text-xs font-mono overflow-x-auto max-h-72 select-text whitespace-pre-wrap leading-relaxed"
+                    class="ds-codeview w-full max-h-72 select-text"
                     x-text="selectedCommand.stdout || '[No standard output produced]'"></pre>
                 </div>
 
@@ -3464,7 +3464,7 @@
               <div class="space-y-3">
                 <!-- STDOUT VIEW -->
                 <div x-show="cliRepeaterOutputTab === 'stdout'">
-                  <div class="bg-[#0B0F17] border border-[#1E293B] rounded-lg p-3 text-slate-200 overflow-x-auto whitespace-pre-wrap leading-relaxed select-text"
+                  <div class="ds-codeview select-text"
                     x-html="parseAnsiColor(cliRepeaterResult.stdout) || '<span class=\'text-slate-600\'>[No standard output produced]</span>'"></div>
                 </div>
 
@@ -4133,7 +4133,7 @@
                   <td class="px-3 py-2.5">
                     <div class="text-slate-200 text-xs font-semibold mb-0.5" x-text="ev.path"></div>
                     <div x-show="ev.request_body"
-                      class="p-1.5 rounded bg-[#0B0F17] border border-[#1E293B] text-[11px] text-emerald-300 max-h-24 overflow-y-auto select-text whitespace-pre-wrap"
+                      class="ds-codeview max-h-24 text-[11px] select-text"
                       x-text="ev.request_body"></div>
                   </td>
                 </tr>
@@ -6802,7 +6802,7 @@
             </button>
           </div>
           <pre
-            class="p-3 bg-[#0B0F17] border border-[#1E293B] rounded-xl text-indigo-200 overflow-y-auto max-h-64 whitespace-pre-wrap text-[11px] leading-relaxed select-text"
+            class="ds-codeview max-h-64 text-[11px] select-text"
             x-text="distilledResponseModal?.compact_summary || ''"></pre>
         </div>
       </div>
