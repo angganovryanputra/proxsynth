@@ -277,6 +277,61 @@
 .ds-table tbody tr[aria-selected="true"] { background: var(--ds-signal-wash); }
 
 /* ========================================================================= */
+/* HTTP HEADER KEY/VALUE TABLE — built for reading long headers in a narrow pane */
+/* ========================================================================= */
+.ds-kv {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ds-text-xs);
+  line-height: 1.5;
+  table-layout: auto;
+}
+.ds-kv tr { border-bottom: 1px solid var(--ds-line); }
+.ds-kv tr:last-child { border-bottom: 0; }
+.ds-kv tr:hover { background: var(--ds-overlay); }
+/* Key: shrink to its own content so the value gets all remaining width. */
+.ds-kv .k {
+  font-family: var(--ds-sans);
+  font-weight: 600;
+  color: var(--ds-ink-dim);
+  white-space: nowrap;
+  width: 1%;
+  vertical-align: top;
+  padding: 0.4rem 0.7rem 0.4rem 0.6rem;
+  border-right: 1px solid var(--ds-line);
+}
+/* Value: monospace, and wrap long unbroken tokens (cookies, JWTs) by filling
+   the line first, not the ragged 10-char ribbon that `break-all` produced. */
+.ds-kv .v {
+  font-family: var(--ds-mono);
+  color: var(--ds-ink);
+  padding: 0.4rem 0.7rem;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ========================================================================= */
+/* CODE / BODY VIEWER — readable raw request/response payloads                 */
+/* ========================================================================= */
+.ds-codeview {
+  background: var(--ds-sunken);
+  border: 1px solid var(--ds-line);
+  border-radius: var(--ds-r-md);
+  padding: 0.75rem 0.85rem;
+  font-family: var(--ds-mono);
+  font-size: var(--ds-text-xs);
+  line-height: 1.65;
+  color: var(--ds-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+  overflow: auto;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ========================================================================= */
 /* EMPTY / LOADING / ERROR — consistent states (fixes the inconsistency noted) */
 /* ========================================================================= */
 .ds-state {
@@ -287,3 +342,26 @@
 .ds-state__title { font-size: var(--ds-text-base); font-weight: 600; color: var(--ds-ink); }
 .ds-state__hint { font-size: var(--ds-text-sm); color: var(--ds-ink-dim); max-width: 42ch; }
 .ds-state--error .ds-state__icon { color: var(--ds-confirmed); }
+
+/* ========================================================================= */
+/* RESPONSIVE — stack the Proxy inspector's request/response panes on phones   */
+/* so two 220px-min columns never force horizontal overflow. A stylesheet      */
+/* !important beats the panes' inline width:% (which carries no !important).    */
+/* ========================================================================= */
+@media (max-width: 768px) {
+  #inspectorSplitPane {
+    flex-direction: column !important;
+    overflow-y: auto !important;
+  }
+  #inspectorSplitPane > div[style] {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+  /* The draggable splitter is pointless once the panes are stacked. */
+  #inspectorSplitPane > [class*="cursor-col-resize"],
+  #inspectorSplitPane > [class*="cursor-row-resize"] {
+    display: none !important;
+  }
+}
