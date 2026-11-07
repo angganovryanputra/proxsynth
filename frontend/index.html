@@ -15,41 +15,19 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
     rel="stylesheet">
 
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Inter', 'sans-serif'],
-            mono: ['"JetBrains Mono"', 'monospace'],
-          },
-          colors: {
-            surface: {
-              base: '#0B0F17',
-              panel: '#111827',
-              border: '#1E293B',
-              hover: '#1E293B',
-              active: '#1E293B',
-            },
-            status: {
-              confirmed: '#F43F5E',
-              potential: '#F59E0B',
-              clean: '#64748B',
-            }
-          }
-        }
-      }
-    }
-  </script>
+  <!-- Tailwind CSS — precompiled static build (no in-browser JIT compiler,
+       which removes the load-time lag and flash-of-unstyled-content the CDN
+       caused). Rebuild after markup changes with:
+       npx tailwindcss@3 -c tailwind.config.js -i frontend/src/tw-input.css \
+         -o frontend/css/tailwind.build.css --minify -->
+  <link rel="stylesheet" href="/static/css/tailwind.build.css?v=0.3.0">
 
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
   <!-- Modular Scripts & Styles -->
   <link rel="stylesheet" href="/static/css/style.css?v=2.0.1">
+  <link rel="stylesheet" href="/static/css/design-system.css?v=0.3.0">
   <script src="/static/js/attack_surface.js?v=2.0.1"></script>
   <script src="/static/js/oast.js?v=2.0.1"></script>
   <script src="/static/js/hypotheses.js?v=2.0.1"></script>
@@ -206,103 +184,77 @@
 
       <!-- CLUSTER 1: CORE TRAFFIC -->
       <div>
-        <div x-show="sidebarExpanded"
-          class="px-3 mb-1.5 text-[10px] font-mono font-bold tracking-wider uppercase text-slate-500">
+        <div x-show="sidebarExpanded" class="ds-rail-group mt-1">
           Core Traffic
         </div>
         <div x-show="!sidebarExpanded" class="h-px bg-[#1E293B] mx-2 mb-2"></div>
 
-        <nav class="space-y-1 font-mono text-xs">
+        <nav class="space-y-1">
           <!-- Proxy Traffic -->
           <button @click="currentAppTab = 'proxy'"
-            :class="currentAppTab === 'proxy' ? 'bg-sky-500/15 text-sky-300 border border-sky-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'Proxy Traffic (HTTP/HTTPS)' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center relative"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="activity" class="w-4 h-4 shrink-0 text-sky-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">Proxy Traffic</span>
-            </div>
-            <span x-show="sidebarExpanded && logs.length > 0"
-              class="px-1.5 py-0.5 rounded text-[10px] bg-sky-950/80 text-sky-300 border border-sky-800/60"
+            class="ds-nav"
+            :class="{ 'is-active': currentAppTab === 'proxy', 'justify-center': !sidebarExpanded }"
+            :title="!sidebarExpanded ? 'Proxy Traffic (HTTP/HTTPS)' : ''">
+            <i data-lucide="activity" class="ds-nav__icon"></i>
+            <span x-show="sidebarExpanded" class="ds-nav__label">Proxy Traffic</span>
+            <span x-show="sidebarExpanded && logs.length > 0" class="ds-nav__count"
               x-text="logs.length > 999 ? (logs.length/1000).toFixed(1) + 'k' : logs.length"></span>
           </button>
 
           <!-- Intercept Trap -->
           <button @click="currentAppTab = 'intercept'"
-            :class="currentAppTab === 'intercept' ? 'bg-rose-500/15 text-rose-300 border border-rose-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'Intercept Trap' + (interceptPending.length ? ' (' + interceptPending.length + ' pending)' : '') : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center relative"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="crosshair" class="w-4 h-4 shrink-0 text-rose-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">Intercept</span>
-            </div>
-            <div class="flex items-center space-x-1.5">
-              <span x-show="interceptPending.length > 0"
-                class="px-1.5 py-0.5 rounded-full text-[9px] bg-rose-600 text-white font-bold animate-pulse shadow-sm"
-                :class="!sidebarExpanded ? 'absolute top-1 right-1' : ''" x-text="interceptPending.length"></span>
-              <span x-show="sidebarExpanded && interceptEnabled && interceptPending.length === 0"
-                class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
-            </div>
+            class="ds-nav relative"
+            :class="{ 'is-active': currentAppTab === 'intercept', 'justify-center': !sidebarExpanded }"
+            :title="!sidebarExpanded ? 'Intercept Trap' + (interceptPending.length ? ' (' + interceptPending.length + ' pending)' : '') : ''">
+            <i data-lucide="crosshair" class="ds-nav__icon"></i>
+            <span x-show="sidebarExpanded" class="ds-nav__label">Intercept</span>
+            <!-- pending = genuine alert → semantic color is legitimate here -->
+            <span x-show="interceptPending.length > 0" class="ds-pill ds-pill--confirmed"
+              :class="!sidebarExpanded ? 'absolute top-1 right-1' : ''" x-text="interceptPending.length"></span>
+            <span x-show="sidebarExpanded && interceptEnabled && interceptPending.length === 0" class="ds-live"></span>
           </button>
 
           <!-- Repeater -->
           <button @click="currentAppTab = 'repeater'"
-            :class="currentAppTab === 'repeater' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'HTTP Repeater' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="repeat" class="w-4 h-4 shrink-0 text-amber-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">Repeater</span>
-            </div>
-            <span x-show="sidebarExpanded && repeaterTabs.length > 1"
-              class="px-1.5 py-0.5 rounded text-[10px] bg-amber-950/60 text-amber-300 border border-amber-800/40"
+            class="ds-nav"
+            :class="{ 'is-active': currentAppTab === 'repeater', 'justify-center': !sidebarExpanded }"
+            :title="!sidebarExpanded ? 'HTTP Repeater' : ''">
+            <i data-lucide="repeat" class="ds-nav__icon"></i>
+            <span x-show="sidebarExpanded" class="ds-nav__label">Repeater</span>
+            <span x-show="sidebarExpanded && repeaterTabs.length > 1" class="ds-nav__count"
               x-text="repeaterTabs.length + ' tabs'"></span>
           </button>
 
           <!-- Fuzzer -->
           <button @click="currentAppTab = 'fuzzer'"
-            :class="currentAppTab === 'fuzzer' ? 'bg-purple-500/15 text-purple-300 border border-purple-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'Parameter Fuzzer (§...§)' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="zap" class="w-4 h-4 shrink-0 text-purple-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">Fuzzer</span>
-            </div>
-            <span x-show="sidebarExpanded && fuzzerRunning"
-              class="w-2 h-2 rounded-full bg-purple-400 animate-ping"></span>
+            class="ds-nav"
+            :class="{ 'is-active': currentAppTab === 'fuzzer', 'justify-center': !sidebarExpanded }"
+            :title="!sidebarExpanded ? 'Parameter Fuzzer (§...§)' : ''">
+            <i data-lucide="zap" class="ds-nav__icon"></i>
+            <span x-show="sidebarExpanded" class="ds-nav__label">Fuzzer</span>
+            <span x-show="sidebarExpanded && fuzzerRunning" class="ds-live"></span>
           </button>
 
           <!-- Match & Replace Rules -->
           <button @click="currentAppTab = 'rules'; fetchInterceptionRules()"
-            :class="currentAppTab === 'rules' ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'Interception & Match/Replace Rules' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="sliders" class="w-4 h-4 shrink-0 text-indigo-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">Match &amp; Replace</span>
-            </div>
-            <span x-show="sidebarExpanded && interceptionRules && interceptionRules.length > 0"
-              class="px-1.5 py-0.5 rounded text-[10px] bg-indigo-950/80 text-indigo-300 border border-indigo-800/60"
+            class="ds-nav"
+            :class="{ 'is-active': currentAppTab === 'rules', 'justify-center': !sidebarExpanded }"
+            :title="!sidebarExpanded ? 'Interception & Match/Replace Rules' : ''">
+            <i data-lucide="sliders" class="ds-nav__icon"></i>
+            <span x-show="sidebarExpanded" class="ds-nav__label">Match &amp; Replace</span>
+            <span x-show="sidebarExpanded && interceptionRules && interceptionRules.length > 0" class="ds-nav__count"
               x-text="interceptionRules.length"></span>
           </button>
 
           <!-- BOLA / IDOR Access Matrix -->
           <button @click="currentAppTab = 'bola_matrix'; fetchBolaMatrix()"
-            :class="currentAppTab === 'bola_matrix' ? 'bg-rose-500/15 text-rose-300 border border-rose-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'BOLA / IDOR Access Control Matrix' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="grid-3x3" class="w-4 h-4 shrink-0 text-rose-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">BOLA Matrix</span>
-            </div>
+            class="ds-nav"
+            :class="{ 'is-active': currentAppTab === 'bola_matrix', 'justify-center': !sidebarExpanded }"
+            :title="!sidebarExpanded ? 'BOLA / IDOR Access Control Matrix' : ''">
+            <i data-lucide="grid-3x3" class="ds-nav__icon"></i>
+            <span x-show="sidebarExpanded" class="ds-nav__label">BOLA Matrix</span>
             <span x-show="sidebarExpanded && bolaMatrixData && bolaMatrixData.vulnerabilities_detected > 0"
-              class="px-1.5 py-0.5 rounded text-[10px] bg-rose-950/80 text-rose-300 border border-rose-800/60 font-bold"
+              class="ds-pill ds-pill--confirmed"
               x-text="bolaMatrixData ? bolaMatrixData.vulnerabilities_detected + ' Vuln' : ''"></span>
           </button>
         </nav>
@@ -310,90 +262,68 @@
 
       <!-- CLUSTER 2: INTELLIGENCE & AI -->
       <div>
-        <div x-show="sidebarExpanded"
-          class="px-3 mb-1.5 text-[10px] font-mono font-bold tracking-wider uppercase text-slate-500">
+        <div x-show="sidebarExpanded" class="ds-rail-group mt-1">
           Intelligence &amp; AI
         </div>
         <div x-show="!sidebarExpanded" class="h-px bg-[#1E293B] mx-2 mb-2"></div>
 
-        <nav class="space-y-1 font-mono text-xs">
+        <nav class="space-y-1">
           <!-- AI Activity -->
           <button @click="currentAppTab = 'ai_activity'; fetchCommands(); fetchPayloads()"
-            :class="currentAppTab === 'ai_activity' ? 'bg-teal-500/15 text-teal-300 border border-teal-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'AI Activity & Vault' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center relative"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="terminal" class="w-4 h-4 shrink-0 text-teal-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">AI Activity</span>
-            </div>
-            <span x-show="(stats.total_commands || 0) + (stats.total_payloads || 0) > 0"
-              class="px-1.5 py-0.5 rounded text-[10px] bg-teal-950/80 text-teal-300 border border-teal-800/60 font-semibold"
-              :class="!sidebarExpanded ? 'absolute top-1 right-1 text-[8px] px-1' : ''"
+            class="ds-nav relative"
+            :class="{ 'is-active': currentAppTab === 'ai_activity', 'justify-center': !sidebarExpanded }"
+            :title="!sidebarExpanded ? 'AI Activity & Vault' : ''">
+            <i data-lucide="terminal" class="ds-nav__icon"></i>
+            <span x-show="sidebarExpanded" class="ds-nav__label">AI Activity</span>
+            <span x-show="(stats.total_commands || 0) + (stats.total_payloads || 0) > 0" class="ds-nav__count"
+              :class="!sidebarExpanded ? 'absolute top-1 right-1' : ''"
               x-text="(stats.total_commands || 0) + (stats.total_payloads || 0)"></span>
           </button>
 
           <!-- Attack Surface Graph -->
           <button @click="currentAppTab = 'attack_surface'; fetchAttackSurface()"
-            :class="currentAppTab === 'attack_surface' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'Attack Surface Graph' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center relative"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="network" class="w-4 h-4 shrink-0 text-cyan-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">Attack Surface</span>
-            </div>
-            <span
-              x-show="attackSurfaceData && attackSurfaceData.summary && attackSurfaceData.summary.total_endpoints > 0"
-              class="px-1.5 py-0.5 rounded text-[10px] bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-semibold"
-              :class="!sidebarExpanded ? 'absolute top-1 right-1 text-[8px] px-1' : ''"
+            class="ds-nav relative"
+            :class="{ 'is-active': currentAppTab === 'attack_surface', 'justify-center': !sidebarExpanded }"
+            :title="!sidebarExpanded ? 'Attack Surface Graph' : ''">
+            <i data-lucide="network" class="ds-nav__icon"></i>
+            <span x-show="sidebarExpanded" class="ds-nav__label">Attack Surface</span>
+            <span x-show="attackSurfaceData && attackSurfaceData.summary && attackSurfaceData.summary.total_endpoints > 0"
+              class="ds-nav__count" :class="!sidebarExpanded ? 'absolute top-1 right-1' : ''"
               x-text="attackSurfaceData && attackSurfaceData.summary ? attackSurfaceData.summary.total_endpoints : 0"></span>
           </button>
 
           <!-- Autonomous Security Campaign -->
           <button @click="currentAppTab = 'campaign'; fetchCampaignData()"
-            :class="currentAppTab === 'campaign' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'Autonomous Security Campaign (Zero-Human)' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center relative"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="bot" class="w-4 h-4 shrink-0 text-amber-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">Auto Campaign</span>
-            </div>
-            <span x-show="campaignRunning"
-              class="px-1.5 py-0.5 rounded text-[9px] bg-amber-950/80 text-amber-300 border border-amber-800/60 font-bold animate-pulse"
-              :class="!sidebarExpanded ? 'absolute top-1 right-1' : ''">LIVE</span>
+            class="ds-nav relative"
+            :class="{ 'is-active': currentAppTab === 'campaign', 'justify-center': !sidebarExpanded }"
+            :title="!sidebarExpanded ? 'Autonomous Security Campaign (Zero-Human)' : ''">
+            <i data-lucide="bot" class="ds-nav__icon"></i>
+            <span x-show="sidebarExpanded" class="ds-nav__label">Auto Campaign</span>
+            <!-- autonomous agent running → agent-signal pill -->
+            <span x-show="campaignRunning && sidebarExpanded" class="ds-pill ds-pill--agent">LIVE</span>
+            <span x-show="campaignRunning && !sidebarExpanded" class="ds-live ds-live--agent absolute top-1 right-1"></span>
           </button>
 
           <!-- OpenAPI Sandbox Explorer -->
           <button @click="currentAppTab = 'openapi_explorer'; fetchOpenApiExplorer()"
-            :class="currentAppTab === 'openapi_explorer' ? 'bg-purple-500/15 text-purple-300 border border-purple-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'OpenAPI 3.0 Interactive Sandbox' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center relative"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="play-circle" class="w-4 h-4 shrink-0 text-purple-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">OpenAPI Sandbox</span>
-            </div>
-            <span x-show="openApiEndpointsCount > 0"
-              class="px-1.5 py-0.5 rounded text-[10px] bg-purple-950/80 text-purple-300 border border-purple-800/60 font-semibold"
-              :class="!sidebarExpanded ? 'absolute top-1 right-1 text-[8px] px-1' : ''"
-              x-text="openApiEndpointsCount"></span>
+            class="ds-nav relative"
+            :class="{ 'is-active': currentAppTab === 'openapi_explorer', 'justify-center': !sidebarExpanded }"
+            :title="!sidebarExpanded ? 'OpenAPI 3.0 Interactive Sandbox' : ''">
+            <i data-lucide="play-circle" class="ds-nav__icon"></i>
+            <span x-show="sidebarExpanded" class="ds-nav__label">OpenAPI Sandbox</span>
+            <span x-show="openApiEndpointsCount > 0" class="ds-nav__count"
+              :class="!sidebarExpanded ? 'absolute top-1 right-1' : ''" x-text="openApiEndpointsCount"></span>
           </button>
 
           <!-- Attack Hypothesis Ledger / Agent Working Memory -->
           <button @click="currentAppTab = 'hypotheses'; fetchHypotheses()"
-            :class="currentAppTab === 'hypotheses' ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'Attack Hypothesis Ledger (Working Memory)' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center relative"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="brain-circuit" class="w-4 h-4 shrink-0 text-indigo-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">Hypothesis Ledger</span>
-            </div>
-            <span x-show="hypothesisAgenda && hypothesisAgenda.total_hypotheses > 0"
-              class="px-1.5 py-0.5 rounded text-[10px] bg-indigo-950/80 text-indigo-300 border border-indigo-800/60 font-semibold"
-              :class="!sidebarExpanded ? 'absolute top-1 right-1 text-[8px] px-1' : ''"
+            class="ds-nav relative"
+            :class="{ 'is-active': currentAppTab === 'hypotheses', 'justify-center': !sidebarExpanded }"
+            :title="!sidebarExpanded ? 'Attack Hypothesis Ledger (Working Memory)' : ''">
+            <i data-lucide="brain-circuit" class="ds-nav__icon"></i>
+            <span x-show="sidebarExpanded" class="ds-nav__label">Hypothesis Ledger</span>
+            <span x-show="hypothesisAgenda && hypothesisAgenda.total_hypotheses > 0" class="ds-nav__count"
+              :class="!sidebarExpanded ? 'absolute top-1 right-1' : ''"
               x-text="hypothesisAgenda ? hypothesisAgenda.total_hypotheses : 0"></span>
           </button>
         </nav>
@@ -401,41 +331,34 @@
 
       <!-- CLUSTER 3: AUDIT & VALIDATION -->
       <div>
-        <div x-show="sidebarExpanded"
-          class="px-3 mb-1.5 text-[10px] font-mono font-bold tracking-wider uppercase text-slate-500">
+        <div x-show="sidebarExpanded" class="ds-rail-group mt-1">
           Audit &amp; Validation
         </div>
         <div x-show="!sidebarExpanded" class="h-px bg-[#1E293B] mx-2 mb-2"></div>
 
-        <nav class="space-y-1 font-mono text-xs">
+        <nav class="space-y-1">
           <!-- CI/CD Security Audit -->
           <button @click="currentAppTab = 'ci_audit'; runCiAudit()"
-            :class="currentAppTab === 'ci_audit' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'CI/CD & API Security Audit' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="shield-alert" class="w-4 h-4 shrink-0 text-amber-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">Security Audit</span>
-            </div>
-            <span x-show="sidebarExpanded && ciAuditData" class="px-1.5 py-0.5 rounded text-[10px] font-bold"
-              :class="ciAuditData && ciAuditData.score >= 80 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800'"
+            class="ds-nav"
+            :class="{ 'is-active': currentAppTab === 'ci_audit', 'justify-center': !sidebarExpanded }"
+            :title="!sidebarExpanded ? 'CI/CD & API Security Audit' : ''">
+            <i data-lucide="shield-alert" class="ds-nav__icon"></i>
+            <span x-show="sidebarExpanded" class="ds-nav__label">Security Audit</span>
+            <!-- grade is a score verdict → semantic pass/warn color -->
+            <span x-show="sidebarExpanded && ciAuditData" class="ds-pill"
+              :class="ciAuditData && ciAuditData.score >= 80 ? 'ds-pill--verified' : 'ds-pill--potential'"
               x-text="ciAuditData ? ciAuditData.grade : ''"></span>
           </button>
 
           <!-- OAST Engine -->
           <button @click="currentAppTab = 'oast'; fetchOastEvents()"
-            :class="currentAppTab === 'oast' ? 'bg-orange-500/15 text-orange-300 border border-orange-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'OAST Callbacks Engine' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center relative"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="radio" class="w-4 h-4 shrink-0 text-orange-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">OAST Engine</span>
-            </div>
-            <span x-show="oastEvents && oastEvents.length > 0"
-              class="px-1.5 py-0.5 rounded text-[10px] bg-orange-950/80 text-orange-300 border border-orange-800/60 font-semibold"
-              :class="!sidebarExpanded ? 'absolute top-1 right-1 text-[8px] px-1' : ''"
+            class="ds-nav relative"
+            :class="{ 'is-active': currentAppTab === 'oast', 'justify-center': !sidebarExpanded }"
+            :title="!sidebarExpanded ? 'OAST Callbacks Engine' : ''">
+            <i data-lucide="radio" class="ds-nav__icon"></i>
+            <span x-show="sidebarExpanded" class="ds-nav__label">OAST Engine</span>
+            <span x-show="oastEvents && oastEvents.length > 0" class="ds-nav__count"
+              :class="!sidebarExpanded ? 'absolute top-1 right-1' : ''"
               x-text="oastEvents ? oastEvents.length : 0"></span>
           </button>
         </nav>
@@ -443,23 +366,19 @@
 
       <!-- CLUSTER 4: GATEWAY & GUARDRAILS -->
       <div>
-        <div x-show="sidebarExpanded"
-          class="px-3 mb-1.5 text-[10px] font-mono font-bold tracking-wider uppercase text-slate-500">
+        <div x-show="sidebarExpanded" class="ds-rail-group mt-1">
           Gateway &amp; Guardrails
         </div>
         <div x-show="!sidebarExpanded" class="h-px bg-[#1E293B] mx-2 mb-2"></div>
 
-        <nav class="space-y-1 font-mono text-xs">
+        <nav class="space-y-1">
           <!-- Scope Guardrails -->
           <button @click="currentAppTab = 'scope'"
-            :class="currentAppTab === 'scope' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1E293B]/70 border border-transparent'"
-            :title="!sidebarExpanded ? 'Scope Guardrails' : ''"
-            class="w-full rounded-lg transition-all duration-150 flex items-center"
-            :class="sidebarExpanded ? 'px-3 py-2 justify-between' : 'h-10 justify-center'">
-            <div class="flex items-center space-x-2.5 truncate">
-              <i data-lucide="shield-check" class="w-4 h-4 shrink-0 text-emerald-400"></i>
-              <span x-show="sidebarExpanded" class="truncate">Scope Guardrails</span>
-            </div>
+            class="ds-nav"
+            :class="{ 'is-active': currentAppTab === 'scope', 'justify-center': !sidebarExpanded }"
+            :title="!sidebarExpanded ? 'Scope Guardrails' : ''">
+            <i data-lucide="shield-check" class="ds-nav__icon"></i>
+            <span x-show="sidebarExpanded" class="ds-nav__label">Scope Guardrails</span>
           </button>
         </nav>
       </div>
@@ -544,14 +463,9 @@
           <i :data-lucide="sidebarExpanded ? 'panel-left-close' : 'panel-left'" class="w-4 h-4"></i>
         </button>
 
-        <div class="min-w-0 flex items-center space-x-2">
-          <span
-            class="text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded bg-[#0B0F17] border border-[#1E293B] text-slate-400 hidden sm:inline"
-            x-text="getActiveTabCategory()"></span>
-          <span class="text-slate-500 text-xs font-mono hidden sm:inline">/</span>
-          <h1 class="text-sm font-mono font-bold text-slate-100 truncate" x-text="getActiveTabTitle()"></h1>
-          <span class="text-[11px] font-mono text-slate-400 hidden md:inline truncate"
-            x-text="'· ' + getActiveTabSubtitle()"></span>
+        <div class="min-w-0 flex items-baseline gap-2.5" style="font-family: var(--ds-sans)">
+          <h1 class="text-[15px] font-semibold text-slate-100 truncate tracking-tight" x-text="getActiveTabTitle()"></h1>
+          <span class="text-[13px] text-slate-400 hidden md:inline truncate" x-text="getActiveTabSubtitle()"></span>
         </div>
       </div>
 
@@ -668,7 +582,8 @@
     <main id="main-content" role="main" tabindex="-1" class="flex-1 flex flex-col min-h-0 overflow-hidden relative">
 
     <!-- VIEW 1: PROXY TRAFFIC HISTORY & DEEP INSPECTOR -->
-    <div x-show="currentAppTab === 'proxy'" id="proxySplitPane" class="flex-1 min-h-0 overflow-hidden"
+    <template x-if="currentAppTab === 'proxy'">
+<div id="proxySplitPane" class="flex-1 min-h-0 overflow-hidden"
       :class="layoutOrientation === 'vertical' ? 'flex flex-col' : 'flex flex-row'">
 
       <!-- TABLE PANE -->
@@ -1978,9 +1893,11 @@
         </div>
       </section>
     </div>
+</template>
 
     <!-- VIEW 2: INTERCEPT CONSOLE (PROXY TRAP) -->
-    <div x-show="currentAppTab === 'intercept'" class="flex-1 flex flex-col p-6 overflow-hidden bg-[#0B0F17]">
+    <template x-if="currentAppTab === 'intercept'">
+<div class="flex-1 flex flex-col p-6 overflow-hidden bg-[#0B0F17]">
       <div class="mb-4 flex items-center justify-between border-b border-[#1E293B] pb-3">
         <div>
           <h2 class="text-sm font-bold text-slate-100 flex items-center">
@@ -2154,13 +2071,14 @@
         </div>
       </div>
     </div>
+</template>
 
     <!-- VIEW 3: REPEATER (MANUAL REPLAY CONSOLE WITH BURP SUITE STYLE MULTI-TABS) -->
-    <div x-show="currentAppTab === 'repeater'" class="flex-1 flex flex-col p-4 space-y-3 overflow-hidden bg-[#0B0F17]">
+    <template x-if="currentAppTab === 'repeater'">
+<div class="flex-1 flex flex-col p-4 space-y-3 overflow-hidden bg-[#0B0F17]">
 
       <!-- Repeater Tab Bar (Burp Suite Style) -->
-      <div
-        class="flex items-center justify-between bg-[#111827] border border-[#1E293B] rounded-xl px-3 py-2 shrink-0 shadow-lg">
+      <div class="ds-card flex items-center justify-between px-3 py-2 shrink-0">
         <!-- Tabs Scroll Container -->
         <div class="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5 max-w-[80%]">
           <template x-for="(tab, idx) in repeaterTabs" :key="tab.id">
@@ -2244,27 +2162,26 @@
       <div class="flex-1 flex overflow-hidden relative select-none" id="repeaterSplitContainer">
         <!-- Left: Request Composer -->
         <div :style="'width: ' + repeaterSplitRatio + '%'"
-          class="bg-[#111827] border border-[#1E293B] rounded-xl flex flex-col p-4 space-y-3 font-mono text-xs overflow-hidden shrink-0">
+          class="ds-card flex flex-col p-4 space-y-3 font-mono text-xs overflow-hidden shrink-0">
           <!-- Composer Top Bar -->
           <div class="flex items-center justify-between border-b border-[#1E293B] pb-2">
-            <h3 class="font-bold text-amber-400 flex items-center">
-              <i data-lucide="repeat" class="w-4 h-4 mr-1.5"></i>
-              Repeater Request Composer
+            <h3 class="font-semibold text-slate-100 flex items-center" style="font-family: var(--ds-sans)">
+              <i data-lucide="repeat" class="w-4 h-4 mr-1.5 text-slate-400"></i>
+              Request composer
             </h3>
             <div class="flex items-center space-x-2.5">
               <label class="flex items-center space-x-1.5 text-slate-300 text-xs cursor-pointer select-none" title="Automatically follow 301/302 redirects or inspect raw redirection headers">
                 <input type="checkbox" x-model="repeaterForm.followRedirects" class="rounded bg-[#0B0F17] border-[#1E293B] text-indigo-500 focus:ring-0">
                 <span class="text-[11px] text-slate-300">Follow Redirects</span>
               </label>
-              <button @click="sendRepeaterToFuzzer()"
-                class="px-2.5 py-1.5 bg-purple-950/80 hover:bg-purple-900 border border-purple-700/60 text-purple-300 rounded font-semibold transition flex items-center text-xs">
-                <i data-lucide="zap" class="w-3.5 h-3.5 mr-1 text-purple-400"></i>
+              <button @click="sendRepeaterToFuzzer()" class="ds-btn">
+                <i data-lucide="zap" class="w-3.5 h-3.5"></i>
                 <span>Send to Fuzzer</span>
               </button>
               <button @click="sendRepeaterRequest()" :disabled="repeaterLoading"
-                class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold transition flex items-center shadow-lg disabled:opacity-50 text-xs">
-                <i data-lucide="send" class="w-3.5 h-3.5 mr-1.5"></i>
-                <span x-text="repeaterLoading ? 'Sending...' : 'Send Request'"></span>
+                class="ds-btn ds-btn--primary disabled:opacity-50">
+                <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                <span x-text="repeaterLoading ? 'Sending…' : 'Send Request'"></span>
               </button>
             </div>
           </div>
@@ -2351,7 +2268,7 @@
 
         <!-- Right: Repeater Response Pane (Sub-Tabs: Body | Headers | Diff) -->
         <div :style="'width: calc(' + (100 - repeaterSplitRatio) + '% - 0.75rem)'"
-          class="flex-1 bg-[#111827] border border-[#1E293B] rounded-xl flex flex-col p-4 space-y-3 font-mono text-xs overflow-hidden">
+          class="ds-card flex-1 flex flex-col p-4 space-y-3 font-mono text-xs overflow-hidden">
           <!-- Response Top Bar -->
           <div class="flex items-center justify-between border-b border-[#1E293B] pb-2">
             <div class="flex items-center space-x-3">
@@ -2554,9 +2471,11 @@
         </div>
       </div>
     </div>
+</template>
 
     <!-- VIEW 5: PARAMETER FUZZER / MINI-INTRUDER -->
-    <div x-show="currentAppTab === 'fuzzer'" class="flex-1 flex overflow-hidden bg-[#0B0F17]">
+    <template x-if="currentAppTab === 'fuzzer'">
+<div class="flex-1 flex overflow-hidden bg-[#0B0F17]">
       <!-- Left: Attack Configuration -->
       <div
         class="w-[45%] flex flex-col border-r border-[#1E293B] bg-[#111827] p-4 space-y-3 font-mono text-xs overflow-y-auto">
@@ -2843,9 +2762,11 @@
         </div>
       </div>
     </div>
+</template>
 
     <!-- VIEW 4: SCOPE & GUARDRAILS CONFIGURATION -->
-    <div x-show="currentAppTab === 'scope'" class="flex-1 p-6 overflow-y-auto bg-[#0B0F17]">
+    <template x-if="currentAppTab === 'scope'">
+<div class="flex-1 p-6 overflow-y-auto bg-[#0B0F17]">
       <div class="max-w-3xl mx-auto bg-[#111827] border border-[#1E293B] rounded-xl p-6 space-y-6 font-mono text-xs">
         <div class="border-b border-[#1E293B] pb-4 flex items-center justify-between">
           <div>
@@ -3018,11 +2939,13 @@
         </div>
       </div>
     </div>
+</template>
 
     <!-- ========================================================================= -->
     <!-- VIEW 6: AI ACTIVITY — COMMAND AUDIT TRAIL & PAYLOAD VAULT                -->
     <!-- ========================================================================= -->
-    <div x-show="currentAppTab === 'ai_activity'" class="flex-1 overflow-hidden flex flex-col bg-[#0B0F17]">
+    <template x-if="currentAppTab === 'ai_activity'">
+<div class="flex-1 overflow-hidden flex flex-col bg-[#0B0F17]">
       <!-- Top Sub-Bar: Sub-tab switcher & Search/Actions -->
       <div
         class="h-12 bg-[#111827]/90 border-b border-[#1E293B] px-4 flex items-center justify-between shrink-0 font-mono text-xs">
@@ -3753,11 +3676,13 @@
         </div>
       </div>
     </div>
+</template>
 
     <!-- ========================================================================= -->
     <!-- VIEW 7: TARGET ATTACK SURFACE KNOWLEDGE GRAPH                             -->
     <!-- ========================================================================= -->
-    <div x-show="currentAppTab === 'attack_surface'"
+    <template x-if="currentAppTab === 'attack_surface'">
+<div
       class="flex-1 min-h-0 overflow-hidden flex flex-col bg-[#0B0F17] font-mono">
       <!-- Top Summary & Control Bar -->
       <div class="p-3 bg-[#111827] border-b border-[#1E293B] flex items-center justify-between shrink-0">
@@ -4071,12 +3996,14 @@
         </div>
       </div>
     </div>
+</template>
 
 
     <!-- ========================================================================= -->
     <!-- VIEW 8: OAST (OUT-OF-BAND APPLICATION SECURITY TESTING) CONSOLE           -->
     <!-- ========================================================================= -->
-    <div x-show="currentAppTab === 'oast'" class="flex-1 min-h-0 overflow-hidden flex flex-col bg-[#0B0F17] font-mono">
+    <template x-if="currentAppTab === 'oast'">
+<div class="flex-1 min-h-0 overflow-hidden flex flex-col bg-[#0B0F17] font-mono">
       <!-- Top Header & Status -->
       <div class="p-3 bg-[#111827] border-b border-[#1E293B] flex items-center justify-between shrink-0">
         <div class="flex items-center space-x-3">
@@ -4300,11 +4227,13 @@
         </div>
       </div>
     </div>
+</template>
 
     <!-- ========================================================================= -->
     <!-- VIEW 9: ATTACK HYPOTHESIS LEDGER & AGENT WORKING MEMORY (P3)              -->
     <!-- ========================================================================= -->
-    <div x-show="currentAppTab === 'hypotheses'"
+    <template x-if="currentAppTab === 'hypotheses'">
+<div
       class="flex-1 min-h-0 overflow-hidden flex flex-col bg-[#0B0F17] font-mono">
       <!-- Top Header & Metrics Bar -->
       <div class="p-3 bg-[#111827] border-b border-[#1E293B] flex items-center justify-between shrink-0">
@@ -4490,11 +4419,13 @@
         </template>
       </div>
     </div>
+</template>
 
 <!-- ===================================================================== -->
       <!-- TAB: INTERCEPTION & MATCH/REPLACE RULES                               -->
       <!-- ===================================================================== -->
-      <div x-show="currentAppTab === 'rules'"
+      <template x-if="currentAppTab === 'rules'">
+<div
         class="flex-1 flex flex-col min-h-0 bg-[#0B0F17] overflow-hidden select-text font-mono text-xs" x-cloak>
         <!-- Header -->
         <div class="h-14 border-b border-[#1E293B] px-6 flex items-center justify-between shrink-0 bg-[#111827]">
@@ -4667,11 +4598,13 @@
           </div>
         </div>
       </div>
+</template>
 
       <!-- ===================================================================== -->
       <!-- TAB: CI/CD SECURITY AUDIT & SCORECARD                                 -->
       <!-- ===================================================================== -->
-      <div x-show="currentAppTab === 'ci_audit'"
+      <template x-if="currentAppTab === 'ci_audit'">
+<div
         class="flex-1 flex flex-col min-h-0 bg-[#0B0F17] overflow-hidden select-text font-mono text-xs" x-cloak>
         <!-- Header -->
         <div class="h-14 border-b border-[#1E293B] px-6 flex items-center justify-between shrink-0 bg-[#111827]">
@@ -4809,9 +4742,11 @@
           </div>
         </div>
       </div>
+</template>
 
       <!-- VIEW: BOLA / IDOR INTERACTIVE ACCESS MATRIX -->
-      <div x-show="currentAppTab === 'bola_matrix'" class="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden bg-[#0B0F17] font-mono">
+      <template x-if="currentAppTab === 'bola_matrix'">
+<div class="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden bg-[#0B0F17] font-mono">
         <!-- Matrix Top Bar -->
         <div class="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#1E293B] pb-4 shrink-0">
           <div>
@@ -5080,9 +5015,11 @@
           </div>
         </div>
       </div>
+</template>
 
       <!-- VIEW: AUTONOMOUS SECURITY CAMPAIGN WORKBENCH (ZERO-HUMAN MODE) -->
-      <div x-show="currentAppTab === 'campaign'" class="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden bg-[#0B0F17] font-mono">
+      <template x-if="currentAppTab === 'campaign'">
+<div class="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden bg-[#0B0F17] font-mono">
         <!-- Top Toolbar -->
         <div class="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#1E293B] pb-4 shrink-0">
           <div>
@@ -5375,9 +5312,11 @@
           </div>
         </div>
       </div>
+</template>
 
       <!-- VIEW: INTERACTIVE OPENAPI 3.0 SANDBOX EXPLORER -->
-      <div x-show="currentAppTab === 'openapi_explorer'" class="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden bg-[#0B0F17] font-mono">
+      <template x-if="currentAppTab === 'openapi_explorer'">
+<div class="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden bg-[#0B0F17] font-mono">
         <!-- Top Toolbar -->
         <div class="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#1E293B] pb-4 shrink-0">
           <div>
@@ -5844,6 +5783,7 @@
       </div>
     </div>
   </div>
+</template>
   </main>
 
   <!-- MODALS -->

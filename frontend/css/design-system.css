@@ -1,0 +1,289 @@
+/*
+ * PROXSYNTH — "OVERSIGHT CONSOLE" DESIGN SYSTEM
+ * Token + component layer for the redesign. Additive and framework-agnostic:
+ * it defines CSS variables and `ds-*` component classes that the markup migrates
+ * onto, replacing scattered inline Tailwind color utilities and per-item neon.
+ *
+ * Principles:
+ *   1. Color is meaning, never decoration — one signature accent + a semantic
+ *      status set (confirmed / potential / clean / verified / agent-active).
+ *   2. Monospace is for machine data (URLs, tokens, codes, timings); Inter is chrome.
+ *   3. One elevation + radius system. Glow is reserved for the LIVE state only.
+ *   4. A calm off-black canvas and non-pure-white ink for long oversight sessions.
+ *   5. The existing WCAG 2.2 baseline (focus-visible, reduced-motion, forced-colors)
+ *      in style.css still applies — this layer does not weaken it.
+ */
+
+:root {
+  /* ---- Surface (calmer than the old pure-black #06090e) ---- */
+  --ds-void: #0a0e14;        /* app canvas */
+  --ds-raised: #121722;      /* panels, sidebar */
+  --ds-overlay: #1a2130;     /* popovers, hover fills, inputs */
+  --ds-sunken: #070a0f;      /* terminals, code wells */
+
+  /* ---- Lines ---- */
+  --ds-line: #222b3a;
+  --ds-line-strong: #33415a;
+
+  /* ---- Ink (off-white to cut glare) ---- */
+  --ds-ink: #e8edf4;
+  --ds-ink-dim: #93a1b5;
+  --ds-ink-mute: #5c6b82;
+
+  /* ---- Signature accent: calmer than acid #00f0ff ---- */
+  --ds-signal: #3dd7d0;
+  --ds-signal-strong: #22b8b0;
+  --ds-signal-wash: rgba(61, 215, 208, 0.12);
+  --ds-signal-line: rgba(61, 215, 208, 0.38);
+
+  /* ---- Semantic status (meaning only) ---- */
+  --ds-confirmed: #ff5a6a;   /* critical / confirmed finding */
+  --ds-potential: #f0a93b;   /* warning / potential */
+  --ds-clean: #6b7a94;       /* informational / clean */
+  --ds-verified: #35c892;    /* success / oracle-verified */
+  --ds-agent: #7c6bf0;       /* autonomous agent activity */
+
+  --ds-confirmed-wash: rgba(255, 90, 106, 0.13);
+  --ds-potential-wash: rgba(240, 169, 59, 0.13);
+  --ds-verified-wash: rgba(53, 200, 146, 0.13);
+  --ds-agent-wash: rgba(124, 107, 240, 0.13);
+
+  /* ---- Radius: one scale ---- */
+  --ds-r-sm: 6px;
+  --ds-r-md: 9px;
+  --ds-r-lg: 12px;
+
+  /* ---- Elevation: one model (no per-card neon) ---- */
+  --ds-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --ds-shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.55);
+
+  /* ---- Type ---- */
+  --ds-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --ds-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Modular type scale (1.20) */
+  --ds-text-xs: 0.75rem;
+  --ds-text-sm: 0.8125rem;
+  --ds-text-base: 0.9375rem;
+  --ds-text-lg: 1.125rem;
+  --ds-text-xl: 1.375rem;
+
+  /* Spacing rhythm */
+  --ds-gap: 0.75rem;
+  --ds-pad: 1rem;
+}
+
+/* ========================================================================= */
+/* APP SHELL                                                                 */
+/* ========================================================================= */
+.ds-app {
+  background: var(--ds-void);
+  color: var(--ds-ink);
+  font-family: var(--ds-sans);
+}
+
+.ds-rail {
+  background: var(--ds-raised);
+  border-right: 1px solid var(--ds-line);
+}
+
+/* Section label above a nav cluster — the only place tracked-uppercase lives */
+.ds-rail-group {
+  padding: 0 0.85rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ds-ink-mute);
+}
+
+/* ---- Nav item: NEUTRAL by default; accent appears only when active ----- */
+.ds-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--ds-r-md);
+  border: 1px solid transparent;
+  color: var(--ds-ink-dim);
+  font-family: var(--ds-sans);        /* labels are chrome, not data → sans */
+  font-size: var(--ds-text-sm);
+  font-weight: 500;
+  line-height: 1.1;
+  text-align: left;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.ds-nav:hover {
+  background: var(--ds-overlay);
+  color: var(--ds-ink);
+}
+.ds-nav__icon {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex-shrink: 0;
+  color: var(--ds-ink-mute);
+  transition: color 0.15s ease;
+}
+.ds-nav:hover .ds-nav__icon { color: var(--ds-ink-dim); }
+
+.ds-nav.is-active {
+  background: var(--ds-signal-wash);
+  border-color: var(--ds-signal-line);
+  color: var(--ds-signal);
+  font-weight: 600;
+}
+.ds-nav.is-active .ds-nav__icon { color: var(--ds-signal); }
+
+.ds-nav__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Count/metric badge on a nav item — neutral; never a per-item color */
+.ds-nav__count {
+  font-family: var(--ds-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--ds-overlay);
+  color: var(--ds-ink-dim);
+  border: 1px solid var(--ds-line);
+}
+
+/* ========================================================================= */
+/* VIEW HEADER — consistent title + context + primary action per view        */
+/* ========================================================================= */
+.ds-view-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ds-gap);
+  padding: var(--ds-pad) var(--ds-pad) 0.75rem;
+  border-bottom: 1px solid var(--ds-line);
+}
+.ds-view-title {
+  font-size: var(--ds-text-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ds-ink);
+}
+.ds-view-sub {
+  margin-top: 0.15rem;
+  font-size: var(--ds-text-sm);
+  color: var(--ds-ink-dim);
+}
+
+/* ========================================================================= */
+/* CARDS / PANELS — one radius, one elevation                                 */
+/* ========================================================================= */
+.ds-card {
+  background: var(--ds-raised);
+  border: 1px solid var(--ds-line);
+  border-radius: var(--ds-r-lg);
+  box-shadow: var(--ds-shadow);
+}
+.ds-card__head {
+  padding: 0.7rem var(--ds-pad);
+  border-bottom: 1px solid var(--ds-line);
+  font-size: var(--ds-text-sm);
+  font-weight: 600;
+  color: var(--ds-ink);
+}
+.ds-card__body { padding: var(--ds-pad); }
+
+/* ========================================================================= */
+/* STATUS PILLS — the semantic color vocabulary                               */
+/* ========================================================================= */
+.ds-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  font-family: var(--ds-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+.ds-pill--confirmed { color: var(--ds-confirmed); background: var(--ds-confirmed-wash); border-color: rgba(255,90,106,0.3); }
+.ds-pill--potential { color: var(--ds-potential); background: var(--ds-potential-wash); border-color: rgba(240,169,59,0.3); }
+.ds-pill--verified  { color: var(--ds-verified);  background: var(--ds-verified-wash);  border-color: rgba(53,200,146,0.3); }
+.ds-pill--agent     { color: var(--ds-agent);     background: var(--ds-agent-wash);     border-color: rgba(124,107,240,0.3); }
+.ds-pill--clean     { color: var(--ds-ink-dim);   background: var(--ds-overlay);        border-color: var(--ds-line); }
+
+/* A live dot — the ONLY sanctioned decorative pulse, and only for live state */
+.ds-live {
+  width: 0.5rem; height: 0.5rem; border-radius: 999px;
+  background: var(--ds-verified);
+  box-shadow: 0 0 0 0 rgba(53, 200, 146, 0.6);
+  animation: ds-live-pulse 1.8s ease-out infinite;
+}
+.ds-live--agent { background: var(--ds-agent); box-shadow: 0 0 0 0 rgba(124,107,240,0.6); }
+@keyframes ds-live-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(53, 200, 146, 0.5); }
+  70%  { box-shadow: 0 0 0 6px rgba(53, 200, 146, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(53, 200, 146, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-live, .ds-live--agent { animation: none; }
+}
+
+/* ========================================================================= */
+/* BUTTONS                                                                    */
+/* ========================================================================= */
+.ds-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--ds-r-md);
+  font-family: var(--ds-sans);
+  font-size: var(--ds-text-sm);
+  font-weight: 600;
+  border: 1px solid var(--ds-line-strong);
+  background: var(--ds-overlay);
+  color: var(--ds-ink);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.ds-btn:hover { border-color: var(--ds-signal-line); color: var(--ds-signal); }
+.ds-btn--primary {
+  background: var(--ds-signal-strong);
+  border-color: var(--ds-signal-strong);
+  color: #04120f;
+}
+.ds-btn--primary:hover { background: var(--ds-signal); border-color: var(--ds-signal); color: #04120f; }
+.ds-btn--danger { border-color: rgba(255,90,106,0.4); color: var(--ds-confirmed); background: var(--ds-confirmed-wash); }
+
+/* ========================================================================= */
+/* DATA TABLE — monospace is justified here (machine data)                    */
+/* ========================================================================= */
+.ds-table { width: 100%; border-collapse: collapse; font-family: var(--ds-mono); font-size: var(--ds-text-xs); }
+.ds-table thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--ds-raised);
+  text-align: left;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ds-ink-mute);
+  border-bottom: 1px solid var(--ds-line);
+}
+.ds-table tbody td { padding: 0.45rem 0.7rem; border-bottom: 1px solid var(--ds-line); color: var(--ds-ink-dim); }
+.ds-table tbody tr:hover { background: var(--ds-overlay); }
+.ds-table tbody tr[aria-selected="true"] { background: var(--ds-signal-wash); }
+
+/* ========================================================================= */
+/* EMPTY / LOADING / ERROR — consistent states (fixes the inconsistency noted) */
+/* ========================================================================= */
+.ds-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.6rem; padding: 2.5rem 1.5rem; text-align: center;
+}
+.ds-state__icon { width: 2rem; height: 2rem; color: var(--ds-ink-mute); }
+.ds-state__title { font-size: var(--ds-text-base); font-weight: 600; color: var(--ds-ink); }
+.ds-state__hint { font-size: var(--ds-text-sm); color: var(--ds-ink-dim); max-width: 42ch; }
+.ds-state--error .ds-state__icon { color: var(--ds-confirmed); }
