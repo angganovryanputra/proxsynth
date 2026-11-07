@@ -144,7 +144,7 @@
 
     <!-- PROJECT SCOPE SELECTOR (Top of Sidebar for Immediate Scope Context) -->
     <div x-show="sidebarExpanded" class="px-2.5 pt-2.5 pb-1 shrink-0">
-      <div class="bg-[#111827] border border-[#1E293B] rounded-lg p-2 space-y-1.5 focus-within:border-sky-500/50 shadow-sm transition">
+      <div class="ds-card p-2 space-y-1.5 focus-within:border-sky-500/50 shadow-sm transition">
         <div class="flex items-center justify-between text-[10px] text-slate-400 uppercase font-mono tracking-wider">
           <span class="flex items-center space-x-1.5">
             <i data-lucide="folder-git-2" class="w-3.5 h-3.5 text-indigo-400"></i>
@@ -1919,7 +1919,7 @@
       <!-- Intercept Content -->
       <div class="flex-1 flex overflow-hidden space-x-4">
         <!-- Left list of paused requests -->
-        <div class="w-1/3 bg-[#111827] border border-[#1E293B] rounded-xl flex flex-col overflow-hidden">
+        <div class="w-1/3 ds-card flex flex-col overflow-hidden">
           <div
             class="p-3 bg-[#0B0F17] border-b border-[#1E293B] font-mono text-xs text-slate-400 font-semibold flex justify-between">
             <span>PAUSED REQUESTS</span>
@@ -1950,7 +1950,7 @@
         </div>
 
         <!-- Right Editor & Forward/Drop Actions -->
-        <div class="w-2/3 bg-[#111827] border border-[#1E293B] rounded-xl flex flex-col p-4 overflow-hidden">
+        <div class="w-2/3 ds-card flex flex-col p-4 overflow-hidden">
           <template x-if="activeInterceptItem">
             <div class="flex-1 flex flex-col space-y-3 font-mono text-xs overflow-hidden">
               <!-- Action Toolbar -->
@@ -2767,7 +2767,7 @@
     <!-- VIEW 4: SCOPE & GUARDRAILS CONFIGURATION -->
     <template x-if="currentAppTab === 'scope'">
 <div class="flex-1 p-6 overflow-y-auto bg-[#0B0F17]">
-      <div class="max-w-3xl mx-auto bg-[#111827] border border-[#1E293B] rounded-xl p-6 space-y-6 font-mono text-xs">
+      <div class="max-w-3xl mx-auto ds-card p-6 space-y-6 font-mono text-xs">
         <div class="border-b border-[#1E293B] pb-4 flex items-center justify-between">
           <div>
             <h2 class="text-sm font-bold text-slate-100 flex items-center">
@@ -3502,7 +3502,7 @@
       <!-- SUB-VIEW 3: PAYLOAD VAULT & ATTACK MATRIX -->
       <div x-show="aiSubTab === 'payloads'" class="flex-1 min-h-0 overflow-hidden p-4 flex flex-col font-mono text-xs">
         <div
-          class="bg-[#111827] border border-[#1E293B] rounded-xl overflow-hidden flex flex-col flex-1 min-h-0 shadow-lg">
+          class="ds-card overflow-hidden flex flex-col flex-1 min-h-0 shadow-lg">
           <!-- Vault Header & Counter -->
           <div class="p-3 bg-[#111827] border-b border-[#1E293B] flex items-center justify-between shrink-0">
             <div class="flex items-center space-x-2">
@@ -3786,7 +3786,7 @@
       <div class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 smooth-scroll">
         <template x-for="asset in paginatedAssets()" :key="asset.id">
           <div
-            class="bg-[#111827] border border-[#1E293B] rounded-xl overflow-hidden shadow-lg transition hover:border-slate-700">
+            class="ds-card overflow-hidden shadow-lg transition hover:border-slate-700">
             <!-- Asset Card Header -->
             <div class="p-3 bg-[#0B0F17] border-b border-[#1E293B] flex items-center justify-between">
               <div class="flex items-center space-x-2.5">
@@ -4094,7 +4094,7 @@
 
       <!-- Callbacks Table -->
       <div class="flex-1 min-h-0 overflow-auto p-4 smooth-scroll">
-        <div class="bg-[#111827] border border-[#1E293B] rounded-xl overflow-hidden shadow-lg">
+        <div class="ds-card overflow-hidden shadow-lg">
           <div class="p-3 bg-[#111827] border-b border-[#1E293B] flex items-center justify-between">
             <div class="flex items-center space-x-2">
               <span class="font-bold text-xs text-slate-100">Captured Out-of-Band Callbacks</span>
@@ -4261,7 +4261,7 @@
         <!-- Action Buttons -->
         <div class="flex items-center space-x-2">
           <button @click="showNewHypothesisModal = true"
-            class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold text-xs flex items-center space-x-1.5 transition shadow">
+            class="px-3 py-1.5 ds-btn ds-btn--primary rounded font-bold text-xs flex items-center space-x-1.5 transition shadow">
             <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
             <span>Record Hypothesis</span>
           </button>
@@ -4276,17 +4276,17 @@
       <!-- Agenda Status Metric Cards -->
       <div
         class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 p-3 bg-[#0B0F17] border-b border-[#1E293B] shrink-0 text-xs">
-        <div class="p-2.5 bg-[#111827] border border-[#1E293B] rounded-lg">
+        <div class="p-2.5 ds-card">
           <span class="text-[10px] text-slate-500 uppercase font-bold block">Total Hypotheses</span>
           <span class="text-base font-bold text-slate-200"
             x-text="hypothesisAgenda ? hypothesisAgenda.total_hypotheses : 0"></span>
         </div>
-        <div class="p-2.5 bg-[#111827] border border-[#1E293B] rounded-lg">
+        <div class="p-2.5 ds-card">
           <span class="text-[10px] text-sky-400 uppercase font-bold block">Planned</span>
           <span class="text-base font-bold text-sky-300"
             x-text="hypothesisAgenda ? hypothesisAgenda.planned_count : 0"></span>
         </div>
-        <div class="p-2.5 bg-[#111827] border border-[#1E293B] rounded-lg">
+        <div class="p-2.5 ds-card">
           <span class="text-[10px] text-amber-400 uppercase font-bold block">Testing (Active)</span>
           <span class="text-base font-bold text-amber-300 flex items-center">
             <span class="w-2 h-2 rounded-full bg-amber-400 mr-1.5 animate-pulse"
@@ -4294,17 +4294,17 @@
             <span x-text="hypothesisAgenda ? hypothesisAgenda.in_progress_count : 0"></span>
           </span>
         </div>
-        <div class="p-2.5 bg-[#111827] border border-[#1E293B] rounded-lg">
+        <div class="p-2.5 ds-card">
           <span class="text-[10px] text-emerald-400 uppercase font-bold block">Confirmed</span>
           <span class="text-base font-bold text-emerald-300"
             x-text="hypothesisAgenda ? hypothesisAgenda.confirmed_findings_count : 0"></span>
         </div>
-        <div class="p-2.5 bg-[#111827] border border-[#1E293B] rounded-lg">
+        <div class="p-2.5 ds-card">
           <span class="text-[10px] text-slate-400 uppercase font-bold block">Disproven</span>
           <span class="text-base font-bold text-slate-400"
             x-text="hypothesisAgenda ? hypothesisAgenda.disproven_count : 0"></span>
         </div>
-        <div class="p-2.5 bg-[#111827] border border-[#1E293B] rounded-lg">
+        <div class="p-2.5 ds-card">
           <span class="text-[10px] text-rose-400 uppercase font-bold block">Blocked</span>
           <span class="text-base font-bold text-rose-400"
             x-text="hypothesisAgenda ? hypothesisAgenda.blocked_count : 0"></span>
@@ -4355,7 +4355,7 @@
 
         <template x-for="h in filteredHypotheses()" :key="h.id">
           <div
-            class="p-4 bg-[#111827] border border-[#1E293B] rounded-xl space-y-3 shadow-md hover:border-indigo-800/60 transition">
+            class="p-4 ds-card space-y-3 shadow-md hover:border-indigo-800/60 transition">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div class="flex items-center space-x-2">
                 <span class="px-2 py-0.5 rounded text-[10px] font-bold border uppercase"
@@ -4462,7 +4462,7 @@
         <!-- Content Area -->
         <div class="flex-1 overflow-y-auto p-6 space-y-4 smooth-scroll">
           <!-- Rules Table -->
-          <div class="bg-[#111827] border border-[#1E293B] rounded-xl overflow-hidden shadow-sm">
+          <div class="ds-card overflow-hidden shadow-sm">
             <table class="w-full text-left text-xs">
               <thead class="bg-[#0B0F17] text-slate-400 border-b border-[#1E293B] text-[10px] uppercase font-semibold">
                 <tr>
@@ -4701,7 +4701,7 @@
               </div>
 
               <!-- Violations Breakdown Table -->
-              <div class="bg-[#111827] border border-[#1E293B] rounded-xl overflow-hidden shadow-sm">
+              <div class="ds-card overflow-hidden shadow-sm">
                 <div
                   class="p-3.5 bg-[#0B0F17] border-b border-[#1E293B] font-bold text-slate-200 flex items-center justify-between">
                   <span>Observed Policy Violations</span>
@@ -4771,7 +4771,7 @@
             <!-- Filter Candidates -->
             <div class="relative">
               <input type="text" x-model="bolaFilterText" placeholder="Filter endpoint or resource ID..."
-                class="bg-[#111827] border border-[#1E293B] rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 w-48 sm:w-64 focus:outline-none focus:border-rose-500">
+                class="ds-card px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 w-48 sm:w-64 focus:outline-none focus:border-rose-500">
               <i data-lucide="search" class="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-2.5 pointer-events-none"></i>
             </div>
 
@@ -4794,7 +4794,7 @@
 
         <!-- Metric Badges -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 shrink-0">
-          <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between">
+          <div class="p-3 ds-card flex items-center justify-between">
             <div>
               <div class="text-[10px] text-slate-400 uppercase font-semibold">Candidate Endpoints</div>
               <div class="text-xl font-bold text-slate-200 mt-0.5" x-text="bolaMatrixData ? bolaMatrixData.total_candidates : 0"></div>
@@ -4802,7 +4802,7 @@
             <i data-lucide="layers" class="w-5 h-5 text-sky-400 opacity-60"></i>
           </div>
 
-          <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between"
+          <div class="p-3 ds-card flex items-center justify-between"
             :class="bolaMatrixData && bolaMatrixData.vulnerabilities_detected > 0 ? 'border-rose-500/50 bg-rose-950/20' : ''">
             <div>
               <div class="text-[10px] text-slate-400 uppercase font-semibold">Confirmed BOLA / IDOR</div>
@@ -4814,7 +4814,7 @@
               :class="bolaMatrixData && bolaMatrixData.vulnerabilities_detected > 0 ? 'text-rose-400' : 'text-slate-600'"></i>
           </div>
 
-          <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between">
+          <div class="p-3 ds-card flex items-center justify-between">
             <div>
               <div class="text-[10px] text-slate-400 uppercase font-semibold">Active Identities</div>
               <div class="text-xl font-bold text-purple-300 mt-0.5" x-text="bolaMatrixData ? bolaMatrixData.roles.length : 0"></div>
@@ -4822,7 +4822,7 @@
             <i data-lucide="users" class="w-5 h-5 text-purple-400 opacity-60"></i>
           </div>
 
-          <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between">
+          <div class="p-3 ds-card flex items-center justify-between">
             <div>
               <div class="text-[10px] text-slate-400 uppercase font-semibold">Audit Protection Rate</div>
               <div class="text-xl font-bold text-emerald-400 mt-0.5"
@@ -4833,7 +4833,7 @@
         </div>
 
         <!-- Matrix Interactive Grid Table -->
-        <div class="flex-1 min-h-0 bg-[#111827] border border-[#1E293B] rounded-xl overflow-hidden flex flex-col shadow-xl">
+        <div class="flex-1 min-h-0 ds-card overflow-hidden flex flex-col shadow-xl">
           <div class="flex-1 overflow-auto smooth-scroll">
             <table class="w-full text-left text-xs border-collapse">
               <thead class="sticky top-0 bg-[#0E1526] border-b border-[#1E293B] z-10 select-none">
@@ -5138,28 +5138,28 @@
 
           <!-- Metrics Telemetry Cards -->
           <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between">
+            <div class="p-3 ds-card flex items-center justify-between">
               <div>
                 <div class="text-[10px] text-slate-400 uppercase font-semibold">Endpoints Mapped</div>
                 <div class="text-lg font-bold text-sky-300 mt-0.5" x-text="campaignResults?.metrics?.endpoints_mapped || 0"></div>
               </div>
               <i data-lucide="compass" class="w-4 h-4 text-sky-400 opacity-60"></i>
             </div>
-            <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between">
+            <div class="p-3 ds-card flex items-center justify-between">
               <div>
                 <div class="text-[10px] text-slate-400 uppercase font-semibold">Forms Identified</div>
                 <div class="text-lg font-bold text-purple-300 mt-0.5" x-text="campaignResults?.metrics?.forms_identified || 0"></div>
               </div>
               <i data-lucide="file-input" class="w-4 h-4 text-purple-400 opacity-60"></i>
             </div>
-            <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between">
+            <div class="p-3 ds-card flex items-center justify-between">
               <div>
                 <div class="text-[10px] text-slate-400 uppercase font-semibold">Canaries Sprayed</div>
                 <div class="text-lg font-bold text-amber-300 mt-0.5" x-text="campaignResults?.metrics?.canaries_sprayed || 0"></div>
               </div>
               <i data-lucide="radio" class="w-4 h-4 text-amber-400 opacity-60"></i>
             </div>
-            <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between"
+            <div class="p-3 ds-card flex items-center justify-between"
               :class="campaignResults?.metrics?.vulnerabilities_confirmed > 0 ? 'border-rose-500/50 bg-rose-950/20' : ''">
               <div>
                 <div class="text-[10px] text-slate-400 uppercase font-semibold">Confirmed Exploits</div>
@@ -5169,7 +5169,7 @@
               </div>
               <i data-lucide="shield-alert" class="w-4 h-4 text-rose-400"></i>
             </div>
-            <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-xl flex items-center justify-between">
+            <div class="p-3 ds-card flex items-center justify-between">
               <div>
                 <div class="text-[10px] text-slate-400 uppercase font-semibold">False Positives Filtered</div>
                 <div class="text-lg font-bold text-emerald-400 mt-0.5" x-text="campaignResults?.metrics?.false_positives_filtered || 0"></div>
@@ -5179,7 +5179,7 @@
           </div>
 
           <!-- Campaign Findings Dossier Table -->
-          <div class="bg-[#111827] border border-[#1E293B] rounded-xl overflow-hidden flex flex-col shadow-xl">
+          <div class="ds-card overflow-hidden flex flex-col shadow-xl">
             <div class="p-3 bg-[#0E1526] border-b border-[#1E293B] flex items-center justify-between">
               <div class="text-xs font-bold text-slate-200 flex items-center space-x-2">
                 <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
@@ -5464,7 +5464,7 @@
                     <button @click="formatOpenApiSandboxBody()" class="text-[10px] text-purple-400 hover:text-purple-300">Format JSON</button>
                   </div>
                   <textarea x-model="openApiSandboxBody" rows="6" placeholder="{}"
-                    class="w-full bg-[#111827] border border-[#1E293B] rounded-lg p-3 text-xs text-emerald-300 font-mono focus:border-purple-500"></textarea>
+                    class="w-full ds-card p-3 text-xs text-emerald-300 font-mono focus:border-purple-500"></textarea>
                 </div>
 
                 <!-- Live Response Pane -->
@@ -5486,7 +5486,7 @@
                     </button>
                   </div>
 
-                  <div class="p-3 bg-[#111827] border border-[#1E293B] rounded-lg max-h-80 overflow-auto font-mono text-xs text-sky-300 whitespace-pre-wrap select-text"
+                  <div class="p-3 ds-card max-h-80 overflow-auto font-mono text-xs text-sky-300 whitespace-pre-wrap select-text"
                     x-text="openApiSandboxResponse ? openApiSandboxResponse.body : ''"></div>
                 </div>
               </div>
@@ -5560,7 +5560,7 @@
   <div x-show="showNucleiModal" x-cloak
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 font-mono">
     <div @click.away="showNucleiModal = false"
-      class="w-full max-w-3xl bg-[#111827] border border-[#1E293B] rounded-2xl p-6 space-y-4 shadow-2xl flex flex-col max-h-[90vh]">
+      class="w-full max-w-3xl ds-card p-6 space-y-4 shadow-2xl flex flex-col max-h-[90vh]">
       <!-- Header -->
       <div class="flex items-center justify-between border-b border-[#1E293B] pb-3 shrink-0">
         <div class="flex items-center space-x-2.5">
@@ -5614,7 +5614,7 @@
   <div x-show="showCaModal" x-cloak
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 font-mono">
     <div @click.away="showCaModal = false"
-      class="w-full max-w-2xl bg-[#111827] border border-[#1E293B] rounded-2xl p-6 space-y-4 shadow-2xl">
+      class="w-full max-w-2xl ds-card p-6 space-y-4 shadow-2xl">
       <!-- Header -->
       <div class="flex items-center justify-between border-b border-[#1E293B] pb-3">
         <div class="flex items-center space-x-2.5">
@@ -5710,7 +5710,7 @@
   <div x-show="showAddAssetModal"
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-mono">
     <div @click.away="showAddAssetModal = false"
-      class="w-full max-w-md bg-[#111827] border border-[#1E293B] rounded-xl p-5 space-y-3.5 shadow-2xl">
+      class="w-full max-w-md ds-card p-5 space-y-3.5 shadow-2xl">
       <h3 class="text-sm font-bold text-slate-100 flex items-center space-x-2">
         <i data-lucide="network" class="w-4 h-4 text-cyan-400"></i>
         <span>Add Target Asset to Graph</span>
@@ -5749,7 +5749,7 @@
   <div x-show="showAddServiceModal"
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-mono">
     <div @click.away="showAddServiceModal = false"
-      class="w-full max-w-md bg-[#111827] border border-[#1E293B] rounded-xl p-5 space-y-3.5 shadow-2xl">
+      class="w-full max-w-md ds-card p-5 space-y-3.5 shadow-2xl">
       <h3 class="text-sm font-bold text-slate-100 flex items-center space-x-2">
         <i data-lucide="plus-circle" class="w-4 h-4 text-cyan-400"></i>
         <span>Add Service to <span class="text-cyan-400" x-text="newServiceForm.host"></span></span>
@@ -5819,7 +5819,7 @@
         <button @click="showOpenApiImportModal = false"
           class="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300">Cancel</button>
         <button @click="importOpenApiSpec()" :disabled="!openApiImportSource || openApiImporting"
-          class="px-4 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-bold flex items-center space-x-1.5 disabled:opacity-50">
+          class="px-4 py-1.5 rounded ds-btn ds-btn--primary font-bold flex items-center space-x-1.5 disabled:opacity-50">
           <i data-lucide="download" class="w-3.5 h-3.5" :class="openApiImporting ? 'animate-spin' : ''"></i>
           <span x-text="openApiImporting ? 'Importing...' : 'Parse & Ingest Endpoints'"></span>
         </button>
@@ -5834,7 +5834,7 @@
     @keydown.escape.window="openNewProjectModal = false"
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
     <div @click.away="openNewProjectModal = false"
-      class="w-full max-w-md bg-[#111827] border border-[#1E293B] rounded-xl p-6 space-y-4">
+      class="w-full max-w-md ds-card p-6 space-y-4">
       <h3 id="create-project-title" class="text-sm font-bold text-slate-100">Create New Project</h3>
       <input type="text" x-model="newProjectForm.name" @keydown.enter="createProject()"
         aria-label="Project slug (e.g. client-alpha)"
@@ -5856,7 +5856,7 @@
   <div x-show="openLoginModal"
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto">
     <div @click.away="openLoginModal = false"
-      class="w-full max-w-3xl bg-[#111827] border border-[#1E293B] rounded-2xl p-6 space-y-4 font-mono text-xs shadow-2xl my-auto">
+      class="w-full max-w-3xl ds-card p-6 space-y-4 font-mono text-xs shadow-2xl my-auto">
 
       <!-- Modal Header -->
       <div class="flex items-center justify-between border-b border-[#1E293B] pb-3.5">
@@ -6219,7 +6219,7 @@
           <button @click="showNewRuleModal = false"
             class="px-4 py-1.5 rounded-lg bg-[#1E293B] hover:bg-[#334155] text-slate-300">Cancel</button>
           <button @click="saveNewRule()"
-            class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow">Save
+            class="px-4 py-1.5 rounded-lg ds-btn ds-btn--primary font-semibold shadow">Save
             Rule</button>
         </div>
       </div>
@@ -7032,7 +7032,7 @@
           <button @click="showNewHypothesisModal = false"
             class="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200">Cancel</button>
           <button @click="createHypothesisFromUI()" :disabled="isSubmittingHypothesis"
-            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition flex items-center space-x-1.5 shadow">
+            class="px-4 py-2 ds-btn ds-btn--primary rounded-lg text-xs font-bold transition flex items-center space-x-1.5 shadow">
             <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
             <span>Save Hypothesis</span>
           </button>
@@ -7051,7 +7051,7 @@
       class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-start justify-center pt-20 p-4 select-text font-mono text-xs"
       x-cloak>
       <div @click.away="showCommandPalette = false"
-        class="bg-[#111827] border border-[#1E293B] rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden flex flex-col">
+        class="ds-card max-w-xl w-full shadow-2xl overflow-hidden flex flex-col">
         <div class="p-3.5 bg-[#0B0F17] border-b border-[#1E293B] flex items-center space-x-3">
           <i data-lucide="search" class="w-4 h-4 text-sky-400" aria-hidden="true"></i>
           <input type="text" x-model="commandPaletteQuery" x-ref="paletteInput"
@@ -7100,7 +7100,7 @@
       class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 select-text font-mono text-xs"
       x-cloak>
       <div @click.away="showHotkeysModal = false"
-        class="bg-[#111827] border border-[#1E293B] rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden">
+        class="ds-card max-w-lg w-full shadow-2xl overflow-hidden">
         <div class="p-4 bg-[#0B0F17] border-b border-[#1E293B] flex items-center justify-between">
           <div class="flex items-center space-x-2">
             <i data-lucide="keyboard" class="w-5 h-5 text-indigo-400"></i>
@@ -7165,7 +7165,7 @@
     <!-- ========================================================================= -->
     <div x-show="contextMenuVisible" @click.away="closeContextMenu()"
       :style="'top: ' + contextMenuY + 'px; left: ' + contextMenuX + 'px;'"
-      class="fixed z-50 bg-[#111827] border border-[#1E293B] rounded-xl shadow-2xl py-1.5 w-60 font-mono text-xs select-none backdrop-blur-md"
+      class="fixed z-50 ds-card shadow-2xl py-1.5 w-60 font-mono text-xs select-none backdrop-blur-md"
       x-cloak>
       <div class="px-3 py-1.5 text-[10px] text-slate-500 uppercase border-b border-[#1E293B] flex items-center justify-between">
         <span>Request Options</span>
