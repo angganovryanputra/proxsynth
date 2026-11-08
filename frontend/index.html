@@ -1154,6 +1154,7 @@
         <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="inspectorModalOpen = false"></div>
         <section
           class="relative ds-card w-full max-w-6xl h-[88vh] flex flex-col overflow-hidden shadow-2xl">
+        <div class="ds-loadbar" x-show="inspectorLoading" x-cloak></div>
         <!-- Inspector Top Header & Control Bar -->
         <div class="h-10 bg-[#0B0F17] border-b border-[#1E293B] px-3 flex items-center justify-between shrink-0 select-none">
           <!-- Left: View Mode Segmented Switcher -->
@@ -1278,10 +1279,10 @@
         <!-- Inspector Body -->
         <div class="flex-1 min-h-0 overflow-hidden font-mono text-xs text-slate-300">
           <template x-if="!selectedLogDetail">
-            <div class="h-full flex flex-col items-center justify-center p-8 text-center text-slate-500">
-              <i data-lucide="mouse-pointer-click" class="w-10 h-10 mb-3 text-slate-600 animate-pulse"></i>
-              <p class="text-sm font-semibold text-slate-400">No Request Selected</p>
-              <p class="text-xs text-slate-500 max-w-sm mt-1">Select an HTTP transaction from the traffic table above to inspect headers, payload, JWT tokens, and automated vulnerability findings.</p>
+            <div class="ds-state h-full">
+              <i data-lucide="mouse-pointer-click" class="ds-state__icon"></i>
+              <p class="ds-state__title">No request selected</p>
+              <p class="ds-state__hint">Pick an HTTP transaction from the traffic table to inspect its headers, payload, JWT tokens, and automated findings.</p>
             </div>
           </template>
 
@@ -2326,11 +2327,10 @@
           </div>
 
           <!-- Empty State -->
-          <div x-show="!repeaterResponse"
-            class="flex-1 flex flex-col items-center justify-center text-slate-500 space-y-2">
-            <i data-lucide="send" class="w-8 h-8 opacity-20 text-slate-400"></i>
-            <p>No response yet.</p>
-            <p class="text-[11px] text-slate-600">Configure request on the left and click 'Send Request'.</p>
+          <div x-show="!repeaterResponse" class="ds-state flex-1">
+            <i data-lucide="send" class="ds-state__icon"></i>
+            <p class="ds-state__title">No response yet</p>
+            <p class="ds-state__hint">Build the request on the left, then click Send request.</p>
           </div>
 
           <!-- SUB-TAB 1: RESPONSE BODY (ENTIRE DISPLAY & AUTOMATION BEAUTIFY) -->
@@ -2646,11 +2646,10 @@
         <!-- Results List -->
         <div class="flex-1 overflow-y-auto divide-y divide-[#1E293B]/60 font-mono text-xs">
           <template x-if="!fuzzerAttackResults">
-            <div class="p-16 text-center text-slate-500">
-              <i data-lucide="zap" class="w-10 h-10 mx-auto mb-3 opacity-20 text-purple-400"></i>
-              <p>Ready to launch parameter fuzzing attack.</p>
-              <p class="text-[11px] text-slate-600 mt-1">Configure position marker (§...§) and click 'Launch Attack'.
-              </p>
+            <div class="ds-state">
+              <i data-lucide="zap" class="ds-state__icon"></i>
+              <p class="ds-state__title">Ready to fuzz</p>
+              <p class="ds-state__hint">Mark a position with §…§ and click Launch attack to start the differential run.</p>
             </div>
           </template>
 
@@ -3110,13 +3109,10 @@
               </div>
             </template>
 
-            <div x-show="filteredCommandsList.length === 0"
-              class="p-8 text-center text-slate-500 font-mono text-xs space-y-2">
-              <i data-lucide="terminal" class="w-8 h-8 mx-auto opacity-30 text-teal-400"></i>
-              <p>No terminal commands recorded yet.</p>
-              <p class="text-[10px] text-slate-600">Commands executed by AI via MCP tool
-                <code>run_pentest_command</code>
-                will stream here live.</p>
+            <div x-show="filteredCommandsList.length === 0" class="ds-state">
+              <i data-lucide="terminal" class="ds-state__icon"></i>
+              <p class="ds-state__title">No commands yet</p>
+              <p class="ds-state__hint">Commands the agent runs via the <code>run_pentest_command</code> MCP tool stream here live.</p>
             </div>
           </div>
 
@@ -3466,10 +3462,10 @@
             </template>
 
             <template x-if="!cliRepeaterRunning && !cliRepeaterResult">
-              <div class="h-full flex flex-col items-center justify-center space-y-2 text-slate-500">
-                <i data-lucide="terminal" class="w-10 h-10 opacity-30 text-sky-400"></i>
-                <p>No output yet. Enter a command on the left and click Execute.</p>
-                <p class="text-[10px] text-slate-600">Tip: Use Ctrl+Enter to rapidly execute and reproduce.</p>
+              <div class="ds-state h-full">
+                <i data-lucide="terminal" class="ds-state__icon"></i>
+                <p class="ds-state__title">No output yet</p>
+                <p class="ds-state__hint">Enter a command on the left and click Execute. Tip: Ctrl+Enter runs it instantly.</p>
               </div>
             </template>
 
@@ -4152,11 +4148,12 @@
                 </tr>
               </template>
               <tr x-show="filteredOastEvents().length === 0">
-                <td colspan="7" class="p-12 text-center text-slate-500 text-xs space-y-2">
-                  <i data-lucide="radio" class="w-8 h-8 mx-auto opacity-30 text-orange-400"></i>
-                  <p>No out-of-band callbacks received yet.</p>
-                  <p class="text-[10px] text-slate-600">Inject an OAST token URL into SSRF/RCE payload fields. When the
-                    target connects back, the event will appear here in real time.</p>
+                <td colspan="7">
+                  <div class="ds-state">
+                    <i data-lucide="radio" class="ds-state__icon"></i>
+                    <p class="ds-state__title">No callbacks yet</p>
+                    <p class="ds-state__hint">Inject an OAST token URL into SSRF/RCE payload fields. When the target connects back, the event appears here in real time.</p>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -4908,7 +4905,7 @@
 
                         <!-- Vulnerable (BOLA Confirmed) -->
                         <template x-if="c.access[role] && c.access[role].state === 'VULNERABLE'">
-                          <button @click="currentAppTab = 'proxy'; inspectorViewMode = 'triage'; openInspectorModal(c.log_id)"
+                          <button @click="currentAppTab = 'proxy'; openInspectorModal(c.log_id, 'triage')"
                             class="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-950 text-rose-200 border border-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)] animate-pulse hover:bg-rose-900 transition"
                             :title="c.access[role].summary + ' - Click to inspect vulnerability'">
                             <i data-lucide="alert-triangle" class="w-3 h-3 text-rose-300"></i>
@@ -7733,6 +7730,7 @@
           layoutOrientation: 'horizontal', // 'horizontal' | 'vertical'
           maximizedPanel: 'none', // 'none' | 'table' | 'inspector'
           inspectorModalOpen: false, // deep inspector shows as a modal on row click
+          inspectorLoading: false, // true while a request's detail is being fetched
           showColFilters: true,
           sortCol: 'id',
           sortDir: 'desc',
@@ -8904,18 +8902,23 @@
 
           async selectLog(logId) {
             this.selectedLogId = logId;
+            this.inspectorLoading = true;
             try {
               const res = await fetch(`/api/logs/${logId}`);
               if (res.ok) {
                 this.selectedLogDetail = await res.json();
               }
             } catch (e) { }
+            finally { this.inspectorLoading = false; }
             this.$nextTick(() => lucide.createIcons());
           },
 
           // Open the deep inspector as a modal for a clicked traffic row.
-          openInspectorModal(logId) {
+          // Defaults to the side-by-side Split View; a caller can force another
+          // mode (e.g. 'triage' from the AI activity link).
+          openInspectorModal(logId, mode) {
             if (!logId) return;
+            this.inspectorViewMode = mode || 'split';
             this.inspectorModalOpen = true;
             this.selectLog(logId);
           },

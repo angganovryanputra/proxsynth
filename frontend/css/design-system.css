@@ -332,6 +332,34 @@
 }
 
 /* ========================================================================= */
+/* INDETERMINATE LOADING BAR — for in-place content swaps (e.g. modal nav)     */
+/* ========================================================================= */
+.ds-loadbar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  overflow: hidden;
+  background: var(--ds-signal-wash);
+  z-index: 20;
+}
+.ds-loadbar::after {
+  content: "";
+  position: absolute;
+  top: 0; left: -40%;
+  height: 100%;
+  width: 40%;
+  background: var(--ds-signal);
+  animation: ds-loadbar-slide 0.9s ease-in-out infinite;
+}
+@keyframes ds-loadbar-slide {
+  0%   { left: -40%; }
+  100% { left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-loadbar::after { animation: none; width: 100%; left: 0; opacity: 0.5; }
+}
+
+/* ========================================================================= */
 /* EMPTY / LOADING / ERROR — consistent states (fixes the inconsistency noted) */
 /* ========================================================================= */
 .ds-state {
