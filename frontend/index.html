@@ -586,11 +586,9 @@
 <div id="proxySplitPane" class="flex-1 min-h-0 overflow-hidden"
       :class="layoutOrientation === 'vertical' ? 'flex flex-col' : 'flex flex-row'">
 
-      <!-- TABLE PANE -->
+      <!-- TABLE PANE (full width — the inspector now opens as a modal on row click) -->
       <section
-        :style="maximizedPanel === 'table' ? (layoutOrientation === 'vertical' ? 'height: 100%' : 'width: 100%') : (maximizedPanel === 'inspector' ? 'display: none' : (layoutOrientation === 'vertical' ? 'height: ' + tableSplitPct + '%; min-height: 140px;' : 'width: ' + tableSplitPct + '%; min-width: 300px;'))"
-        class="relative flex flex-col bg-[#0B0F17] overflow-hidden min-h-0"
-        :class="layoutOrientation === 'vertical' ? 'border-b border-[#1E293B]' : 'border-r border-[#1E293B]'">
+        class="relative flex-1 w-full flex flex-col bg-[#0B0F17] overflow-hidden min-h-0">
 
         <!-- Filter Bar & Table Controls -->
         <div
@@ -940,7 +938,7 @@
             <!-- 3. TRAFFIC ROWS -->
             <div class="divide-y divide-[#1E293B]/60 font-mono text-xs">
               <template x-for="log in paginatedLogs()" :key="log.id">
-                <div @click="selectLog(log.id)"
+                <div @click="openInspectorModal(log.id)"
                   @contextmenu.prevent="openContextMenu($event, log)"
                   :class="[
                     selectedLogId === log.id ? 'bg-[#1E293B]/90 ring-1 ring-sky-500 text-white' : 'hover:bg-[#111827]/80 text-slate-300',
@@ -1148,8 +1146,8 @@
         </div>
       </section>
 
-      <!-- RESIZABLE SPLITTER DIVIDER (Drag to adjust panels) -->
-      <div x-show="maximizedPanel === 'none'" @mousedown="startSplitResize($event)"
+      <!-- RESIZABLE SPLITTER DIVIDER (hidden — inspector is a modal now) -->
+      <div x-show="false" @mousedown="startSplitResize($event)"
         class="bg-[#1E293B] hover:bg-sky-500 transition-colors flex items-center justify-center shrink-0 z-20 group select-none"
         :class="layoutOrientation === 'vertical' ? 'h-1.5 hover:h-2 cursor-row-resize w-full' : 'w-1.5 hover:w-2 cursor-col-resize h-full'"
         :title="layoutOrientation === 'vertical' ? 'Drag up/down to adjust vertical layout' : 'Drag left/right to adjust horizontal layout'">
@@ -1158,10 +1156,18 @@
         </div>
       </div>
 
-      <!-- RIGHT/BOTTOM PANE: DEEP INSPECTOR -->
-      <section
-        :style="maximizedPanel === 'inspector' ? (layoutOrientation === 'vertical' ? 'height: 100%' : 'width: 100%') : (maximizedPanel === 'table' ? 'display: none' : (layoutOrientation === 'vertical' ? 'height: ' + (100 - tableSplitPct) + '%; min-height: 140px;' : 'width: ' + (100 - tableSplitPct) + '%; min-width: 300px;'))"
-        class="flex flex-col bg-[#111827]/90 overflow-hidden min-h-0">
+      <!-- DEEP INSPECTOR — MODAL (opens when a traffic row is clicked) -->
+      <div x-show="inspectorModalOpen" x-cloak
+        x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+        x-transition:leave="transition ease-in duration-100" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+        class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6"
+        @keydown.escape.window="inspectorModalOpen = false"
+        @keydown.arrow-up.window.prevent="inspectorModalOpen && inspectNextLog(-1)"
+        @keydown.arrow-down.window.prevent="inspectorModalOpen && inspectNextLog(1)"
+        role="dialog" aria-modal="true" aria-label="HTTP request and response inspector">
+        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="inspectorModalOpen = false"></div>
+        <section
+          class="relative ds-card w-full max-w-6xl h-[88vh] flex flex-col overflow-hidden shadow-2xl">
         <!-- Inspector Top Header & Control Bar -->
         <div class="h-10 bg-[#0B0F17] border-b border-[#1E293B] px-3 flex items-center justify-between shrink-0 select-none">
           <!-- Left: View Mode Segmented Switcher -->
@@ -1262,12 +1268,24 @@
               <span>Nuclei</span>
             </button>
 
-            <!-- Maximize Inspector Toggle -->
-            <button @click="toggleMaximize('inspector')"
-              class="p-1 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 text-[11px] font-mono flex items-center transition"
-              :title="maximizedPanel === 'inspector' ? 'Restore Split View' : 'Maximize Inspector View'">
-              <i :data-lucide="maximizedPanel === 'inspector' ? 'minimize-2' : 'maximize-2'" class="w-3.5 h-3.5"></i>
-            </button>
+            <!-- Prev / Next row + Close (modal controls) -->
+            <div class="flex items-center gap-1 pl-1 ml-1 border-l border-[#1E293B]">
+              <button @click="inspectNextLog(-1)"
+                class="p-1.5 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 transition"
+                title="Previous request (↑)">
+                <i data-lucide="chevron-up" class="w-3.5 h-3.5"></i>
+              </button>
+              <button @click="inspectNextLog(1)"
+                class="p-1.5 rounded bg-[#1E293B] hover:bg-slate-700 text-slate-300 transition"
+                title="Next request (↓)">
+                <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
+              </button>
+              <button @click="inspectorModalOpen = false"
+                class="p-1.5 rounded bg-[#1E293B] hover:bg-rose-900/70 hover:text-rose-200 text-slate-300 transition"
+                title="Close inspector (Esc)">
+                <i data-lucide="x" class="w-4 h-4"></i>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1888,6 +1906,7 @@
           </template>
         </div>
       </section>
+      </div><!-- /inspector modal -->
     </div>
 </template>
 
@@ -3435,7 +3454,7 @@
             <!-- Linked HTTP Log Notice -->
             <template x-if="cliRepeaterResult && cliRepeaterResult.linked_log_id">
               <div class="flex items-center space-x-1.5 text-[10px] text-cyan-300 bg-cyan-950/60 border border-cyan-800/80 px-2 py-0.5 rounded cursor-pointer hover:bg-cyan-900"
-                @click="currentAppTab = 'proxy'; selectedLogId = cliRepeaterResult.linked_log_id; fetchLogDetail(cliRepeaterResult.linked_log_id)"
+                @click="currentAppTab = 'proxy'; openInspectorModal(cliRepeaterResult.linked_log_id)"
                 title="Click to view full HTTP request/response in Proxy Traffic">
                 <i data-lucide="external-link" class="w-3 h-3"></i>
                 <span x-text="'Generated HTTP Log #' + cliRepeaterResult.linked_log_id"></span>
@@ -4859,7 +4878,7 @@
                           :class="c.method === 'GET' ? 'bg-sky-950 text-sky-400 border border-sky-800' : (c.method === 'POST' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : (c.method === 'DELETE' ? 'bg-rose-950 text-rose-400 border border-rose-800' : 'bg-amber-950 text-amber-400 border border-amber-800'))"
                           x-text="c.method"></span>
                         <span class="font-bold text-slate-100 hover:text-sky-300 cursor-pointer truncate max-w-xs md:max-w-md"
-                          @click="selectedLogId = c.log_id; fetchLogDetail(c.log_id); currentAppTab = 'proxy'"
+                          @click="currentAppTab = 'proxy'; openInspectorModal(c.log_id)"
                           :title="c.url"
                           x-text="c.path"></span>
                         <button @click="runBflaAudit(c.url, c.method, c.log_id)" :disabled="bflaAuditing"
@@ -4895,7 +4914,7 @@
 
                         <!-- Vulnerable (BOLA Confirmed) -->
                         <template x-if="c.access[role] && c.access[role].state === 'VULNERABLE'">
-                          <button @click="selectedLogId = c.log_id; fetchLogDetail(c.log_id); inspectorTab = 'triage'; currentAppTab = 'proxy'"
+                          <button @click="currentAppTab = 'proxy'; inspectorViewMode = 'triage'; openInspectorModal(c.log_id)"
                             class="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-950 text-rose-200 border border-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)] animate-pulse hover:bg-rose-900 transition"
                             :title="c.access[role].summary + ' - Click to inspect vulnerability'">
                             <i data-lucide="alert-triangle" class="w-3 h-3 text-rose-300"></i>
@@ -7719,6 +7738,7 @@
           tableSplitPct: 55,
           layoutOrientation: 'horizontal', // 'horizontal' | 'vertical'
           maximizedPanel: 'none', // 'none' | 'table' | 'inspector'
+          inspectorModalOpen: false, // deep inspector shows as a modal on row click
           showColFilters: true,
           sortCol: 'id',
           sortDir: 'desc',
@@ -8897,6 +8917,28 @@
               }
             } catch (e) { }
             this.$nextTick(() => lucide.createIcons());
+          },
+
+          // Open the deep inspector as a modal for a clicked traffic row.
+          openInspectorModal(logId) {
+            if (!logId) return;
+            this.inspectorModalOpen = true;
+            this.selectLog(logId);
+          },
+
+          // Step to the previous/next row (dir -1 / +1) without leaving the modal,
+          // so rapid request-by-request inspection stays keyboard-driven (↑/↓).
+          inspectNextLog(dir) {
+            const list = this.filteredLogs || [];
+            if (!list.length) return;
+            let idx = list.findIndex(l => l.id === this.selectedLogId);
+            if (idx === -1) idx = (dir > 0 ? -1 : 0);
+            let next = Math.min(list.length - 1, Math.max(0, idx + dir));
+            const target = list[next];
+            if (target && target.id !== this.selectedLogId) {
+              this.inspectorModalOpen = true;
+              this.selectLog(target.id);
+            }
           },
 
           onProjectChange() {
