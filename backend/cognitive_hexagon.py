@@ -751,6 +751,12 @@ async def audit_intent_router(
         query_dict = urllib.parse.parse_qs(parsed_url.query)
         host = parsed_url.netloc or ""
 
+        # A captured flow (log_id) under 'auto' warrants BOTH the access-control and the
+        # business-logic engines, so chain them rather than letting the heuristic below
+        # collapse to a single focus. Runs before heuristic classification by design.
+        if log_id and clean_focus == "auto":
+            clean_focus = "chain"
+
         # Heuristic Vulnerability Classification
         if clean_focus == "auto":
             domain_sessions = db.query(ActiveSession).filter(
@@ -781,6 +787,54 @@ async def audit_intent_router(
                 clean_focus = "fuzz"
 
         # Execution Router
+        if clean_focus in ("chain", "access_logic", "access_and_logic", "bac_logic"):
+            # Captured flow -> chain the BAC family audit (BOLA/IDOR/BFLA) and the
+            # workflow-aware business-logic audit back-to-back, confidence-gated to >=80%.
+            target_log_id = log_id
+            if not target_log_id:
+                log_synth = HttpLog(
+                    project=proj, method=method.upper(), url=target_url,
+                    host=parsed_url.netloc or "default", path=path,
+                    request_headers=json.dumps(headers or {}), request_body=body or "",
+                    status_code=200, flag_status="UNFLAGGED",
+                )
+                db.add(log_synth)
+                db.commit()
+                db.refresh(log_synth)
+                target_log_id = log_synth.id
+            db.close()  # release before network-heavy replays
+            from backend.access_logic_chain import audit_access_and_logic_chain
+            chain = await audit_access_and_logic_chain(log_id=target_log_id, project=proj, ws_broadcast_callback=None)
+            if chain.get("status") == "error":
+                return chain
+            na = chain.get("next_action") or _next_action(
+                "proxsynth_session",
+                "No >=80%-confidence access-control / business-logic finding on this flow. Register a true "
+                "low-privilege identity for this domain, then re-run the chain for deeper BFLA/BOLA coverage.",
+                confidence=0.5, action="set", project=proj,
+            )
+            return {
+                "status": "success",
+                "facet": "audit",
+                "vulnerability_focus": "Access Control + Business Logic Chain (BOLA / IDOR / BFLA / Approval / Mass-Assignment)",
+                "routed_engine": "access_and_logic_chain",
+                "target_url": target_url,
+                "project": proj,
+                "decision": chain.get("decision"),
+                "confidence": chain.get("confidence"),
+                "confidence_gate": chain.get("confidence_gate"),
+                "vectors_tested": chain.get("vectors_tested", []),
+                "engines_run": chain.get("engines_run", []),
+                "sub_decisions": chain.get("sub_decisions", {}),
+                "confirmed_count": chain.get("confirmed_count", 0),
+                "candidate_count": chain.get("candidate_count", 0),
+                "findings": chain.get("findings", []),
+                "review_candidates": chain.get("review_candidates", []),
+                "idor_enumeration": chain.get("idor_enumeration", []),
+                "recommendation": chain.get("recommendation"),
+                "next_action": na,
+            }
+
         if clean_focus in ("access_control", "bola", "bfla", "idor"):
             # Captured flow (log_id) -> run the DIRECT multi-vector BAC audit (BOLA/IDOR/BFLA)
             # which returns a per-vector validity decision + confidence the LLM can act on at
@@ -1377,6 +1431,57 @@ async def autonomous_step_router(
                     "proxsynth_autonomous_step",
                     "Finding verified and stamped; call again to continue auditing the remaining surface.",
                     confidence=0.9, project=proj
+                )
+            }
+
+        # Step B2: A freshly captured flow that neither engine has tested yet ->
+        # chain the access-control + business-logic audits on it (confidence-gated >=80%).
+        # This realizes "capture a flow -> auto-chain BAC + business-logic -> verify-export":
+        # a confirmed finding here is HIGH/CRITICAL, so the NEXT step's Step B auto-verifies it.
+        from backend.bola_matrix import classify_bac_vectors
+        from backend.business_logic_auditor import classify_business_logic_vectors
+
+        candidate_logs = db.query(HttpLog).filter(
+            HttpLog.project == proj,
+            HttpLog.flag_status.in_(["CLEAN", "UNFLAGGED"]),
+            HttpLog.status_code >= 200,
+            HttpLog.status_code < 300,
+        ).order_by(HttpLog.id.desc()).limit(25).all()
+
+        chain_target = None
+        for cand in candidate_logs:
+            c_url = cand.url or ""
+            c_method = (cand.method or "GET").upper()
+            c_path = cand.path or urllib.parse.urlparse(c_url).path
+            c_body = cand.request_body or ""
+            if classify_bac_vectors(c_url, c_method, c_path, c_body) or \
+               classify_business_logic_vectors(c_url, c_method, c_path, c_body):
+                chain_target = cand
+                break
+
+        if chain_target is not None:
+            chain_log_id = chain_target.id
+            chain_url = chain_target.url
+            # Mark before running so the chain's own activity can never re-surface this flow
+            # on the next loop; a recorded finding will later overwrite this to CONFIRMED.
+            chain_target.flag_status = "CHAIN_TESTED"
+            db.commit()
+            db.close()  # release before network-heavy replays
+            from backend.access_logic_chain import audit_access_and_logic_chain
+            chain_res = await audit_access_and_logic_chain(log_id=chain_log_id, project=proj, ws_broadcast_callback=None)
+            return {
+                "status": "success",
+                "facet": "autonomous_step",
+                "phase": "ACCESS_LOGIC_CHAIN_AUDIT",
+                "action_taken": f"Chained the access-control + business-logic engines on captured flow "
+                                f"#{chain_log_id} ({chain_url}) -> decision {chain_res.get('decision')} "
+                                f"@ {chain_res.get('confidence')} confidence.",
+                "chain_result": chain_res,
+                "next_recommended_call": "proxsynth_autonomous_step(project='...') to verify-and-export any >=80% finding and continue.",
+                "next_action": chain_res.get("next_action") or _next_action(
+                    "proxsynth_autonomous_step",
+                    "Flow chain-audited and marked tested; call again to verify any confirmed finding and advance.",
+                    confidence=0.88, project=proj
                 )
             }
 

@@ -250,6 +250,67 @@ async def test_03_audit_auto_routing():
     print("  -> Passed: Audit facet accurately routed multi-role access control, numeric logic, SSRF, and smart fuzzer.")
 
 
+async def test_03b_access_logic_chain():
+    print("[*] [3b] Testing Access-Control + Business-Logic Chain (>=80% confidence gate)...")
+    from backend import access_logic_chain
+
+    # Direct engine test: a >=0.8 access-control finding is CONFIRMED and drives next_action;
+    # a 0.75 numeric finding stays a review candidate and never confirms the flow alone.
+    async def fake_bac(log_id, project="default", enumerate_idor=True, ws_broadcast_callback=None):
+        return {"status": "success", "decision": "VULNERABLE", "confidence": 0.9,
+                "vectors_tested": ["BFLA"], "idor_enumeration": [],
+                "findings": [{"vector": "BFLA", "role": "user", "confidence": 0.9, "finding": {"id": 777}}]}
+
+    async def fake_logic(log_id, project="default", ws_broadcast_callback=None):
+        return {"status": "success", "decision": "VULNERABLE", "confidence": 0.75,
+                "vectors_tested": ["NUMERIC"], "engines_run": ["numeric_logic"],
+                "findings": [{"vector": "NUMERIC", "confidence": 0.75, "finding": {"id": 778}}]}
+
+    with patch("backend.bola_matrix.audit_bac_flow", fake_bac), \
+         patch("backend.business_logic_auditor.audit_business_logic_flow", fake_logic):
+        res = await access_logic_chain.audit_access_and_logic_chain(log_id=1, project=TEST_PROJECT)
+    assert res["decision"] == "VULNERABLE", res["decision"]
+    assert res["confirmed_count"] == 1 and res["candidate_count"] == 1, res
+    assert res["confidence"] == 0.9
+    assert res["findings"][0]["vector"] == "BFLA"
+    assert res["review_candidates"][0]["vector"] == "NUMERIC"
+    assert res["next_action"]["tool"] == "proxsynth_verify_and_export"
+    assert res["next_action"]["arguments"]["finding_id"] == 777
+    assert res["next_action"]["auto_executable"] is True
+
+    # Only sub-gate findings -> NEEDS_REVIEW, no auto-executable next_action.
+    async def fake_bac_weak(log_id, project="default", enumerate_idor=True, ws_broadcast_callback=None):
+        return {"status": "success", "decision": "LIKELY_SECURE", "confidence": 0.0,
+                "vectors_tested": ["BOLA"], "idor_enumeration": [], "findings": []}
+
+    with patch("backend.bola_matrix.audit_bac_flow", fake_bac_weak), \
+         patch("backend.business_logic_auditor.audit_business_logic_flow", fake_logic):
+        res2 = await access_logic_chain.audit_access_and_logic_chain(log_id=2, project=TEST_PROJECT)
+    assert res2["decision"] == "NEEDS_REVIEW", res2["decision"]
+    assert "next_action" not in res2 or res2.get("next_action", {}).get("auto_executable") is not True
+
+    # Router wiring: a captured flow (log_id) under 'auto' chains both engines.
+    db = SessionLocal()
+    try:
+        flow = HttpLog(project=TEST_PROJECT, method="POST", url="http://api.corp.local/api/orders/88/approve",
+                       host="api.corp.local", path="/api/orders/88/approve",
+                       request_headers="{}", request_body='{"status":"approved"}',
+                       status_code=200, flag_status="CLEAN")
+        db.add(flow); db.commit(); db.refresh(flow)
+        flow_id = flow.id
+    finally:
+        db.close()
+
+    with patch("backend.bola_matrix.audit_bac_flow", fake_bac), \
+         patch("backend.business_logic_auditor.audit_business_logic_flow", fake_logic):
+        res3 = await audit_intent_router(vuln_focus="auto", log_id=flow_id, project=TEST_PROJECT)
+    assert res3["status"] == "success"
+    assert res3["routed_engine"] == "access_and_logic_chain", res3.get("routed_engine")
+    assert res3["decision"] == "VULNERABLE"
+    assert res3["confidence_gate"] == 0.8
+    print("  -> Passed: chain confirms >=80% findings, holds weaker leads as candidates, and auto-routes a captured flow.")
+
+
 async def test_04_session_auto_routing():
     print("[*] [4/7] Testing Session Intent Router (Multi-Role Vault & Anti-CSRF)...")
 
@@ -487,6 +548,7 @@ async def main():
         await test_01_recon_auto_routing()
         await test_02_traffic_auto_routing()
         await test_03_audit_auto_routing()
+        await test_03b_access_logic_chain()
         await test_04_session_auto_routing()
         await test_05_verify_export_auto_routing()
         await test_06_autonomous_step_execution()
