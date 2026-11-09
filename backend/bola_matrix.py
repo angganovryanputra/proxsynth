@@ -7,6 +7,7 @@ Automatically tests observed object/resource requests against secondary identiti
 import re
 import json
 import asyncio
+import difflib
 import urllib.parse
 from typing import Dict, Any, List, Optional
 from datetime import datetime
@@ -15,6 +16,7 @@ import httpx
 from backend.database import SessionLocal, ActiveSession, HttpLog, Finding, Project
 from backend.security_utils import encrypt_secret, decrypt_secret
 from backend.user_agents import apply_rotating_user_agent
+from backend.diff_engine import detect_soft_errors, clean_dynamic_tokens
 
 # Patterns indicating an object/resource identifier in the path or query
 _RESOURCE_ID_PATH_REGEX = re.compile(r'/([a-zA-Z0-9_-]+)/([0-9]+|[a-f0-9-]{8,36})(?:/|$|\?)', re.IGNORECASE)
@@ -130,6 +132,57 @@ def get_identities_for_project(project: str = "default", domain: Optional[str] =
         db.close()
 
 
+def _bola_access_verdict(orig_body: str, shadow_body: str, res_id: str, res_status: int) -> Dict[str, Any]:
+    """
+    Decides whether a shadow-identity 2xx response is a *real* BOLA hit rather than a
+    public endpoint or the shadow identity's own data. The old heuristic flagged any 200
+    without a denial keyword, producing false positives on public resources. This oracle:
+      1. rejects soft-denials (200 bodies that actually say unauthorized / not found),
+      2. measures how similar the shadow body is to the legitimate owner's body
+         (normalized to ignore dynamic tokens like CSRF/UUIDs/timestamps),
+      3. checks whether the requested object id is echoed back in the shadow body.
+    A hit requires the shadow identity to have received substantially the OWNER'S object
+    data — the defining property of BOLA/IDOR.
+    """
+    shadow_body = shadow_body or ""
+    orig_body = orig_body or ""
+    body_lower = shadow_body.lower()
+
+    soft = detect_soft_errors(res_status, shadow_body)
+    if soft.get("is_soft_403") or soft.get("is_soft_404"):
+        return {"is_bola": False, "confidence": 0.0, "similarity": 0.0, "echo": False,
+                "reason": "Shadow response is a soft-denial (2xx body signals unauthorized/not-found)."}
+
+    if any(k in body_lower for k in _ERROR_DENIAL_KEYWORDS):
+        return {"is_bola": False, "confidence": 0.0, "similarity": 0.0, "echo": False,
+                "reason": "Shadow response contains an explicit access-denial phrase."}
+
+    if len(shadow_body.strip()) < 30:
+        return {"is_bola": False, "confidence": 0.0, "similarity": 0.0, "echo": False,
+                "reason": "Shadow response is too small to contain the owner's object data."}
+
+    na = clean_dynamic_tokens(orig_body[:150000])
+    nb = clean_dynamic_tokens(shadow_body[:150000])
+    similarity = round(difflib.SequenceMatcher(None, na, nb).ratio(), 3) if (na and nb) else 0.0
+    echo = bool(res_id) and (res_id.lower() in body_lower)
+
+    # Same-schema JSON for two different users already scores ~0.7, so a pure-similarity
+    # hit needs to be near-identical (>=0.85). The object-id echo is the stronger signal:
+    # the owner's id reflected in the shadow body means the owner's record itself leaked.
+    if similarity >= 0.85 or (echo and similarity >= 0.3):
+        conf = min(0.95, 0.6 + similarity * 0.3 + (0.1 if echo else 0.0))
+        reason = (
+            f"Shadow identity received data {int(similarity * 100)}% similar to the owner's response"
+            + (" and the requested object id is echoed back" if echo else "")
+            + " — the owner's object leaked across identities."
+        )
+        return {"is_bola": True, "confidence": round(conf, 2), "similarity": similarity, "echo": echo, "reason": reason}
+
+    return {"is_bola": False, "confidence": round(0.3 + similarity * 0.3, 2), "similarity": similarity, "echo": echo,
+            "reason": (f"Shadow identity got HTTP {res_status} but the body is only {int(similarity * 100)}% "
+                       "similar to the owner's — likely its own or empty data, not the owner's object.")}
+
+
 async def execute_bola_shadow_replay(
     log_id: int,
     project: str,
@@ -153,6 +206,13 @@ async def execute_bola_shadow_replay(
     domain = (parsed.hostname or "").lower()
     if not domain:
         return None
+
+    # Resource id under test (for the echo check in the similarity oracle)
+    _rid_match = _RESOURCE_ID_PATH_REGEX.search(parsed.path)
+    res_id = _rid_match.group(2) if _rid_match else ""
+    if not res_id and parsed.query:
+        _rid_q = _RESOURCE_ID_PARAM_REGEX.search(parsed.query)
+        res_id = _rid_q.group(2) if _rid_q else ""
 
     db = SessionLocal()
     try:
@@ -234,23 +294,24 @@ async def execute_bola_shadow_replay(
                 # 2. Body does NOT contain typical denial phrases
                 # 3. Body length is substantial (>50 bytes) and within 30% of original body, or returns JSON
                 if res_status in [200, 201]:
-                    body_lower = res_body.lower()
-                    has_denial = any(k in body_lower for k in _ERROR_DENIAL_KEYWORDS)
-
-                    if not has_denial and len(res_body) > 30:
-                        # High confidence BOLA
+                    verdict = _bola_access_verdict(orig_body, res_body, res_id, res_status)
+                    if verdict["is_bola"]:
+                        # Confirmed via the response-similarity oracle (not merely a 200 status)
                         evidence_str = (
-                            f"Original Identity: 200 OK (Len: {len(orig_body)})\n"
-                            f"Shadow Identity [{role_name.upper()}]: {res_status} OK (Len: {len(res_body)})\n"
-                            f"Response Snippet:\n{res_body[:300]}"
+                            f"Owner (primary): HTTP {orig_status}, {len(orig_body)} bytes\n"
+                            f"Shadow [{role_name.upper()}]: HTTP {res_status}, {len(res_body)} bytes\n"
+                            f"Body similarity to owner: {int(verdict['similarity'] * 100)}% | object id echoed: {verdict['echo']} | confidence: {verdict['confidence']}\n"
+                            f"Verdict: {verdict['reason']}\n"
+                            f"Response snippet:\n{res_body[:300]}"
                         )
 
                         severity = "CRITICAL" if role_name == "unauthenticated" else "HIGH"
                         title = f"Broken Object Level Authorization (BOLA/IDOR) on {parsed.path} via [{role_name}]"
                         description = (
-                            f"Endpoint '{url}' allowed unauthorized access to object/resource data when tested "
-                            f"using identity role '{role_name}'. The server returned HTTP {res_status} with full data "
-                            f"instead of rejecting unauthorized access (HTTP 401/403)."
+                            f"Endpoint '{url}' returned the owner's object data (HTTP {res_status}, "
+                            f"{int(verdict['similarity'] * 100)}% similar to the legitimate owner response) when "
+                            f"replayed with identity role '{role_name}', instead of rejecting with HTTP 401/403. "
+                            f"This confirms broken object-level authorization."
                         )
                         remediation = (
                             "Enforce strict object-level authorization checks on the server side. Validate that "
@@ -286,6 +347,8 @@ async def execute_bola_shadow_replay(
                                 db_write.commit()
                                 db_write.refresh(finding)
                                 finding_dict = finding.to_dict()
+                                finding_dict["confidence"] = verdict["confidence"]
+                                finding_dict["similarity"] = verdict["similarity"]
 
                                 if ws_broadcast_callback:
                                     try:
