@@ -3090,6 +3090,11 @@
                       x-text="cmd.tool_name || 'terminal'"></span>
                   </div>
                   <div class="text-[10px] text-slate-500 flex items-center space-x-1.5">
+                    <button @click.stop="reRunCommand(cmd.id)" :disabled="cliRepeaterRunning"
+                      class="flex items-center space-x-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-teal-950 border border-teal-700/60 text-teal-300 hover:bg-teal-900 disabled:opacity-40 transition"
+                      title="Re-run this command/script and show its response">
+                      <i data-lucide="repeat-2" class="w-2.5 h-2.5"></i><span>Re-run</span>
+                    </button>
                     <span x-text="cmd.duration_ms + 'ms'"></span>
                     <span>•</span>
                     <span x-text="formatTime(cmd.timestamp)"></span>
@@ -10549,6 +10554,42 @@
               this.cliRepeaterCommand = 'ffuf -u "http://127.0.0.1:8000/FUZZ" -w wordlist.txt -x http://127.0.0.1:8088 -mc 200,301,302';
             } else if (key === 'ping_test') {
               this.cliRepeaterCommand = 'curl -s "http://127.0.0.1:8000/api/system/version"';
+            }
+          },
+
+          async reRunCommand(id) {
+            // Re-run a logged AI Activity entry through the proxied CLI Repeater and show
+            // its fresh response in the result panel.
+            if (this.cliRepeaterRunning) return;
+            this.cliRepeaterRunning = true;
+            this.cliRepeaterResult = null;
+            this.selectCommand(id);
+            try {
+              const res = await fetch(`/api/commands/${id}/rerun`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+              });
+              const data = await res.json();
+              if (res.ok) {
+                this.cliRepeaterResult = data;
+                this.cliRepeaterOutputTab = data.stderr && !data.stdout ? 'stderr' : 'stdout';
+                this.showToast({
+                  title: data.status === 'SUCCESS' ? 'Re-run Complete' : 'Re-run Notice',
+                  message: `#${id} finished with exit code ${data.exit_code} in ${data.duration_ms}ms`,
+                  type: data.status === 'SUCCESS' ? 'success' : 'warning'
+                });
+                this.fetchCommands();
+                this.fetchStats();
+                if (data.linked_log_id) this.fetchLogs();
+              } else {
+                this.cliRepeaterResult = { status: 'FAILED', exit_code: -1, stdout: '', stderr: data.detail || 'Re-run failed' };
+                this.showToast({ title: 'Re-run Error', message: data.detail || 'Re-run request failed', type: 'error' });
+              }
+            } catch (err) {
+              this.cliRepeaterResult = { status: 'FAILED', exit_code: -1, stdout: '', stderr: String(err) };
+              this.showToast({ title: 'Re-run Error', message: String(err), type: 'error' });
+            } finally {
+              this.cliRepeaterRunning = false;
             }
           },
 
