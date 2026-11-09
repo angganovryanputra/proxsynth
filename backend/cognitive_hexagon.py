@@ -894,7 +894,6 @@ async def audit_intent_router(
             }
 
         elif clean_focus in ("logic", "numeric", "pricing"):
-            from backend.logic_fuzzer import audit_numeric_business_logic
             target_log_id = log_id
             if not target_log_id:
                 log_synth = HttpLog(
@@ -913,31 +912,28 @@ async def audit_intent_router(
                 db.refresh(log_synth)
                 target_log_id = log_synth.id
 
-            target_param = None
-            for k in query_dict.keys():
-                if _NUMERIC_PARAM_PATTERN.match(k):
-                    target_param = k
-                    break
-
-            res = await audit_numeric_business_logic(
-                log_id=target_log_id,
-                target_param=target_param,
-                project=proj
-            )
+            db.close()  # release before the network-heavy business-logic probes
+            from backend.business_logic_auditor import audit_business_logic_flow
+            res = await audit_business_logic_flow(log_id=target_log_id, project=proj)
             cvss_info = get_cvss_v4_rating("NUMERIC_LOGIC")
             return {
                 "status": "success",
                 "facet": "audit",
-                "vulnerability_focus": "Business Logic & Numeric Boundary Flaws",
-                "routed_engine": "numeric_logic_fuzzer",
+                "vulnerability_focus": "Business Logic, Workflow & Approval Bypass",
+                "routed_engine": "business_logic_flow_auditor",
                 "target_url": target_url,
                 "project": proj,
                 "cvss_v4_baseline": cvss_info,
-                "results": res,
-                "remediation": "Validate numeric lower bounds strictly (qty > 0, price >= baseline); use signed decimal types.",
-                "next_action": _next_action(
+                "decision": res.get("decision"),
+                "confidence": res.get("confidence"),
+                "vectors_tested": res.get("vectors_tested", []),
+                "engines_run": res.get("engines_run", []),
+                "findings": res.get("findings", []),
+                "recommendation": res.get("recommendation"),
+                "remediation": "Enforce workflow-state transitions and privilege fields server-side; never trust client-supplied status/approved/role, and validate numeric lower bounds.",
+                "next_action": res.get("next_action") or _next_action(
                     "proxsynth_autonomous_step",
-                    "Numeric logic probed; advance the autonomous loop to the next prioritized endpoint.",
+                    "Business logic probed; advance the autonomous loop to the next prioritized endpoint.",
                     confidence=0.7, project=proj
                 )
             }

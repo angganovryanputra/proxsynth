@@ -208,16 +208,17 @@ async def test_03_audit_auto_routing():
         assert res_authz["routed_engine"] == "two_tier_access_control_orchestrator"
         assert res_authz["cvss_v4_baseline"]["cwe"] == "CWE-639"
 
-    # Numeric / pricing parameters -> auto-routes to Numeric Business Logic Fuzzer
-    with patch("backend.logic_fuzzer.audit_numeric_business_logic") as mock_logic:
-        mock_logic.return_value = {"tests_passed": 6, "vulnerabilities_found": 1}
+    # Numeric / pricing parameters -> auto-routes to the workflow-aware Business Logic auditor
+    with patch("backend.business_logic_auditor.audit_numeric_business_logic") as mock_logic:
+        mock_logic.return_value = {"status": "completed", "findings": []}
         res_logic = await audit_intent_router(
             target_url="http://store.local/api/checkout?item_id=5&price=100&qty=2",
             vuln_focus="auto",
             project=TEST_PROJECT
         )
         assert res_logic["status"] == "success"
-        assert res_logic["routed_engine"] == "numeric_logic_fuzzer"
+        assert res_logic["routed_engine"] == "business_logic_flow_auditor"
+        assert "NUMERIC" in res_logic["vectors_tested"]
         assert res_logic["cvss_v4_baseline"]["cwe"] == "CWE-840"
 
     # SSRF / redirect parameters -> auto-routes to OAST Canary Sprayer
