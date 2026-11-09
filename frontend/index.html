@@ -3061,10 +3061,25 @@
         </div>
       </div>
 
+      <!-- Two-lane legend: where scripts run vs where HTTP lives -->
+      <div x-show="aiSubTab !== 'payloads'"
+        class="px-4 py-2 bg-[#0B0F17] border-b border-[#1E293B] flex flex-wrap items-center gap-2 text-[11px] text-slate-400 shrink-0">
+        <span class="inline-flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-sm bg-teal-400 shrink-0"></span>
+          Scripts and CLI tools run here — every run is logged, and you can re-run it.
+        </span>
+        <button @click="currentAppTab = 'proxy'"
+          class="inline-flex items-center gap-1.5 ml-auto px-2 py-0.5 rounded border border-sky-800/60 bg-sky-950/40 text-sky-300 hover:bg-sky-900/50 transition"
+          title="A single HTTP request is recorded in Proxy Traffic, not here">
+          <span class="w-2 h-2 rounded-sm bg-sky-400 shrink-0"></span>
+          Testing a single HTTP request? Open Proxy Traffic
+        </button>
+      </div>
+
       <!-- SUB-VIEW 1: COMMAND AUDIT TRAIL (Split Pane: Command List + Detailed Terminal Output Inspector) -->
-      <div x-show="aiSubTab === 'commands'" class="flex-1 min-h-0 overflow-hidden flex flex-row">
+      <div x-show="aiSubTab === 'commands'" class="flex-1 min-h-0 overflow-hidden flex flex-col md:flex-row">
         <!-- Left: List of Commands -->
-        <div class="w-[45%] border-r border-[#1E293B] flex flex-col bg-[#0B0F17] overflow-hidden min-h-0">
+        <div class="w-full md:w-[45%] flex-1 md:flex-none border-b md:border-b-0 md:border-r border-[#1E293B] flex flex-col bg-[#0B0F17] overflow-hidden min-h-0">
           <div
             class="p-2 bg-[#111827]/70 border-b border-[#1E293B] text-[11px] font-mono text-slate-400 flex items-center justify-between shrink-0">
             <span>Captured Commands (<span class="text-teal-400 font-bold"
@@ -3118,7 +3133,7 @@
             <div x-show="filteredCommandsList.length === 0" class="ds-state">
               <i data-lucide="terminal" class="ds-state__icon"></i>
               <p class="ds-state__title">No commands yet</p>
-              <p class="ds-state__hint">Commands the agent runs via the <code>run_pentest_command</code> MCP tool stream here live.</p>
+              <p class="ds-state__hint">Runs from the agent's <code>proxsynth_execute</code> (or <code>run_pentest_command</code>) tool, and anything you launch in the CLI Repeater, stream here live.</p>
             </div>
           </div>
 
@@ -3194,12 +3209,12 @@
         </div>
 
         <!-- Right: Detailed Terminal Output Inspector -->
-        <div class="w-[55%] flex flex-col bg-[#111827]/40 overflow-hidden min-h-0">
+        <div class="w-full md:w-[55%] flex-1 md:flex-none flex flex-col bg-[#111827]/40 overflow-hidden min-h-0">
           <template x-if="selectedCommand">
             <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
               <!-- Header bar of selected command -->
               <div
-                class="p-3 bg-[#111827] border-b border-[#1E293B] flex items-center justify-between shrink-0 font-mono text-xs">
+                class="p-3 bg-[#111827] border-b border-[#1E293B] flex flex-wrap items-center justify-between gap-y-2 shrink-0 font-mono text-xs">
                 <div class="flex items-center space-x-2">
                   <span class="text-teal-400 font-bold" x-text="'Command #' + selectedCommand.id"></span>
                   <span class="px-2 py-0.5 rounded text-[10px] bg-[#0B0F17] border border-[#1E293B] text-slate-300"
@@ -3209,7 +3224,19 @@
                     x-text="'Exit Code: ' + (selectedCommand.exit_code !== null ? selectedCommand.exit_code : 'N/A')"></span>
                 </div>
 
-                <div class="flex items-center space-x-1.5">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <button x-show="selectedCommand.linked_log_id"
+                    @click="currentAppTab = 'proxy'; openInspectorModal(selectedCommand.linked_log_id)"
+                    class="px-2.5 py-1 rounded bg-sky-950/60 hover:bg-sky-900 text-sky-300 border border-sky-800/70 text-[11px] font-semibold flex items-center space-x-1 transition"
+                    title="This run generated HTTP traffic — open it in Proxy Traffic">
+                    <i data-lucide="external-link" class="w-3 h-3"></i>
+                    <span x-text="'HTTP #' + selectedCommand.linked_log_id + ' in Proxy'"></span>
+                  </button>
+                  <button @click="reRunCommand(selectedCommand.id)" :disabled="cliRepeaterRunning"
+                    class="px-2.5 py-1 rounded bg-teal-950/80 hover:bg-teal-900 text-teal-300 border border-teal-700/70 text-[11px] font-bold flex items-center space-x-1 transition disabled:opacity-40">
+                    <i data-lucide="repeat-2" class="w-3 h-3"></i>
+                    <span x-text="cliRepeaterRunning ? 'Running…' : 'Re-run'"></span>
+                  </button>
                   <button @click="openInCliRepeater(selectedCommand)"
                     class="px-2.5 py-1 rounded bg-sky-950/80 hover:bg-sky-900 text-sky-300 border border-sky-700/80 text-[11px] font-bold flex items-center space-x-1 transition shadow">
                     <i data-lucide="repeat" class="w-3 h-3 text-sky-400"></i>
@@ -10578,8 +10605,10 @@
                   message: `#${id} finished with exit code ${data.exit_code} in ${data.duration_ms}ms`,
                   type: data.status === 'SUCCESS' ? 'success' : 'warning'
                 });
-                this.fetchCommands();
+                await this.fetchCommands();
                 this.fetchStats();
+                // Select the fresh run so the detail pane shows its response in place.
+                if (data.id) { try { await this.selectCommand(data.id); } catch (e) {} }
                 if (data.linked_log_id) this.fetchLogs();
               } else {
                 this.cliRepeaterResult = { status: 'FAILED', exit_code: -1, stdout: '', stderr: data.detail || 'Re-run failed' };
