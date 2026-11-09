@@ -1672,11 +1672,21 @@ async def execute_command_api(data: ExecuteCommandRequest, db: Session = Depends
     captures full stdout/stderr, execution duration, and correlates generated HTTP traffic.
     """
     import re
-    cmd_clean = data.command.strip()
-    if not cmd_clean:
-        raise HTTPException(status_code=400, detail="Command cannot be empty")
+    from backend.script_runner import resolve_execution_command, cleanup_temp
 
     proj = (data.project or "default").strip().lower()
+
+    current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    work_dir = current_dir
+    if data.cwd and os.path.isdir(data.cwd):
+        work_dir = os.path.abspath(data.cwd)
+
+    # Re-run support: when a script body is supplied and `command` is empty or just a
+    # marker (e.g. a snooped "# SNOOPED: x.py"), materialize the script to a temp file
+    # and execute that instead of the placeholder string.
+    cmd_clean, _rerun_tmp = resolve_execution_command(data.command, data.script_content, work_dir)
+    if not cmd_clean.strip():
+        raise HTTPException(status_code=400, detail="Command and script are both empty")
 
     # Safety Guardrail Check
     DANGEROUS_PATTERNS = [
@@ -1694,11 +1704,6 @@ async def execute_command_api(data: ExecuteCommandRequest, db: Session = Depends
     for pat in DANGEROUS_PATTERNS:
         if re.search(pat, cmd_clean, re.IGNORECASE):
             raise HTTPException(status_code=403, detail=f"Command blocked by Proxsynth Safe-Mode guardrail: matches dangerous pattern '{pat}'")
-
-    current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    work_dir = current_dir
-    if data.cwd and os.path.isdir(data.cwd):
-        work_dir = os.path.abspath(data.cwd)
 
     proxy_port = int(os.getenv("PROXSYNTH_PROXY_PORT", "8088"))
     try:
@@ -1750,6 +1755,7 @@ async def execute_command_api(data: ExecuteCommandRequest, db: Session = Depends
         exit_code = -1
 
     duration_ms = int((time.time() - t_start) * 1000)
+    cleanup_temp(_rerun_tmp)
 
     linked_log_id = None
     latest_log_after = db.query(func.max(HttpLog.id)).filter(HttpLog.project == proj).scalar() or 0
@@ -1813,6 +1819,27 @@ async def execute_command_api(data: ExecuteCommandRequest, db: Session = Depends
         "linked_log_id": linked_log_id,
         "timestamp": entry.timestamp.isoformat() if entry.timestamp else ""
     }
+
+
+@app.post("/api/commands/{cmd_id}/rerun")
+async def rerun_command_api(cmd_id: int, db: Session = Depends(get_db)):
+    """Re-run a previously logged AI Activity entry from the web UI. Replays the stored
+    script body (preferred — robust even if the original file is gone) or the command
+    through the same proxied CLI Repeater path, returning fresh stdout/stderr + linked log."""
+    src = db.query(AgentCommandLog).filter(AgentCommandLog.id == cmd_id).first()
+    if not src:
+        raise HTTPException(status_code=404, detail=f"Command #{cmd_id} not found")
+
+    has_script = bool((src.script_content or "").strip())
+    replay = ExecuteCommandRequest(
+        command="" if has_script else (src.command or ""),
+        project=src.project or "default",
+        agent_id=src.agent_id or "operator",
+        reasoning=f"Re-run of AI Activity command #{cmd_id}",
+        script_content=src.script_content or None,
+        timeout=60,
+    )
+    return await execute_command_api(replay, db)
 
 
 @app.post("/api/commands/clear")

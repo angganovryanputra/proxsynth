@@ -29,7 +29,8 @@ from backend.cognitive_hexagon import (
     audit_intent_router,
     session_intent_router,
     verify_export_intent_router,
-    autonomous_step_router
+    autonomous_step_router,
+    _next_action,
 )
 
 
@@ -219,6 +220,72 @@ async def proxsynth_verify_and_export(
         return _emit({
             "status": "error",
             "facet": "verify_and_export",
+            "message": str(ex)
+        })
+
+
+@proxsynth_tool(name="proxsynth_execute")
+async def proxsynth_execute(
+    command: str = "",
+    script_content: Optional[str] = None,
+    reasoning: str = "",
+    tool_name: str = "terminal",
+    project: Optional[str] = None,
+    timeout: int = 60,
+    cwd: str = ""
+) -> str:
+    """
+    [HEXAGON SUPER-TOOL: SCRIPT & CLI EXECUTION -> AI ACTIVITY]
+    Runs an external security tool or a custom script LOCALLY, proxied through the MITM
+    engine so any HTTP it emits is still captured in Proxy Traffic (auto-linked), and
+    records the run in the AI Activity module with full stdout/stderr — re-runnable from
+    the Proxsynth web UI.
+
+    DECISION RULE (so you pick the right tool):
+    - Use proxsynth_execute when invoking an external tool (nmap, sqlmap, ffuf, nuclei,
+      gobuster) OR executing multi-step / custom script logic. Pass the script body as
+      `script_content` (it is run as a file) or a shell line as `command`.
+    - Use proxsynth_traffic instead for a SINGLE HTTP request/replay/diff (that path
+      records into Proxy Traffic, not AI Activity).
+    Safe-Mode guardrails + SSRF checks apply; execution is localhost-bound and proxied.
+    """
+    try:
+        from mcp_core.tools.report import run_pentest_command
+        raw = await run_pentest_command(
+            command=command,
+            reasoning=reasoning,
+            tool_name=tool_name,
+            project=project,
+            timeout=timeout,
+            cwd=cwd,
+            script_content=script_content,
+            output_format="json"
+        )
+        data = json.loads(raw) if isinstance(raw, str) and raw.strip().startswith("{") else {"raw_output": raw}
+
+        # Chain: if the run surfaced structured intel, point at the audit engine; otherwise
+        # suggest inspecting the traffic the process generated.
+        mined = data.get("mined_summary") or data.get("mined")
+        if mined:
+            na = _next_action(
+                "proxsynth_audit",
+                "Script output was mined into the knowledge graph; audit the newly surfaced endpoints.",
+                confidence=0.65, project=project
+            )
+        else:
+            na = _next_action(
+                "proxsynth_traffic",
+                "Inspect the HTTP traffic this script generated (search recent captured logs).",
+                confidence=0.55, action="search", query_search=(command or "")[:80], project=project
+            )
+        if isinstance(data, dict):
+            data["facet"] = "execute"
+            data["next_action"] = na
+        return _emit(data)
+    except Exception as ex:
+        return _emit({
+            "status": "error",
+            "facet": "execute",
             "message": str(ex)
         })
 

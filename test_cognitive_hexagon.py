@@ -426,20 +426,21 @@ def test_07_fastmcp_mode_registration():
     # Full Mode: >= 100 tools
     assert len(tm.TOOL_PERMS) >= 100
 
-    # Power Mode: 18 tools
-    assert len(tm.POWER_MODE_TOOLS) == 18
+    # Power Mode: 19 tools
+    assert len(tm.POWER_MODE_TOOLS) == 19
 
-    # Hexagon Mode: Exactly 9 tools (6 super-tools + 3 context tools)
-    assert len(tm.HEXAGON_MODE_TOOLS) == 9
+    # Hexagon Mode: Exactly 10 tools (7 super-tools + 3 context tools)
+    assert len(tm.HEXAGON_MODE_TOOLS) == 10
 
-    # Ensure all 6 Hexagon super-tools are in HEXAGON_MODE_TOOLS
+    # Ensure all 7 Hexagon super-tools are in HEXAGON_MODE_TOOLS
     expected_super_tools = {
         "proxsynth_recon",
         "proxsynth_traffic",
         "proxsynth_audit",
         "proxsynth_session",
         "proxsynth_verify_and_export",
-        "proxsynth_autonomous_step"
+        "proxsynth_autonomous_step",
+        "proxsynth_execute"
     }
     assert expected_super_tools.issubset(tm.HEXAGON_MODE_TOOLS)
 
