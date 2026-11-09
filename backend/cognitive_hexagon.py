@@ -782,6 +782,39 @@ async def audit_intent_router(
 
         # Execution Router
         if clean_focus in ("access_control", "bola", "bfla", "idor"):
+            # Captured flow (log_id) -> run the DIRECT multi-vector BAC audit (BOLA/IDOR/BFLA)
+            # which returns a per-vector validity decision + confidence the LLM can act on at
+            # once, replaying the flow under every registered identity. The heavier two-tier
+            # orchestrator below is the fallback for a bare target_url with two explicit sessions.
+            if log_id:
+                db.close()  # release before network-heavy replays
+                from backend.bola_matrix import audit_bac_flow
+                bac = await audit_bac_flow(log_id=log_id, project=proj, ws_broadcast_callback=None)
+                cvss_info = get_cvss_v4_rating("BOLA_IDOR")
+                na = bac.get("next_action") or _next_action(
+                    "proxsynth_session",
+                    "Register a second, low-privilege identity for this domain, then re-run the access-control "
+                    "audit so vertical (BFLA) and cross-user (BOLA) coverage is complete.",
+                    confidence=0.5, action="set", project=proj
+                )
+                return {
+                    "status": "success",
+                    "facet": "audit",
+                    "vulnerability_focus": "Broken Access Control (BOLA / IDOR / BFLA)",
+                    "routed_engine": "direct_bac_flow_audit",
+                    "target_url": target_url,
+                    "project": proj,
+                    "cvss_v4_baseline": cvss_info,
+                    "decision": bac.get("decision"),
+                    "confidence": bac.get("confidence"),
+                    "vectors_tested": bac.get("vectors_tested", []),
+                    "identities_tested": bac.get("identities_tested", []),
+                    "findings": bac.get("findings", []),
+                    "idor_enumeration": bac.get("idor_enumeration", []),
+                    "recommendation": bac.get("recommendation"),
+                    "next_action": na,
+                }
+
             from backend.access_control_orchestrator import AccessControlOrchestrator
             orch = AccessControlOrchestrator(project=proj)
             sess_a = {"token": "", "auth_headers": {}}
