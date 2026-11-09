@@ -153,6 +153,43 @@ def _next_action(
     }
 
 
+# Verbose advisor focus label -> the proxsynth_audit `vuln_focus` enum the LLM must
+# pass next. Ordered: more specific facets win over the generic injection/fuzz bucket.
+_AUDIT_FOCUS_KEYWORDS = [
+    ("graphql", ("GRAPHQL",)),
+    ("xss", ("XSS",)),
+    ("oast", ("SSRF", "OAST", "CALLBACK", "OUT-OF-BAND", "REDIRECT")),
+    ("access_control", ("BOLA", "IDOR", "OBJECT LEVEL", "FUNCTION LEVEL", "BFLA",
+                        "JWT", "CORS", "ACCESS", "PRIVILEGE")),
+    ("logic", ("NUMERIC", "LOGIC", "CURRENCY", "PRICE", "MASS ASSIGNMENT", "RACE")),
+    ("fuzz", ("INJECTION", "SQLI", "SSTI", "UPLOAD", "FUZZ", "STACK", "FILE")),
+]
+
+
+def _audit_focus_from_suggestion(sugg: Dict[str, Any]) -> str:
+    """Translate an advisor suggestion's verbose focus into a valid audit enum.
+
+    Without this, the auto-chained next_action would hand proxsynth_audit a human
+    string like 'Broken Object Level Authorization (BOLA / IDOR)' instead of
+    'access_control', mis-routing the self-driving loop.
+    """
+    raw = str(sugg.get("focus") or sugg.get("vulnerability_focus") or "").upper()
+    for enum_val, kws in _AUDIT_FOCUS_KEYWORDS:
+        if any(k in raw for k in kws):
+            return enum_val
+    return "auto"
+
+
+def _conf_label_to_num(label: Any) -> float:
+    """Map an advisor confidence (HIGH/MEDIUM/LOW or a raw float) to a 0-1 score so
+    `auto_executable` reflects real evidence strength: only HIGH-confidence follow-ups
+    (>=0.7) auto-run; MEDIUM/LOW are surfaced but gated for a decision."""
+    if isinstance(label, (int, float)):
+        return max(0.0, min(1.0, float(label)))
+    mapping = {"HIGH": 0.8, "MEDIUM": 0.6, "LOW": 0.45, "INFO": 0.4}
+    return mapping.get(str(label or "").strip().upper(), 0.55)
+
+
 def get_cvss_v4_rating(category: str) -> Dict[str, Any]:
     cat = (category or "").upper()
     if "SQL" in cat or "INJECTION" in cat:
@@ -622,12 +659,12 @@ async def traffic_intent_router(
             # Promote the single highest-leverage follow-up into a machine-actionable
             # next_action so an autonomous LLM can chain straight into an audit.
             top = suggestions[0] if suggestions else {}
-            focus = top.get("vulnerability_focus") or top.get("focus") or "auto"
+            focus = _audit_focus_from_suggestion(top)
             next_action = _next_action(
                 "proxsynth_audit",
-                top.get("rationale") or top.get("reason")
+                top.get("trigger_reason") or top.get("rationale") or top.get("reason")
                 or "Response captured; run the heuristic audit engine on this endpoint.",
-                confidence=0.74 if suggestions else 0.55,
+                confidence=_conf_label_to_num(top.get("confidence")) if suggestions else 0.5,
                 target_url=url, vuln_focus=focus, log_id=new_log_id, project=proj
             )
 
