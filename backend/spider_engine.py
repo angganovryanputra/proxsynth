@@ -23,13 +23,20 @@ logger = logging.getLogger("proxynth.spider_engine")
 class WebPageExtractor(HTMLParser):
     """HTML Parser that extracts links, forms, input fields, and script endpoints."""
 
+    # API-ish paths referenced inside inline <script> bodies (fetch/axios/route strings)
+    _INLINE_ENDPOINT_RE = re.compile(
+        r"""['"`](/(?:api|v[0-9]+|graphql|rest|auth|admin|users?|accounts?|orders?|internal)[A-Za-z0-9_\-./?=&]*)['"`]"""
+    )
+
     def __init__(self, base_url: str):
         super().__init__()
         self.base_url = base_url
         self.links: Set[str] = set()
         self.scripts: Set[str] = set()
+        self.endpoints: Set[str] = set()
         self.forms: List[Dict[str, Any]] = []
         self._current_form: Optional[Dict[str, Any]] = None
+        self._in_script: bool = False
 
     def handle_starttag(self, tag: str, attrs: List[tuple]):
         attr_dict = dict(attrs)
@@ -41,11 +48,13 @@ class WebPageExtractor(HTMLParser):
                 full_url = urllib.parse.urljoin(self.base_url, href)
                 self.links.add(full_url)
 
-        # Script sources
-        elif tag == "script" and "src" in attr_dict:
-            src = attr_dict["src"].strip()
+        # Script sources (external) / inline script bodies (mined in handle_data)
+        elif tag == "script":
+            src = attr_dict.get("src", "").strip()
             if src:
                 self.scripts.add(urllib.parse.urljoin(self.base_url, src))
+            else:
+                self._in_script = True
 
         # Forms
         elif tag == "form":
@@ -76,6 +85,14 @@ class WebPageExtractor(HTMLParser):
         if tag == "form" and self._current_form is not None:
             self.forms.append(self._current_form)
             self._current_form = None
+        elif tag == "script":
+            self._in_script = False
+
+    def handle_data(self, data: str):
+        # Mine API endpoints referenced inside inline JavaScript.
+        if self._in_script and data:
+            for m in self._INLINE_ENDPOINT_RE.findall(data):
+                self.endpoints.add(urllib.parse.urljoin(self.base_url, m))
 
 
 def detect_spa_indicators(html_text: str, content_type: str = "") -> bool:
@@ -253,6 +270,36 @@ async def crawl_spa_dom_playwright(
         }
 
 
+async def _seed_from_robots_and_sitemap(client, root_url: str, root_domain: str, headers: Dict[str, str]) -> List[str]:
+    """Pull extra in-scope paths from /robots.txt (Disallow/Allow/Sitemap) and /sitemap.xml
+    (<loc>). Disallowed paths are often the highest-value attack surface, and sitemaps expose
+    routes the link graph never reaches."""
+    seeds: Set[str] = set()
+    base = f"{urllib.parse.urlparse(root_url).scheme}://{root_domain}"
+    try:
+        r = await client.get(f"{base}/robots.txt", headers=headers)
+        if r.status_code == 200 and len(r.text) < 100000:
+            for line in r.text.splitlines():
+                m = re.match(r'\s*(?:Disallow|Allow|Sitemap)\s*:\s*(\S+)', line, re.IGNORECASE)
+                if not m:
+                    continue
+                val = m.group(1).strip().split("*")[0]
+                full = val if val.startswith("http") else (urllib.parse.urljoin(base, val) if val.startswith("/") else "")
+                if full and urllib.parse.urlparse(full).netloc == root_domain:
+                    seeds.add(full)
+    except Exception:
+        pass
+    try:
+        s = await client.get(f"{base}/sitemap.xml", headers=headers)
+        if s.status_code == 200 and len(s.text) < 2000000:
+            for loc in re.findall(r'<loc>\s*([^<\s]+)\s*</loc>', s.text, re.IGNORECASE):
+                if urllib.parse.urlparse(loc).netloc == root_domain:
+                    seeds.add(loc.strip())
+    except Exception:
+        pass
+    return list(seeds)[:100]
+
+
 async def crawl_and_map_target(
     root_url: str,
     max_depth: int = 3,
@@ -299,6 +346,13 @@ async def crawl_and_map_target(
         follow_redirects=True,
         timeout=httpx.Timeout(4.0, connect=1.0)
     ) as client:
+        # Seed the queue with robots.txt / sitemap.xml paths before BFS link crawling.
+        try:
+            for seed in await _seed_from_robots_and_sitemap(client, root_url, root_domain, request_headers):
+                queue.append((seed, 1))
+        except Exception:
+            pass
+
         while queue and len(visited_urls) < max_pages:
             current_url, depth = queue.pop(0)
 
@@ -361,9 +415,13 @@ async def crawl_and_map_target(
                 for f in extractor.forms:
                     discovered_forms.append(f)
                     input_names = [i["name"] for i in f.get("inputs", [])]
-                    is_auth_form = any(k in "".join(input_names).lower() for k in ["pass", "user", "login", "auth"])
+                    names_blob = "".join(input_names).lower()
+                    is_auth_form = any(k in names_blob for k in ["pass", "user", "login", "auth"])
                     is_upload_form = any(i.get("type") == "file" for i in f.get("inputs", []))
-                    is_numeric_form = any(i.get("type") == "number" or k in "".join(input_names).lower() for k in ["price", "qty", "amount", "total", "balance"])
+                    is_numeric_form = (
+                        any(i.get("type") == "number" for i in f.get("inputs", []))
+                        or any(k in names_blob for k in ["price", "qty", "amount", "total", "balance"])
+                    )
 
                     if is_auth_form or is_upload_form or is_numeric_form:
                         vulnerable_sinks.append({
@@ -383,6 +441,28 @@ async def crawl_and_map_target(
                             parameters=input_names,
                             tested_status="DISCOVERED",
                             notes=f"Form inputs: {', '.join(input_names[:5])}"
+                        )
+                    except Exception:
+                        pass
+
+                # Ingest API endpoints mined from inline JavaScript (in-scope only)
+                for ep in extractor.endpoints:
+                    if urllib.parse.urlparse(ep).netloc != root_domain:
+                        continue
+                    if any(e["url"] == ep for e in discovered_endpoints):
+                        continue
+                    discovered_endpoints.append({
+                        "url": ep,
+                        "path": urllib.parse.urlparse(ep).path,
+                        "method": "GET",
+                        "status_code": None,
+                        "depth": depth,
+                        "source": "inline_js"
+                    })
+                    try:
+                        add_or_update_endpoint(
+                            project=project, host=root_domain, url=ep, method="GET",
+                            tested_status="DISCOVERED", notes="Mined from inline JavaScript"
                         )
                     except Exception:
                         pass
