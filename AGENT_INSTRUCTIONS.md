@@ -3,7 +3,7 @@
 
 > **Release Version**: `v0.3.0-beta` (Autonomous Cognitive Testing Release)  
 > **Protocol**: Model Context Protocol (FastMCP 2.0+)  
-> **Registered Tools**: **104 Active FastMCP Security Tools (Full Mode) | 18 Consolidated Meta-Tools (Power Mode ~82.7%) | 6 Super-Tools / 9 Total (Cognitive Pentest Hexagon ~91.3% - 95% Token Reduction)**  
+> **Registered Tools**: **104 Active FastMCP Security Tools (Full Mode) | 18 Consolidated Meta-Tools (Power Mode ~80%) | 6 Super-Tools / 9 Total (Cognitive Pentest Hexagon ~91% Token Reduction, measured ~2,600 vs ~30,000 tokens)**  
 > **Default Ports**: FastAPI Dashboard & API `:8000` | Forward Interception Proxy `:8088` | DNS OAST `:5353` | LDAP OAST `:1390`  
 
 This operational document specifies how autonomous AI agents interface with the **Proxynth Security Testing Gateway**, autonomously navigate attack surfaces across Web, REST/GraphQL APIs, and Network Infrastructure, make deterministic testing decisions, and execute zero-human-intervention security campaigns.
@@ -144,7 +144,7 @@ Proxsynth offers three runtime tool-exposure modes configurable via the environm
 ```text
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                      PROXSYNTH COGNITIVE PENTEST HEXAGON (6 SUPER-TOOLS)               │
-│                  Prompt Token Reduction: ~95% vs Full Mode (104 Tools)                 │
+│              Prompt Token Reduction: ~91% vs Full Mode (9 vs 104 Tools)                │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 
  1. proxsynth_recon(target="...", mode="auto")

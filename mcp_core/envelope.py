@@ -65,8 +65,8 @@ def register_tool(server, name: Optional[str] = None, description: Optional[str]
         tool_name = name or fn.__name__
 
         # Dual-Mode Registry Check:
-        # When PROXSYNTH_TOOL_MODE="power", FastMCP only registers the 10 consolidated power & context tools,
-        # cutting token consumption by ~87.5% while direct Python callers retain full access to all 90 tools.
+        # When PROXSYNTH_TOOL_MODE="power", FastMCP only registers the 18 consolidated power & context tools,
+        # cutting prompt token consumption by ~80% (measured) while direct Python callers retain full access to all 104 tools.
         tool_mode = os.getenv("PROXSYNTH_TOOL_MODE", "full").strip().lower()
         if tool_mode == "power" and tool_name not in POWER_MODE_TOOLS:
             return fn
