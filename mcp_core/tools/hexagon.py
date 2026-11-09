@@ -30,6 +30,7 @@ from backend.cognitive_hexagon import (
     session_intent_router,
     verify_export_intent_router,
     autonomous_step_router,
+    run_cognitive_hexagon_campaign,
     _next_action,
 )
 
@@ -294,19 +295,38 @@ async def proxsynth_execute(
 async def proxsynth_autonomous_step(
     project: Optional[str] = None,
     goal: str = "auto",
-    feedback: Optional[str] = None
+    feedback: Optional[str] = None,
+    target: Optional[str] = None,
+    run_to_completion: bool = False,
+    max_steps: int = 20
 ) -> str:
     """
-    [HEXAGON SUPER-TOOL: COGNITIVE OVERSEER & SINGLE-INTENT STEP EXECUTOR]
-    Master autonomous agent interface. Inspects Attack Surface Knowledge Graph and recent traffic,
-    selects the single next highest-leverage offensive testing action, and executes it immediately.
+    [HEXAGON SUPER-TOOL: COGNITIVE OVERSEER — SINGLE STEP OR FULL AUTONOMOUS ENGAGEMENT]
+    Master autonomous agent interface. Inspects the Attack Surface Knowledge Graph and recent
+    traffic, selects the single next highest-leverage offensive testing action, and executes it.
+
+    TWO MODES:
+    - Default (one step): returns the single action taken and a next_action telling you what to call
+      next. Re-call to advance the loop manually.
+    - Full engagement: pass `target='https://host/'` and/or `run_to_completion=True` to take a plain
+      "pentest <url>" request ALL THE WAY — recon (crawling the surface, following the domain->spider
+      handoff), then the overseer loop to coverage completion with a no-progress breaker, then an
+      aggregated engagement_report + residual coverage_gaps (identities to register, mutation traffic
+      to capture) + a next_action to export the dossier. One call, finished result.
     """
     try:
-        res = await autonomous_step_router(
-            project=project,
-            goal=goal,
-            feedback=feedback
-        )
+        if run_to_completion or (target and target.strip()):
+            res = await run_cognitive_hexagon_campaign(
+                target_url=(target or "").strip(),
+                project=project or "default",
+                max_steps=max_steps
+            )
+        else:
+            res = await autonomous_step_router(
+                project=project,
+                goal=goal,
+                feedback=feedback
+            )
         return _emit(res)
     except Exception as ex:
         return _emit({

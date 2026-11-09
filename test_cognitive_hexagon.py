@@ -482,6 +482,58 @@ async def test_06_autonomous_step_execution():
     print("  -> Passed: Autonomous Step overseer evaluated state machine, resolved unverified findings without loops, and advanced.")
 
 
+async def test_06b_full_autonomous_campaign():
+    print("[*] [6b] Testing full autonomous engagement driver ('pentest <url>' -> finished)...")
+    import backend.cognitive_hexagon as ch
+    cleanup_test_data()
+
+    spider_calls = {"n": 0}
+
+    async def fake_spider(root_url, max_depth=2, max_pages=15, project="default"):
+        spider_calls["n"] += 1
+        db = SessionLocal()
+        try:
+            a = db.query(TargetAsset).filter(TargetAsset.project == project).first()
+            if not a:
+                a = TargetAsset(project=project, host="xxx.xxx.xyz"); db.add(a); db.commit(); db.refresh(a)
+            for p in ["/api/orders/88", "/api/users/5"]:
+                db.add(TargetEndpoint(asset_id=a.id, url="https://xxx.xxx.xyz" + p, path=p, tested_status="UNTESTED"))
+            db.commit()
+        finally:
+            db.close()
+        return {"discovered_endpoints": ["/api/orders/88", "/api/users/5"]}
+
+    async def fake_audit(target_url=None, vuln_focus="auto", project=None, **kw):
+        return {"status": "success", "facet": "audit", "routed_engine": "stub", "decision": "LIKELY_SECURE"}
+
+    # A bare domain must follow the recon domain->spider handoff before the audit loop,
+    # then run to COVERAGE_COMPLETE and surface the residual manual gaps.
+    with patch("backend.spider_engine.crawl_and_map_target", fake_spider), \
+         patch.object(ch, "audit_intent_router", fake_audit):
+        res = await ch.run_cognitive_hexagon_campaign(target_url="xxx.xxx.xyz", project=TEST_PROJECT, max_steps=20)
+
+    assert res["status"] == "completed", res["status"]
+    assert spider_calls["n"] >= 1, "spider never ran for a bare-domain target (recon handoff gap)"
+    assert res["reached_completion"] is True, res["final_phase"]
+    assert res["metrics"]["endpoints_mapped"] == 2, res["metrics"]
+    gaps = [g["gap"] for g in res["coverage_gaps"]["open_gaps"]]
+    assert "insufficient_identities" in gaps and "no_mutation_traffic" in gaps, gaps
+    assert res["next_action"]["tool"] == "proxsynth_session", res["next_action"]
+    assert "engagement_report" in res
+
+    # No-progress breaker: a router that never advances must halt, not spin.
+    async def stuck_step(project=None, goal="auto", feedback=None):
+        return {"status": "success", "phase": "VULNERABILITY_AUDIT", "action_taken": "same action"}
+
+    with patch.object(ch, "autonomous_step_router", stuck_step):
+        res2 = await ch.run_cognitive_hexagon_campaign(target_url="", project=TEST_PROJECT, max_steps=20, no_progress_limit=2)
+    assert res2["final_phase"] == "NO_PROGRESS_HALT", res2["final_phase"]
+    assert res2["steps_count"] < 20, res2["steps_count"]
+
+    cleanup_test_data()
+    print("  -> Passed: bare-domain recon handoff, loop-to-completion, residual-gap surfacing, and no-progress breaker.")
+
+
 def test_07_fastmcp_mode_registration():
     print("[*] [7/7] Testing FastMCP Tool Mode Registration & Token Reduction Tier...")
 
@@ -552,6 +604,7 @@ async def main():
         await test_04_session_auto_routing()
         await test_05_verify_export_auto_routing()
         await test_06_autonomous_step_execution()
+        await test_06b_full_autonomous_campaign()
         test_07_fastmcp_mode_registration()
         await test_08_fastmcp_tool_exception_handling()
     finally:

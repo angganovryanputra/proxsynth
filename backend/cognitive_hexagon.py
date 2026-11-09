@@ -1563,16 +1563,20 @@ async def autonomous_step_router(
                 )
             }
 
+        coverage_gaps = _residual_coverage_gaps(proj)
         return {
             "status": "success",
             "facet": "autonomous_step",
             "phase": "COVERAGE_COMPLETE",
             "action_taken": "All attack surface endpoints tested and verified.",
             "summary": summary,
+            "coverage_gaps": coverage_gaps,
             "next_recommended_call": "proxsynth_verify_and_export(format='report_markdown') to produce final pentest report.",
             "next_action": _next_action(
                 "proxsynth_verify_and_export",
-                "Surface fully covered — compile the publication-ready report to close the engagement.",
+                "Surface fully covered — compile the publication-ready report to close the engagement."
+                + (f" {len(coverage_gaps['open_gaps'])} residual manual gap(s) remain (see coverage_gaps)."
+                   if coverage_gaps["open_gaps"] else ""),
                 confidence=0.9, format="report_markdown", project=proj
             )
         }
@@ -1580,42 +1584,96 @@ async def autonomous_step_router(
         db.close()
 
 
+def _residual_coverage_gaps(proj: str) -> Dict[str, Any]:
+    """Inspect what the cold engagement could NOT reach on its own, and return the
+    concrete manual actions that unlock the rest — so 'complete' never hides a silent gap.
+    The two engagement-limiting gaps are: no secondary identity (BAC stays unauth-only)
+    and no captured mutation bodies (business-logic/approval/mass-assignment can't fire)."""
+    db = SessionLocal()
+    try:
+        identities = db.query(ActiveSession).filter(ActiveSession.project == proj).count()
+        mutation_flows = db.query(HttpLog).filter(
+            HttpLog.project == proj,
+            HttpLog.method.in_(["POST", "PUT", "PATCH", "DELETE"]),
+            (HttpLog.request_body != None) & (HttpLog.request_body != ""),  # noqa: E711
+        ).count()
+    except Exception:
+        identities, mutation_flows = 0, 0
+    finally:
+        db.close()
+
+    gaps: List[Dict[str, Any]] = []
+    if identities < 2:
+        gaps.append({
+            "gap": "insufficient_identities",
+            "impact": "BOLA/BFLA were tested unauthenticated-only; cross-user and privilege-escalation "
+                      "coverage needs at least two real identities (e.g. a victim and an attacker).",
+            "action": "proxsynth_session(action='set', domain='<host>', role='attacker', token='<JWT/cookie>') "
+                      "for each persona, then re-run the autonomous loop.",
+        })
+    if mutation_flows == 0:
+        gaps.append({
+            "gap": "no_mutation_traffic",
+            "impact": "Business-logic / approval-bypass / mass-assignment engines need a captured mutation "
+                      "body (POST/PUT/PATCH) to tamper with; passive crawling yields none.",
+            "action": "Drive the target's real workflows through the proxy (or send them via proxsynth_traffic / "
+                      "proxsynth_execute) so mutation flows are captured, then re-run the loop to chain-audit them.",
+        })
+    return {"identities_registered": identities, "mutation_flows_captured": mutation_flows, "open_gaps": gaps}
+
+
 async def run_cognitive_hexagon_campaign(
     target_url: str,
     project: str = "default",
-    max_steps: int = 5
+    max_steps: int = 20,
+    no_progress_limit: int = 2
 ) -> Dict[str, Any]:
     """
-    Runs an autonomous unified pentest sequence orchestrated entirely by the Cognitive Hexagon.
-    Seeds target knowledge, prioritizes hypotheses, audits endpoints, verifies findings, and returns telemetry.
+    Runs an autonomous unified pentest sequence orchestrated entirely by the Cognitive Hexagon,
+    end-to-end and unattended: seeds target knowledge (following the recon->recon handoff so a bare
+    domain is still spidered), drives the autonomous overseer loop to coverage completion with a
+    no-progress breaker, aggregates auditable telemetry, and attaches an engagement report plus the
+    residual manual-coverage gaps. One call takes 'pentest <url>' all the way to a finished result.
     """
-    steps_taken = []
+    steps_taken: List[Dict[str, Any]] = []
     proj = _resolve_proj(project, allow_all=False)
 
-    # Step 1: Recon & Seed
+    # Step 1: Recon & Seed — follow a recon->recon handoff (domain-probe -> spider) up to 2 hops so a
+    # bare hostname is actually crawled before the audit loop, closing the premature-COVERAGE_COMPLETE gap.
     if target_url and target_url.strip():
-        recon_res = await recon_intent_router(target=target_url.strip(), mode="auto", project=proj)
-        steps_taken.append({
-            "step": 1,
-            "facet": "recon",
-            "result": recon_res
-        })
+        recon_target, recon_mode, hops = target_url.strip(), "auto", 0
+        while hops < 3:
+            recon_res = await recon_intent_router(target=recon_target, mode=recon_mode, project=proj)
+            steps_taken.append({"step": len(steps_taken) + 1, "facet": "recon", "result": recon_res})
+            na = recon_res.get("next_action") or {}
+            if na.get("tool") == "proxsynth_recon":
+                args = na.get("arguments", {})
+                recon_target = args.get("target") or recon_target
+                recon_mode = args.get("mode", "spider")
+                hops += 1
+                continue
+            break
 
-    # Steps 2..N: Autonomous Iterations
-    for step_num in range(2, max_steps + 1):
+    # Steps 2..N: Autonomous Iterations with a no-progress breaker so a stuck signature can't spin.
+    last_sig, repeat = None, 0
+    for _ in range(max_steps):
         step_res = await autonomous_step_router(project=proj, goal="auto")
-        steps_taken.append({
-            "step": step_num,
-            "facet": "autonomous_step",
-            "result": step_res
-        })
+        steps_taken.append({"step": len(steps_taken) + 1, "facet": "autonomous_step", "result": step_res})
         phase = step_res.get("phase", "")
         if phase in ("COVERAGE_COMPLETE", "RECON_REQUIRED", "IDLE"):
+            break
+        sig = f"{phase}:{step_res.get('action_taken', '')}"
+        repeat = repeat + 1 if sig == last_sig else 0
+        last_sig = sig
+        if repeat >= no_progress_limit:
+            steps_taken.append({"step": len(steps_taken) + 1, "facet": "loop_guard",
+                                "result": {"phase": "NO_PROGRESS_HALT",
+                                           "action_taken": f"Same action repeated {repeat + 1}x — halting to avoid a spin."}})
             break
 
     # Aggregate telemetry metrics from steps & DB for project
     db = SessionLocal()
-    findings_list = []
+    findings_list: List[Dict[str, Any]] = []
     endpoints_mapped = 0
     confirmed_count = 0
     try:
@@ -1635,6 +1693,11 @@ async def run_cognitive_hexagon_campaign(
         1 for f in findings_list
         if isinstance(f, dict) and "[ORACLE VERDICT: VERIFIED]" in str(f.get("evidence", ""))
     )
+    severity_breakdown: Dict[str, int] = {}
+    for f in findings_list:
+        sev = str(f.get("severity", "UNKNOWN")).upper() if isinstance(f, dict) else "UNKNOWN"
+        severity_breakdown[sev] = severity_breakdown.get(sev, 0) + 1
+
     metrics = {
         "endpoints_mapped": endpoints_mapped,
         "autonomous_steps_executed": len(steps_taken),
@@ -1642,13 +1705,54 @@ async def run_cognitive_hexagon_campaign(
         "findings_oracle_verified": verified_count,
     }
 
+    last_phase = next((s["result"].get("phase") for s in reversed(steps_taken)
+                       if s.get("facet") in ("autonomous_step", "loop_guard")), None)
+    coverage = _residual_coverage_gaps(proj)
+    reached_completion = last_phase == "COVERAGE_COMPLETE"
+
+    engagement_report = (
+        f"Engagement on {target_url or proj}: mapped {endpoints_mapped} endpoint(s) over "
+        f"{len(steps_taken)} autonomous step(s); recorded {confirmed_count} finding(s) "
+        f"({verified_count} oracle-verified). Severity: "
+        f"{', '.join(f'{k}={v}' for k, v in sorted(severity_breakdown.items())) or 'none'}. "
+        + ("Full surface covered." if reached_completion else f"Halted at phase '{last_phase}'.")
+        + (f" Residual manual gaps: {len(coverage['open_gaps'])} (see coverage_gaps)."
+           if coverage["open_gaps"] else " No residual manual gaps.")
+    )
+
+    # Next action: export a dossier for the top finding, else deepen coverage via the surfaced gap.
+    if findings_list:
+        na = _next_action(
+            "proxsynth_verify_and_export",
+            "Engagement complete with findings — export the reproducible dossier for the top finding.",
+            confidence=0.85, finding_id=findings_list[0].get("id"), format="report_markdown", project=proj,
+        )
+    elif coverage["open_gaps"]:
+        na = _next_action(
+            "proxsynth_session",
+            coverage["open_gaps"][0]["action"],
+            confidence=0.5, action="set", project=proj,
+        )
+    else:
+        na = _next_action(
+            "proxsynth_recon",
+            "No findings and no open gaps — broaden the surface with another recon target or a deeper crawl.",
+            confidence=0.4, target=target_url, mode="spider", project=proj,
+        )
+
     return {
         "status": "completed",
         "engine": "cognitive_hexagon",
         "project": proj,
         "target_url": target_url,
+        "reached_completion": reached_completion,
+        "final_phase": last_phase,
         "steps_count": len(steps_taken),
         "steps": steps_taken,
         "metrics": metrics,
-        "findings_summary": findings_list
+        "severity_breakdown": severity_breakdown,
+        "engagement_report": engagement_report,
+        "coverage_gaps": coverage,
+        "findings_summary": findings_list,
+        "next_action": na,
     }
