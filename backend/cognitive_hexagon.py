@@ -1485,11 +1485,75 @@ async def autonomous_step_router(
                 )
             }
 
+        # Step B3: Auto-capture — a discovered GET object-endpoint that has no captured flow yet is
+        # replayed READ-ONLY through the identity-aware send path to materialize a flow, which the next
+        # loop's chain audit (Step B2) then tests. This closes the "spider fills the surface but the
+        # BAC/logic chain needs a captured flow" gap without any manual browsing. State-changing methods
+        # (POST/PUT/PATCH/DELETE) are intentionally NOT auto-sent (side-effect risk on a live target) and
+        # remain a surfaced manual gap (see _residual_coverage_gaps -> no_mutation_traffic).
+        from backend.bola_matrix import classify_bac_vectors as _classify_bac
+        capture_candidates = db.query(TargetEndpoint).join(TargetAsset).filter(
+            TargetAsset.project == proj,
+            TargetEndpoint.tested_status == "UNTESTED",
+        ).order_by(TargetEndpoint.id.desc()).limit(40).all()
+
+        capture_ep = None
+        for ce in capture_candidates:
+            if (ce.method or "GET").upper() != "GET":
+                continue
+            ce_host = ce.asset.host if (ce.asset and ce.asset.host) else "default"
+            ce_url = ce.url or f"http://{ce_host}{ce.path or ''}"
+            ce_path = ce.path or urllib.parse.urlparse(ce_url).path
+            if not _classify_bac(ce_url, "GET", ce_path, ""):
+                continue  # no object id / privileged function -> nothing for the chain to test
+            # If a flow for this path already exists, let Step B2 chain it rather than re-sending.
+            if db.query(HttpLog).filter(HttpLog.project == proj, HttpLog.path == ce_path).first():
+                ce.tested_status = "CAPTURED"
+                db.commit()
+                continue
+            capture_ep = ce
+            break
+
+        if capture_ep is not None:
+            cap_host = capture_ep.asset.host if (capture_ep.asset and capture_ep.asset.host) else "default"
+            cap_url = capture_ep.url or f"http://{cap_host}{capture_ep.path or ''}"
+            capture_ep.tested_status = "CAPTURED"  # mark before network so it can't be re-picked
+            db.commit()
+            db.close()  # release before the network send
+            cap_res = await traffic_intent_router(url=cap_url, action="send", method="GET", project=proj)
+            return {
+                "status": "success",
+                "facet": "autonomous_step",
+                "phase": "AUTO_CAPTURE",
+                "action_taken": f"Replayed discovered GET endpoint {cap_url} (read-only) to materialize a flow "
+                                f"-> HTTP {cap_res.get('status_code')}, log #{cap_res.get('log_id')}; "
+                                "the next step chain-audits it.",
+                "capture_result": {k: cap_res.get(k) for k in ("log_id", "status_code", "url")},
+                "next_recommended_call": "proxsynth_autonomous_step(project='...') to chain-audit the freshly captured flow.",
+                "next_action": _next_action(
+                    "proxsynth_autonomous_step",
+                    "Flow captured for a discovered object endpoint; call again to run the access/logic chain on it.",
+                    confidence=0.85, project=proj
+                )
+            }
+
         # Step C: Pull Cognitive Guidance and Execute Top Audit Action
         guidance = get_project_attack_guidance(project=proj, limit=5)
         actions = guidance.get("recommended_actions", [])
-        if actions:
-            top_action = actions[0]
+        # Guidance is derived from HttpLogs, so an already-handled log keeps re-surfacing the same
+        # action and would spin the loop. Skip actions whose log is already audited/chained/confirmed,
+        # then stamp the one we DO audit, so each flow is driven exactly once and coverage converges.
+        _HANDLED_LOG_STATES = ("AUDITED", "CHAIN_TESTED", "CONFIRMED")
+        top_action = None
+        for act in actions:
+            a_lid = act.get("log_id")
+            if a_lid:
+                alog = db.query(HttpLog).filter(HttpLog.id == a_lid).first()
+                if alog and (alog.flag_status or "") in _HANDLED_LOG_STATES:
+                    continue
+            top_action = act
+            break
+        if top_action is not None:
             focus = top_action.get("vulnerability_focus", "auto")
             target_p = top_action.get("tool_arguments", {})
             test_target = (
@@ -1504,9 +1568,15 @@ async def autonomous_step_router(
                 auto_exploit=True
             )
 
-            # Mark the audited endpoint TESTED so the next guidance pull does not
-            # re-surface the same top action, which would spin the loop in place.
+            # Stamp the audited LOG (terminal-for-guidance) so it is not re-surfaced, and mark any
+            # matching endpoint TESTED. A finding recorded during the audit may have already set a
+            # stronger flag (POTENTIAL/CONFIRMED) — never downgrade that.
             try:
+                audited_lid = top_action.get("log_id")
+                if audited_lid:
+                    alog = db.query(HttpLog).filter(HttpLog.id == audited_lid).first()
+                    if alog and (alog.flag_status or "") not in ("CONFIRMED", "POTENTIAL"):
+                        alog.flag_status = "AUDITED"
                 if test_target:
                     marked = db.query(TargetEndpoint).join(TargetAsset).filter(
                         TargetAsset.project == proj,
@@ -1514,7 +1584,7 @@ async def autonomous_step_router(
                     ).first()
                     if marked and marked.tested_status != "TESTED":
                         marked.tested_status = "TESTED"
-                        db.commit()
+                db.commit()
             except Exception:
                 db.rollback()
 
