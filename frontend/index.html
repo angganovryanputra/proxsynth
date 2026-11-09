@@ -1950,11 +1950,10 @@
               </div>
             </template>
 
-            <div x-show="interceptPending.length === 0" class="p-12 text-center text-slate-500">
-              <i data-lucide="check-circle-2" class="w-8 h-8 mx-auto mb-2 opacity-30 text-emerald-400"></i>
-              <p>No paused requests in trap.</p>
-              <p class="text-[11px] text-slate-600 mt-1">When Intercept is ON, agent requests will pause here for
-                inspection.</p>
+            <div x-show="interceptPending.length === 0" class="ds-state">
+              <i data-lucide="check-circle-2" class="ds-state__icon"></i>
+              <p class="ds-state__title">Nothing trapped</p>
+              <p class="ds-state__hint">Turn Intercept on, and agent requests will pause here for you to inspect, edit, or forward.</p>
             </div>
           </div>
         </div>
@@ -2075,8 +2074,10 @@
             </div>
           </template>
 
-          <div x-show="!activeInterceptItem" class="h-full flex items-center justify-center text-slate-500">
-            <p>Select a paused request on the left to edit or forward.</p>
+          <div x-show="!activeInterceptItem" class="ds-state h-full">
+            <i data-lucide="mouse-pointer-click" class="ds-state__icon"></i>
+            <p class="ds-state__title">No request selected</p>
+            <p class="ds-state__hint">Pick a paused request on the left to edit its headers or body, then forward or drop it.</p>
           </div>
         </div>
       </div>
@@ -3599,13 +3600,10 @@
               </tbody>
             </table>
 
-            <div x-show="filteredPayloadsList.length === 0"
-              class="p-12 text-center text-slate-500 font-mono text-xs space-y-2">
-              <i data-lucide="shield-alert" class="w-8 h-8 mx-auto opacity-30 text-amber-400"></i>
-              <p>No test payloads cataloged yet.</p>
-              <p class="text-[10px] text-slate-600">Payloads tested by AI via MCP tool <code>record_test_payload</code>
-                or
-                security fuzzer will appear here.</p>
+            <div x-show="filteredPayloadsList.length === 0" class="ds-state">
+              <i data-lucide="shield-alert" class="ds-state__icon"></i>
+              <p class="ds-state__title">No payloads yet</p>
+              <p class="ds-state__hint">Payloads the agent records via the <code>record_test_payload</code> MCP tool, or from the fuzzer, appear here.</p>
             </div>
           </div>
 
@@ -8918,7 +8916,11 @@
           // mode (e.g. 'triage' from the AI activity link).
           openInspectorModal(logId, mode) {
             if (!logId) return;
-            this.inspectorViewMode = mode || 'split';
+            // Desktop opens the side-by-side Split View; on a phone a split is too
+            // cramped, so default to the single tabbed Request pane (Request/Response
+            // are one tap apart). An explicit mode (e.g. 'triage') always wins.
+            const isNarrow = (typeof window !== 'undefined' && window.innerWidth < 768);
+            this.inspectorViewMode = mode || (isNarrow ? 'request' : 'split');
             this.inspectorModalOpen = true;
             this.selectLog(logId);
           },
