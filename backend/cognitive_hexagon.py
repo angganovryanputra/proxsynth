@@ -127,6 +127,69 @@ CVSS_V4_MAPPINGS = {
 }
 
 
+def _next_action(
+    tool: str,
+    rationale: str,
+    confidence: float = 0.6,
+    **arguments: Any
+) -> Dict[str, Any]:
+    """
+    Builds a single machine-actionable directive so an autonomous LLM can chain the
+    next step without re-reasoning. Every hexagon router attaches this as `next_action`.
+
+    - tool:            the exact hexagon tool to call next (e.g. "proxsynth_audit")
+    - arguments:       ready-to-pass kwargs (None values are dropped)
+    - rationale:       why this is the highest-leverage next move
+    - confidence:      0.0-1.0 heuristic confidence
+    - auto_executable: True when confidence is high enough to run without a human gate
+    """
+    conf = max(0.0, min(1.0, float(confidence)))
+    return {
+        "tool": tool,
+        "arguments": {k: v for k, v in arguments.items() if v is not None},
+        "rationale": rationale,
+        "confidence": round(conf, 2),
+        "auto_executable": conf >= 0.7,
+    }
+
+
+# Verbose advisor focus label -> the proxsynth_audit `vuln_focus` enum the LLM must
+# pass next. Ordered: more specific facets win over the generic injection/fuzz bucket.
+_AUDIT_FOCUS_KEYWORDS = [
+    ("graphql", ("GRAPHQL",)),
+    ("xss", ("XSS",)),
+    ("oast", ("SSRF", "OAST", "CALLBACK", "OUT-OF-BAND", "REDIRECT")),
+    ("access_control", ("BOLA", "IDOR", "OBJECT LEVEL", "FUNCTION LEVEL", "BFLA",
+                        "JWT", "CORS", "ACCESS", "PRIVILEGE")),
+    ("logic", ("NUMERIC", "LOGIC", "CURRENCY", "PRICE", "MASS ASSIGNMENT", "RACE")),
+    ("fuzz", ("INJECTION", "SQLI", "SSTI", "UPLOAD", "FUZZ", "STACK", "FILE")),
+]
+
+
+def _audit_focus_from_suggestion(sugg: Dict[str, Any]) -> str:
+    """Translate an advisor suggestion's verbose focus into a valid audit enum.
+
+    Without this, the auto-chained next_action would hand proxsynth_audit a human
+    string like 'Broken Object Level Authorization (BOLA / IDOR)' instead of
+    'access_control', mis-routing the self-driving loop.
+    """
+    raw = str(sugg.get("focus") or sugg.get("vulnerability_focus") or "").upper()
+    for enum_val, kws in _AUDIT_FOCUS_KEYWORDS:
+        if any(k in raw for k in kws):
+            return enum_val
+    return "auto"
+
+
+def _conf_label_to_num(label: Any) -> float:
+    """Map an advisor confidence (HIGH/MEDIUM/LOW or a raw float) to a 0-1 score so
+    `auto_executable` reflects real evidence strength: only HIGH-confidence follow-ups
+    (>=0.7) auto-run; MEDIUM/LOW are surfaced but gated for a decision."""
+    if isinstance(label, (int, float)):
+        return max(0.0, min(1.0, float(label)))
+    mapping = {"HIGH": 0.8, "MEDIUM": 0.6, "LOW": 0.45, "INFO": 0.4}
+    return mapping.get(str(label or "").strip().upper(), 0.55)
+
+
 def get_cvss_v4_rating(category: str) -> Dict[str, Any]:
     cat = (category or "").upper()
     if "SQL" in cat or "INJECTION" in cat:
@@ -204,7 +267,12 @@ async def recon_intent_router(
             "target": ip_target,
             "project": proj,
             "results": res,
-            "cognitive_advice": "Open ports registered in Attack Knowledge Graph. Run proxsynth_audit on HTTP services."
+            "cognitive_advice": "Open ports registered in Attack Knowledge Graph. Run proxsynth_audit on HTTP services.",
+            "next_action": _next_action(
+                "proxsynth_autonomous_step",
+                "Ports mapped into the graph; let the overseer pick the highest-leverage HTTP service to audit.",
+                confidence=0.72, project=proj
+            )
         }
 
     elif clean_mode == "openapi":
@@ -221,7 +289,12 @@ async def recon_intent_router(
             "target": clean_target,
             "project": proj,
             "results": res,
-            "cognitive_advice": "Imported API endpoints into Knowledge Graph. Run proxsynth_audit with vuln_focus='auto'."
+            "cognitive_advice": "Imported API endpoints into Knowledge Graph. Run proxsynth_audit with vuln_focus='auto'.",
+            "next_action": _next_action(
+                "proxsynth_autonomous_step",
+                "Schema endpoints are now in the graph; drive the autonomous audit loop over them.",
+                confidence=0.75, project=proj
+            )
         }
 
     elif clean_mode == "spider":
@@ -243,7 +316,12 @@ async def recon_intent_router(
             "target": url_target,
             "project": proj,
             "results": res,
-            "cognitive_advice": f"Mapped {len(res.get('discovered_endpoints', []))} endpoints. Inspect with proxsynth_traffic or proxsynth_audit."
+            "cognitive_advice": f"Mapped {len(res.get('discovered_endpoints', []))} endpoints. Inspect with proxsynth_traffic or proxsynth_audit.",
+            "next_action": _next_action(
+                "proxsynth_autonomous_step",
+                f"Crawl mapped {len(res.get('discovered_endpoints', []))} endpoints; hand off to the overseer to audit them in priority order.",
+                confidence=0.78, project=proj
+            )
         }
 
     elif clean_mode in ("domain", "health"):
@@ -274,7 +352,12 @@ async def recon_intent_router(
             "project": proj,
             "asset_registered": host,
             "health_probe": health_res,
-            "cognitive_advice": f"Host '{host}' registered. Proceed with proxsynth_recon(target='{test_url}', mode='spider')."
+            "cognitive_advice": f"Host '{host}' registered. Proceed with proxsynth_recon(target='{test_url}', mode='spider').",
+            "next_action": _next_action(
+                "proxsynth_recon",
+                f"Host registered and reachable at {test_url}; crawl it to harvest endpoints into the graph.",
+                confidence=0.8, target=test_url, mode="spider", project=proj
+            )
         }
 
     return {"status": "error", "message": f"Unrecognized recon mode '{clean_mode}'"}
@@ -458,15 +541,17 @@ async def traffic_intent_router(
 
             req_headers = dict(headers or {})
             clean_method = (method or "GET").upper()
+            parsed_url = urllib.parse.urlparse(url)
+            host = parsed_url.netloc or "default"
 
-            # Scope check
+            # --- DB phase 1: scope check + session read, then release the session
+            # BEFORE any network I/O. Holding a sync SQLite session open across a
+            # 15s+ httpx round-trip serializes writers and triggers "database is
+            # locked" under the Swarm worker pool. Read fast, close, then dispatch.
             is_allowed, block_reason = await async_check_scope(proj, url, db)
             if not is_allowed:
                 return {"status": "error", "message": f"Blocked by Proxynth Scope Guard: {block_reason}"}
 
-            # Inject active session if no auth header
-            parsed_url = urllib.parse.urlparse(url)
-            host = parsed_url.netloc or "default"
             if not any(k.lower() in ("authorization", "cookie") for k in req_headers.keys()):
                 sess = db.query(ActiveSession).filter(
                     ActiveSession.project == proj,
@@ -483,7 +568,9 @@ async def traffic_intent_router(
                     except Exception:
                         pass
 
-            # Dispatch Request
+            db.close()  # release the SQLite writer lock for the network phase
+
+            # --- Network phase: no DB session held ---
             req_body_bytes = body.encode("utf-8") if body else None
             async with httpx.AsyncClient(timeout=15.0, verify=False, follow_redirects=True) as client:
                 resp = await client.request(
@@ -496,7 +583,9 @@ async def traffic_intent_router(
             resp_body_text = resp.text
             status = resp.status_code
 
-            # WAF Auto-Heal check
+            # WAF Auto-Heal: a retry that still returns any WAF-block code
+            # (403/406/429) is NOT healed. 429 must be in the success filter too,
+            # or a rate-limited retry gets falsely reported as an evasion success.
             waf_healed = False
             if status in (403, 406, 429):
                 from backend.waf_mutator import mutate_payload, generate_evasion_headers
@@ -518,31 +607,13 @@ async def traffic_intent_router(
                             headers=evasion_hdrs,
                             content=mutated_body.encode("utf-8") if mutated_body else None
                         )
-                    if resp_retry.status_code not in (403, 406):
+                    if resp_retry.status_code not in (403, 406, 429):
                         resp = resp_retry
                         resp_body_text = resp.text
                         status = resp.status_code
                         waf_healed = True
 
-            # Persist to HttpLog
-            log_entry = HttpLog(
-                project=proj,
-                method=clean_method,
-                url=url,
-                host=host,
-                path=parsed_url.path or "/",
-                request_headers=json.dumps(req_headers),
-                request_body=body or "",
-                response_headers=json.dumps(dict(resp.headers)),
-                response_body=resp_body_text[:500000],
-                status_code=status,
-                flag_status="UNFLAGGED"
-            )
-            db.add(log_entry)
-            db.commit()
-            db.refresh(log_entry)
-
-            # Auto-Distillation if body > 50KB or HTML
+            # Auto-Distillation if body > 50KB or HTML (pure CPU, no DB)
             ct = resp.headers.get("content-type", "")
             is_large = len(resp_body_text) > 50000
             distilled_summary = None
@@ -550,7 +621,30 @@ async def traffic_intent_router(
                 dist = distill_http_response(resp_body_text, content_type=ct)
                 distilled_summary = dist.get("compact_summary")
 
-            # Follow-up Cognitive Attack Suggestions
+            # --- DB phase 2: persist on a FRESH short-lived session ---
+            wdb = SessionLocal()
+            try:
+                log_entry = HttpLog(
+                    project=proj,
+                    method=clean_method,
+                    url=url,
+                    host=host,
+                    path=parsed_url.path or "/",
+                    request_headers=json.dumps(req_headers),
+                    request_body=body or "",
+                    response_headers=json.dumps(dict(resp.headers)),
+                    response_body=resp_body_text[:500000],
+                    status_code=status,
+                    flag_status="UNFLAGGED"
+                )
+                wdb.add(log_entry)
+                wdb.commit()
+                wdb.refresh(log_entry)
+                new_log_id = log_entry.id
+            finally:
+                wdb.close()
+
+            # Follow-up Cognitive Attack Suggestions (pure CPU, no DB held)
             suggestions = suggest_attack_actions(
                 url=url,
                 method=clean_method,
@@ -558,22 +652,35 @@ async def traffic_intent_router(
                 body=body,
                 response_status=status,
                 response_body=resp_body_text,
-                log_id=log_entry.id,
+                log_id=new_log_id,
                 response_headers=dict(resp.headers)
+            )
+
+            # Promote the single highest-leverage follow-up into a machine-actionable
+            # next_action so an autonomous LLM can chain straight into an audit.
+            top = suggestions[0] if suggestions else {}
+            focus = _audit_focus_from_suggestion(top)
+            next_action = _next_action(
+                "proxsynth_audit",
+                top.get("trigger_reason") or top.get("rationale") or top.get("reason")
+                or "Response captured; run the heuristic audit engine on this endpoint.",
+                confidence=_conf_label_to_num(top.get("confidence")) if suggestions else 0.5,
+                target_url=url, vuln_focus=focus, log_id=new_log_id, project=proj
             )
 
             return {
                 "status": "success",
                 "facet": "traffic",
                 "action": "send",
-                "log_id": log_entry.id,
+                "log_id": new_log_id,
                 "url": url,
                 "status_code": status,
                 "waf_auto_healed": waf_healed,
                 "response_body_length": len(resp_body_text),
                 "distilled_summary": distilled_summary,
                 "body_preview": (resp_body_text[:1500] if not distilled_summary else None),
-                "recommended_follow_ups": suggestions[:3]
+                "recommended_follow_ups": suggestions[:3],
+                "next_action": next_action
             }
 
         return {"status": "error", "message": f"Unsupported traffic action '{clean_action}'"}
@@ -644,6 +751,12 @@ async def audit_intent_router(
         query_dict = urllib.parse.parse_qs(parsed_url.query)
         host = parsed_url.netloc or ""
 
+        # A captured flow (log_id) under 'auto' warrants BOTH the access-control and the
+        # business-logic engines, so chain them rather than letting the heuristic below
+        # collapse to a single focus. Runs before heuristic classification by design.
+        if log_id and clean_focus == "auto":
+            clean_focus = "chain"
+
         # Heuristic Vulnerability Classification
         if clean_focus == "auto":
             domain_sessions = db.query(ActiveSession).filter(
@@ -674,7 +787,88 @@ async def audit_intent_router(
                 clean_focus = "fuzz"
 
         # Execution Router
+        if clean_focus in ("chain", "access_logic", "access_and_logic", "bac_logic"):
+            # Captured flow -> chain the BAC family audit (BOLA/IDOR/BFLA) and the
+            # workflow-aware business-logic audit back-to-back, confidence-gated to >=80%.
+            target_log_id = log_id
+            if not target_log_id:
+                log_synth = HttpLog(
+                    project=proj, method=method.upper(), url=target_url,
+                    host=parsed_url.netloc or "default", path=path,
+                    request_headers=json.dumps(headers or {}), request_body=body or "",
+                    status_code=200, flag_status="UNFLAGGED",
+                )
+                db.add(log_synth)
+                db.commit()
+                db.refresh(log_synth)
+                target_log_id = log_synth.id
+            db.close()  # release before network-heavy replays
+            from backend.access_logic_chain import audit_access_and_logic_chain
+            chain = await audit_access_and_logic_chain(log_id=target_log_id, project=proj, ws_broadcast_callback=None)
+            if chain.get("status") == "error":
+                return chain
+            na = chain.get("next_action") or _next_action(
+                "proxsynth_session",
+                "No >=80%-confidence access-control / business-logic finding on this flow. Register a true "
+                "low-privilege identity for this domain, then re-run the chain for deeper BFLA/BOLA coverage.",
+                confidence=0.5, action="set", project=proj,
+            )
+            return {
+                "status": "success",
+                "facet": "audit",
+                "vulnerability_focus": "Access Control + Business Logic Chain (BOLA / IDOR / BFLA / Approval / Mass-Assignment)",
+                "routed_engine": "access_and_logic_chain",
+                "target_url": target_url,
+                "project": proj,
+                "decision": chain.get("decision"),
+                "confidence": chain.get("confidence"),
+                "confidence_gate": chain.get("confidence_gate"),
+                "vectors_tested": chain.get("vectors_tested", []),
+                "engines_run": chain.get("engines_run", []),
+                "sub_decisions": chain.get("sub_decisions", {}),
+                "confirmed_count": chain.get("confirmed_count", 0),
+                "candidate_count": chain.get("candidate_count", 0),
+                "findings": chain.get("findings", []),
+                "review_candidates": chain.get("review_candidates", []),
+                "idor_enumeration": chain.get("idor_enumeration", []),
+                "recommendation": chain.get("recommendation"),
+                "next_action": na,
+            }
+
         if clean_focus in ("access_control", "bola", "bfla", "idor"):
+            # Captured flow (log_id) -> run the DIRECT multi-vector BAC audit (BOLA/IDOR/BFLA)
+            # which returns a per-vector validity decision + confidence the LLM can act on at
+            # once, replaying the flow under every registered identity. The heavier two-tier
+            # orchestrator below is the fallback for a bare target_url with two explicit sessions.
+            if log_id:
+                db.close()  # release before network-heavy replays
+                from backend.bola_matrix import audit_bac_flow
+                bac = await audit_bac_flow(log_id=log_id, project=proj, ws_broadcast_callback=None)
+                cvss_info = get_cvss_v4_rating("BOLA_IDOR")
+                na = bac.get("next_action") or _next_action(
+                    "proxsynth_session",
+                    "Register a second, low-privilege identity for this domain, then re-run the access-control "
+                    "audit so vertical (BFLA) and cross-user (BOLA) coverage is complete.",
+                    confidence=0.5, action="set", project=proj
+                )
+                return {
+                    "status": "success",
+                    "facet": "audit",
+                    "vulnerability_focus": "Broken Access Control (BOLA / IDOR / BFLA)",
+                    "routed_engine": "direct_bac_flow_audit",
+                    "target_url": target_url,
+                    "project": proj,
+                    "cvss_v4_baseline": cvss_info,
+                    "decision": bac.get("decision"),
+                    "confidence": bac.get("confidence"),
+                    "vectors_tested": bac.get("vectors_tested", []),
+                    "identities_tested": bac.get("identities_tested", []),
+                    "findings": bac.get("findings", []),
+                    "idor_enumeration": bac.get("idor_enumeration", []),
+                    "recommendation": bac.get("recommendation"),
+                    "next_action": na,
+                }
+
             from backend.access_control_orchestrator import AccessControlOrchestrator
             orch = AccessControlOrchestrator(project=proj)
             sess_a = {"token": "", "auth_headers": {}}
@@ -689,8 +883,28 @@ async def audit_intent_router(
                 sessions = db.query(ActiveSession).filter(ActiveSession.project == proj).all()
 
             if len(sessions) >= 2:
-                st_a = sessions[0].get_decrypted_state()
-                st_b = sessions[1].get_decrypted_state()
+                # BOLA/BFLA depends on WHICH identity is the victim vs the attacker,
+                # so pick deterministically by role rather than arbitrary insertion
+                # order. Prefer an explicit low-privilege "attacker" (user/user_b/
+                # attacker) as A and a distinct "victim/admin/owner" identity as B.
+                def _role(s):
+                    return (getattr(s, "identity_role", "") or "").strip().lower()
+
+                attacker_roles = ("user_a", "user", "attacker", "low", "guest")
+                victim_roles = ("user_b", "victim", "admin", "owner", "tenant_b", "high")
+
+                ident_a = next((s for s in sessions if _role(s) in attacker_roles), None)
+                ident_b = next((s for s in sessions if _role(s) in victim_roles and s is not ident_a), None)
+                # Fall back to a stable ordering (by role name, then id) so repeated
+                # runs pair the same two identities every time.
+                ordered = sorted(sessions, key=lambda s: (_role(s), s.id))
+                if ident_a is None:
+                    ident_a = ordered[0]
+                if ident_b is None:
+                    ident_b = next((s for s in ordered if s is not ident_a), ordered[-1])
+
+                st_a = ident_a.get_decrypted_state()
+                st_b = ident_b.get_decrypted_state()
                 sess_a["token"] = st_a.get("bearer_token", "")
                 sess_a["auth_headers"] = st_a.get("auth_headers", {})
                 sess_b["token"] = st_b.get("bearer_token", "")
@@ -716,11 +930,24 @@ async def audit_intent_router(
                 "cvss_v4_baseline": cvss_info,
                 "findings_summary": res.get("findings_summary", {}),
                 "findings": res.get("findings", []),
-                "remediation": "Enforce server-side tenancy boundary checks and object-level permission validators."
+                "remediation": "Enforce server-side tenancy boundary checks and object-level permission validators.",
+                "next_action": (
+                    _next_action(
+                        "proxsynth_verify_and_export",
+                        "Access-control finding detected; run the deterministic oracle to confirm and export a PoC.",
+                        confidence=0.82,
+                        finding_id=(res.get("findings") or [{}])[0].get("id"),
+                        project=proj
+                    ) if res.get("findings")
+                    else _next_action(
+                        "proxsynth_autonomous_step",
+                        "No access-control break here; let the overseer advance to the next endpoint.",
+                        confidence=0.7, project=proj
+                    )
+                )
             }
 
         elif clean_focus in ("logic", "numeric", "pricing"):
-            from backend.logic_fuzzer import audit_numeric_business_logic
             target_log_id = log_id
             if not target_log_id:
                 log_synth = HttpLog(
@@ -739,28 +966,30 @@ async def audit_intent_router(
                 db.refresh(log_synth)
                 target_log_id = log_synth.id
 
-            target_param = None
-            for k in query_dict.keys():
-                if _NUMERIC_PARAM_PATTERN.match(k):
-                    target_param = k
-                    break
-
-            res = await audit_numeric_business_logic(
-                log_id=target_log_id,
-                target_param=target_param,
-                project=proj
-            )
+            db.close()  # release before the network-heavy business-logic probes
+            from backend.business_logic_auditor import audit_business_logic_flow
+            res = await audit_business_logic_flow(log_id=target_log_id, project=proj)
             cvss_info = get_cvss_v4_rating("NUMERIC_LOGIC")
             return {
                 "status": "success",
                 "facet": "audit",
-                "vulnerability_focus": "Business Logic & Numeric Boundary Flaws",
-                "routed_engine": "numeric_logic_fuzzer",
+                "vulnerability_focus": "Business Logic, Workflow & Approval Bypass",
+                "routed_engine": "business_logic_flow_auditor",
                 "target_url": target_url,
                 "project": proj,
                 "cvss_v4_baseline": cvss_info,
-                "results": res,
-                "remediation": "Validate numeric lower bounds strictly (qty > 0, price >= baseline); use signed decimal types."
+                "decision": res.get("decision"),
+                "confidence": res.get("confidence"),
+                "vectors_tested": res.get("vectors_tested", []),
+                "engines_run": res.get("engines_run", []),
+                "findings": res.get("findings", []),
+                "recommendation": res.get("recommendation"),
+                "remediation": "Enforce workflow-state transitions and privilege fields server-side; never trust client-supplied status/approved/role, and validate numeric lower bounds.",
+                "next_action": res.get("next_action") or _next_action(
+                    "proxsynth_autonomous_step",
+                    "Business logic probed; advance the autonomous loop to the next prioritized endpoint.",
+                    confidence=0.7, project=proj
+                )
             }
 
         elif clean_focus in ("oast", "ssrf"):
@@ -783,7 +1012,19 @@ async def audit_intent_router(
                 "cvss_v4_baseline": cvss_info,
                 "sprayed_results": canaries_res,
                 "callback_events": events,
-                "remediation": "Validate and whitelist destination hostnames, disable URL scheme redirection, and block internal RFC1918 / metadata IPs."
+                "remediation": "Validate and whitelist destination hostnames, disable URL scheme redirection, and block internal RFC1918 / metadata IPs.",
+                "next_action": (
+                    _next_action(
+                        "proxsynth_audit",
+                        "OAST canaries fired; re-poll shortly by re-auditing with oast focus to catch delayed callbacks.",
+                        confidence=0.6, target_url=target_url, vuln_focus="oast", project=proj
+                    ) if not events
+                    else _next_action(
+                        "proxsynth_verify_and_export",
+                        "Out-of-band callback received; confirm and export the SSRF finding.",
+                        confidence=0.85, project=proj
+                    )
+                )
             }
 
         elif clean_focus in ("xss", "dom"):
@@ -802,7 +1043,12 @@ async def audit_intent_router(
                 "project": proj,
                 "cvss_v4_baseline": cvss_info,
                 "oracle_result": res,
-                "remediation": "Apply contextual output encoding and enforce strict Content Security Policy (CSP)."
+                "remediation": "Apply contextual output encoding and enforce strict Content Security Policy (CSP).",
+                "next_action": _next_action(
+                    "proxsynth_autonomous_step",
+                    "DOM oracle executed; continue the loop to the next endpoint or verification.",
+                    confidence=0.68, project=proj
+                )
             }
 
         elif clean_focus in ("graphql",):
@@ -815,7 +1061,12 @@ async def audit_intent_router(
                 "routed_engine": "graphql_protocol_inspector",
                 "target_url": target_url,
                 "project": proj,
-                "results": res
+                "results": res,
+                "next_action": _next_action(
+                    "proxsynth_autonomous_step",
+                    "GraphQL surface inspected; advance the loop to audit mutations/resolvers next.",
+                    confidence=0.66, project=proj
+                )
             }
 
         else:
@@ -833,7 +1084,12 @@ async def audit_intent_router(
                 "routed_engine": "smart_param_fuzzer",
                 "target_url": target_url,
                 "project": proj,
-                "results": res
+                "results": res,
+                "next_action": _next_action(
+                    "proxsynth_autonomous_step",
+                    "Baseline fuzz complete; let the overseer pick the next-best action from the graph.",
+                    confidence=0.64, project=proj
+                )
             }
     finally:
         db.close()
@@ -1129,7 +1385,12 @@ async def autonomous_step_router(
                 "facet": "autonomous_step",
                 "phase": "RECON_REQUIRED",
                 "action_taken": "Inspected attack graph; workspace is empty.",
-                "next_recommended_call": "proxsynth_recon(target='<TARGET_URL_OR_DOMAIN>', mode='auto')"
+                "next_recommended_call": "proxsynth_recon(target='<TARGET_URL_OR_DOMAIN>', mode='auto')",
+                "next_action": _next_action(
+                    "proxsynth_recon",
+                    "Workspace is empty — a target must be supplied before the loop can self-drive.",
+                    confidence=0.4, target="<TARGET_URL_OR_DOMAIN>", mode="auto", project=proj
+                )
             }
 
         # Step B: Check for unverified high-severity findings
@@ -1165,14 +1426,134 @@ async def autonomous_step_router(
                 "phase": "VERIFICATION_AND_EXPORT",
                 "action_taken": f"Executed deterministic verification gate on Finding #{unverified_finding.id} ({unverified_finding.title}) -> Verdict: {verdict}.",
                 "result": verify_res,
-                "next_recommended_call": "Review verified finding and proceed with autonomous audit on next endpoint."
+                "next_recommended_call": "Review verified finding and proceed with autonomous audit on next endpoint.",
+                "next_action": _next_action(
+                    "proxsynth_autonomous_step",
+                    "Finding verified and stamped; call again to continue auditing the remaining surface.",
+                    confidence=0.9, project=proj
+                )
+            }
+
+        # Step B2: A freshly captured flow that neither engine has tested yet ->
+        # chain the access-control + business-logic audits on it (confidence-gated >=80%).
+        # This realizes "capture a flow -> auto-chain BAC + business-logic -> verify-export":
+        # a confirmed finding here is HIGH/CRITICAL, so the NEXT step's Step B auto-verifies it.
+        from backend.bola_matrix import classify_bac_vectors
+        from backend.business_logic_auditor import classify_business_logic_vectors
+
+        candidate_logs = db.query(HttpLog).filter(
+            HttpLog.project == proj,
+            HttpLog.flag_status.in_(["CLEAN", "UNFLAGGED"]),
+            HttpLog.status_code >= 200,
+            HttpLog.status_code < 300,
+        ).order_by(HttpLog.id.desc()).limit(25).all()
+
+        chain_target = None
+        for cand in candidate_logs:
+            c_url = cand.url or ""
+            c_method = (cand.method or "GET").upper()
+            c_path = cand.path or urllib.parse.urlparse(c_url).path
+            c_body = cand.request_body or ""
+            if classify_bac_vectors(c_url, c_method, c_path, c_body) or \
+               classify_business_logic_vectors(c_url, c_method, c_path, c_body):
+                chain_target = cand
+                break
+
+        if chain_target is not None:
+            chain_log_id = chain_target.id
+            chain_url = chain_target.url
+            # Mark before running so the chain's own activity can never re-surface this flow
+            # on the next loop; a recorded finding will later overwrite this to CONFIRMED.
+            chain_target.flag_status = "CHAIN_TESTED"
+            db.commit()
+            db.close()  # release before network-heavy replays
+            from backend.access_logic_chain import audit_access_and_logic_chain
+            chain_res = await audit_access_and_logic_chain(log_id=chain_log_id, project=proj, ws_broadcast_callback=None)
+            return {
+                "status": "success",
+                "facet": "autonomous_step",
+                "phase": "ACCESS_LOGIC_CHAIN_AUDIT",
+                "action_taken": f"Chained the access-control + business-logic engines on captured flow "
+                                f"#{chain_log_id} ({chain_url}) -> decision {chain_res.get('decision')} "
+                                f"@ {chain_res.get('confidence')} confidence.",
+                "chain_result": chain_res,
+                "next_recommended_call": "proxsynth_autonomous_step(project='...') to verify-and-export any >=80% finding and continue.",
+                "next_action": chain_res.get("next_action") or _next_action(
+                    "proxsynth_autonomous_step",
+                    "Flow chain-audited and marked tested; call again to verify any confirmed finding and advance.",
+                    confidence=0.88, project=proj
+                )
+            }
+
+        # Step B3: Auto-capture — a discovered GET object-endpoint that has no captured flow yet is
+        # replayed READ-ONLY through the identity-aware send path to materialize a flow, which the next
+        # loop's chain audit (Step B2) then tests. This closes the "spider fills the surface but the
+        # BAC/logic chain needs a captured flow" gap without any manual browsing. State-changing methods
+        # (POST/PUT/PATCH/DELETE) are intentionally NOT auto-sent (side-effect risk on a live target) and
+        # remain a surfaced manual gap (see _residual_coverage_gaps -> no_mutation_traffic).
+        from backend.bola_matrix import classify_bac_vectors as _classify_bac
+        capture_candidates = db.query(TargetEndpoint).join(TargetAsset).filter(
+            TargetAsset.project == proj,
+            TargetEndpoint.tested_status == "UNTESTED",
+        ).order_by(TargetEndpoint.id.desc()).limit(40).all()
+
+        capture_ep = None
+        for ce in capture_candidates:
+            if (ce.method or "GET").upper() != "GET":
+                continue
+            ce_host = ce.asset.host if (ce.asset and ce.asset.host) else "default"
+            ce_url = ce.url or f"http://{ce_host}{ce.path or ''}"
+            ce_path = ce.path or urllib.parse.urlparse(ce_url).path
+            if not _classify_bac(ce_url, "GET", ce_path, ""):
+                continue  # no object id / privileged function -> nothing for the chain to test
+            # If a flow for this path already exists, let Step B2 chain it rather than re-sending.
+            if db.query(HttpLog).filter(HttpLog.project == proj, HttpLog.path == ce_path).first():
+                ce.tested_status = "CAPTURED"
+                db.commit()
+                continue
+            capture_ep = ce
+            break
+
+        if capture_ep is not None:
+            cap_host = capture_ep.asset.host if (capture_ep.asset and capture_ep.asset.host) else "default"
+            cap_url = capture_ep.url or f"http://{cap_host}{capture_ep.path or ''}"
+            capture_ep.tested_status = "CAPTURED"  # mark before network so it can't be re-picked
+            db.commit()
+            db.close()  # release before the network send
+            cap_res = await traffic_intent_router(url=cap_url, action="send", method="GET", project=proj)
+            return {
+                "status": "success",
+                "facet": "autonomous_step",
+                "phase": "AUTO_CAPTURE",
+                "action_taken": f"Replayed discovered GET endpoint {cap_url} (read-only) to materialize a flow "
+                                f"-> HTTP {cap_res.get('status_code')}, log #{cap_res.get('log_id')}; "
+                                "the next step chain-audits it.",
+                "capture_result": {k: cap_res.get(k) for k in ("log_id", "status_code", "url")},
+                "next_recommended_call": "proxsynth_autonomous_step(project='...') to chain-audit the freshly captured flow.",
+                "next_action": _next_action(
+                    "proxsynth_autonomous_step",
+                    "Flow captured for a discovered object endpoint; call again to run the access/logic chain on it.",
+                    confidence=0.85, project=proj
+                )
             }
 
         # Step C: Pull Cognitive Guidance and Execute Top Audit Action
         guidance = get_project_attack_guidance(project=proj, limit=5)
         actions = guidance.get("recommended_actions", [])
-        if actions:
-            top_action = actions[0]
+        # Guidance is derived from HttpLogs, so an already-handled log keeps re-surfacing the same
+        # action and would spin the loop. Skip actions whose log is already audited/chained/confirmed,
+        # then stamp the one we DO audit, so each flow is driven exactly once and coverage converges.
+        _HANDLED_LOG_STATES = ("AUDITED", "CHAIN_TESTED", "CONFIRMED")
+        top_action = None
+        for act in actions:
+            a_lid = act.get("log_id")
+            if a_lid:
+                alog = db.query(HttpLog).filter(HttpLog.id == a_lid).first()
+                if alog and (alog.flag_status or "") in _HANDLED_LOG_STATES:
+                    continue
+            top_action = act
+            break
+        if top_action is not None:
             focus = top_action.get("vulnerability_focus", "auto")
             target_p = top_action.get("tool_arguments", {})
             test_target = (
@@ -1186,13 +1567,39 @@ async def autonomous_step_router(
                 project=proj,
                 auto_exploit=True
             )
+
+            # Stamp the audited LOG (terminal-for-guidance) so it is not re-surfaced, and mark any
+            # matching endpoint TESTED. A finding recorded during the audit may have already set a
+            # stronger flag (POTENTIAL/CONFIRMED) — never downgrade that.
+            try:
+                audited_lid = top_action.get("log_id")
+                if audited_lid:
+                    alog = db.query(HttpLog).filter(HttpLog.id == audited_lid).first()
+                    if alog and (alog.flag_status or "") not in ("CONFIRMED", "POTENTIAL"):
+                        alog.flag_status = "AUDITED"
+                if test_target:
+                    marked = db.query(TargetEndpoint).join(TargetAsset).filter(
+                        TargetAsset.project == proj,
+                        (TargetEndpoint.url == test_target) | (TargetEndpoint.path == urllib.parse.urlparse(test_target).path)
+                    ).first()
+                    if marked and marked.tested_status != "TESTED":
+                        marked.tested_status = "TESTED"
+                db.commit()
+            except Exception:
+                db.rollback()
+
             return {
                 "status": "success",
                 "facet": "autonomous_step",
                 "phase": "VULNERABILITY_AUDIT",
                 "action_taken": f"Executed heuristic audit on {test_target} with focus: {focus}.",
                 "audit_result": audit_res,
-                "next_recommended_call": "proxsynth_autonomous_step(project='...') to continue testing loop."
+                "next_recommended_call": "proxsynth_autonomous_step(project='...') to continue testing loop.",
+                "next_action": _next_action(
+                    "proxsynth_autonomous_step",
+                    "Top-priority endpoint audited and marked tested; call again to advance to the next action.",
+                    confidence=0.88, project=proj
+                )
             }
 
         # Step D: Untested Endpoints Fallback -> Spider or Fuzz
@@ -1218,57 +1625,125 @@ async def autonomous_step_router(
                 "phase": "ENDPOINT_AUDIT",
                 "action_taken": f"Probed untested endpoint {ep_url}.",
                 "audit_result": audit_res,
-                "next_recommended_call": "proxsynth_autonomous_step(project='...') to continue testing loop."
+                "next_recommended_call": "proxsynth_autonomous_step(project='...') to continue testing loop.",
+                "next_action": _next_action(
+                    "proxsynth_autonomous_step",
+                    "Untested endpoint probed and marked tested; call again to continue coverage.",
+                    confidence=0.85, project=proj
+                )
             }
 
+        coverage_gaps = _residual_coverage_gaps(proj)
         return {
             "status": "success",
             "facet": "autonomous_step",
             "phase": "COVERAGE_COMPLETE",
             "action_taken": "All attack surface endpoints tested and verified.",
             "summary": summary,
-            "next_recommended_call": "proxsynth_verify_and_export(format='report_markdown') to produce final pentest report."
+            "coverage_gaps": coverage_gaps,
+            "next_recommended_call": "proxsynth_verify_and_export(format='report_markdown') to produce final pentest report.",
+            "next_action": _next_action(
+                "proxsynth_verify_and_export",
+                "Surface fully covered — compile the publication-ready report to close the engagement."
+                + (f" {len(coverage_gaps['open_gaps'])} residual manual gap(s) remain (see coverage_gaps)."
+                   if coverage_gaps["open_gaps"] else ""),
+                confidence=0.9, format="report_markdown", project=proj
+            )
         }
     finally:
         db.close()
 
 
+def _residual_coverage_gaps(proj: str) -> Dict[str, Any]:
+    """Inspect what the cold engagement could NOT reach on its own, and return the
+    concrete manual actions that unlock the rest — so 'complete' never hides a silent gap.
+    The two engagement-limiting gaps are: no secondary identity (BAC stays unauth-only)
+    and no captured mutation bodies (business-logic/approval/mass-assignment can't fire)."""
+    db = SessionLocal()
+    try:
+        identities = db.query(ActiveSession).filter(ActiveSession.project == proj).count()
+        mutation_flows = db.query(HttpLog).filter(
+            HttpLog.project == proj,
+            HttpLog.method.in_(["POST", "PUT", "PATCH", "DELETE"]),
+            (HttpLog.request_body != None) & (HttpLog.request_body != ""),  # noqa: E711
+        ).count()
+    except Exception:
+        identities, mutation_flows = 0, 0
+    finally:
+        db.close()
+
+    gaps: List[Dict[str, Any]] = []
+    if identities < 2:
+        gaps.append({
+            "gap": "insufficient_identities",
+            "impact": "BOLA/BFLA were tested unauthenticated-only; cross-user and privilege-escalation "
+                      "coverage needs at least two real identities (e.g. a victim and an attacker).",
+            "action": "proxsynth_session(action='set', domain='<host>', role='attacker', token='<JWT/cookie>') "
+                      "for each persona, then re-run the autonomous loop.",
+        })
+    if mutation_flows == 0:
+        gaps.append({
+            "gap": "no_mutation_traffic",
+            "impact": "Business-logic / approval-bypass / mass-assignment engines need a captured mutation "
+                      "body (POST/PUT/PATCH) to tamper with; passive crawling yields none.",
+            "action": "Drive the target's real workflows through the proxy (or send them via proxsynth_traffic / "
+                      "proxsynth_execute) so mutation flows are captured, then re-run the loop to chain-audit them.",
+        })
+    return {"identities_registered": identities, "mutation_flows_captured": mutation_flows, "open_gaps": gaps}
+
+
 async def run_cognitive_hexagon_campaign(
     target_url: str,
     project: str = "default",
-    max_steps: int = 5
+    max_steps: int = 20,
+    no_progress_limit: int = 2
 ) -> Dict[str, Any]:
     """
-    Runs an autonomous unified pentest sequence orchestrated entirely by the Cognitive Hexagon.
-    Seeds target knowledge, prioritizes hypotheses, audits endpoints, verifies findings, and returns telemetry.
+    Runs an autonomous unified pentest sequence orchestrated entirely by the Cognitive Hexagon,
+    end-to-end and unattended: seeds target knowledge (following the recon->recon handoff so a bare
+    domain is still spidered), drives the autonomous overseer loop to coverage completion with a
+    no-progress breaker, aggregates auditable telemetry, and attaches an engagement report plus the
+    residual manual-coverage gaps. One call takes 'pentest <url>' all the way to a finished result.
     """
-    steps_taken = []
+    steps_taken: List[Dict[str, Any]] = []
     proj = _resolve_proj(project, allow_all=False)
 
-    # Step 1: Recon & Seed
+    # Step 1: Recon & Seed — follow a recon->recon handoff (domain-probe -> spider) up to 2 hops so a
+    # bare hostname is actually crawled before the audit loop, closing the premature-COVERAGE_COMPLETE gap.
     if target_url and target_url.strip():
-        recon_res = await recon_intent_router(target=target_url.strip(), mode="auto", project=proj)
-        steps_taken.append({
-            "step": 1,
-            "facet": "recon",
-            "result": recon_res
-        })
+        recon_target, recon_mode, hops = target_url.strip(), "auto", 0
+        while hops < 3:
+            recon_res = await recon_intent_router(target=recon_target, mode=recon_mode, project=proj)
+            steps_taken.append({"step": len(steps_taken) + 1, "facet": "recon", "result": recon_res})
+            na = recon_res.get("next_action") or {}
+            if na.get("tool") == "proxsynth_recon":
+                args = na.get("arguments", {})
+                recon_target = args.get("target") or recon_target
+                recon_mode = args.get("mode", "spider")
+                hops += 1
+                continue
+            break
 
-    # Steps 2..N: Autonomous Iterations
-    for step_num in range(2, max_steps + 1):
+    # Steps 2..N: Autonomous Iterations with a no-progress breaker so a stuck signature can't spin.
+    last_sig, repeat = None, 0
+    for _ in range(max_steps):
         step_res = await autonomous_step_router(project=proj, goal="auto")
-        steps_taken.append({
-            "step": step_num,
-            "facet": "autonomous_step",
-            "result": step_res
-        })
+        steps_taken.append({"step": len(steps_taken) + 1, "facet": "autonomous_step", "result": step_res})
         phase = step_res.get("phase", "")
         if phase in ("COVERAGE_COMPLETE", "RECON_REQUIRED", "IDLE"):
+            break
+        sig = f"{phase}:{step_res.get('action_taken', '')}"
+        repeat = repeat + 1 if sig == last_sig else 0
+        last_sig = sig
+        if repeat >= no_progress_limit:
+            steps_taken.append({"step": len(steps_taken) + 1, "facet": "loop_guard",
+                                "result": {"phase": "NO_PROGRESS_HALT",
+                                           "action_taken": f"Same action repeated {repeat + 1}x — halting to avoid a spin."}})
             break
 
     # Aggregate telemetry metrics from steps & DB for project
     db = SessionLocal()
-    findings_list = []
+    findings_list: List[Dict[str, Any]] = []
     endpoints_mapped = 0
     confirmed_count = 0
     try:
@@ -1281,21 +1756,73 @@ async def run_cognitive_hexagon_campaign(
     finally:
         db.close()
 
+    # Report real, auditable numbers only. A security report must never inflate
+    # coverage, so endpoints_mapped is the true DB count (not max(real, steps*2)),
+    # and vanity keys that were always 0 are dropped rather than faked.
+    verified_count = sum(
+        1 for f in findings_list
+        if isinstance(f, dict) and "[ORACLE VERDICT: VERIFIED]" in str(f.get("evidence", ""))
+    )
+    severity_breakdown: Dict[str, int] = {}
+    for f in findings_list:
+        sev = str(f.get("severity", "UNKNOWN")).upper() if isinstance(f, dict) else "UNKNOWN"
+        severity_breakdown[sev] = severity_breakdown.get(sev, 0) + 1
+
     metrics = {
-        "endpoints_mapped": max(endpoints_mapped, len(steps_taken) * 2),
-        "forms_identified": sum(len(s.get("result", {}).get("forms", [])) for s in steps_taken if isinstance(s.get("result"), dict)),
-        "canaries_sprayed": sum(s.get("result", {}).get("probes_sent", 0) for s in steps_taken if isinstance(s.get("result"), dict)),
-        "vulnerabilities_confirmed": confirmed_count,
-        "false_positives_filtered": 0
+        "endpoints_mapped": endpoints_mapped,
+        "autonomous_steps_executed": len(steps_taken),
+        "findings_recorded": confirmed_count,
+        "findings_oracle_verified": verified_count,
     }
+
+    last_phase = next((s["result"].get("phase") for s in reversed(steps_taken)
+                       if s.get("facet") in ("autonomous_step", "loop_guard")), None)
+    coverage = _residual_coverage_gaps(proj)
+    reached_completion = last_phase == "COVERAGE_COMPLETE"
+
+    engagement_report = (
+        f"Engagement on {target_url or proj}: mapped {endpoints_mapped} endpoint(s) over "
+        f"{len(steps_taken)} autonomous step(s); recorded {confirmed_count} finding(s) "
+        f"({verified_count} oracle-verified). Severity: "
+        f"{', '.join(f'{k}={v}' for k, v in sorted(severity_breakdown.items())) or 'none'}. "
+        + ("Full surface covered." if reached_completion else f"Halted at phase '{last_phase}'.")
+        + (f" Residual manual gaps: {len(coverage['open_gaps'])} (see coverage_gaps)."
+           if coverage["open_gaps"] else " No residual manual gaps.")
+    )
+
+    # Next action: export a dossier for the top finding, else deepen coverage via the surfaced gap.
+    if findings_list:
+        na = _next_action(
+            "proxsynth_verify_and_export",
+            "Engagement complete with findings — export the reproducible dossier for the top finding.",
+            confidence=0.85, finding_id=findings_list[0].get("id"), format="report_markdown", project=proj,
+        )
+    elif coverage["open_gaps"]:
+        na = _next_action(
+            "proxsynth_session",
+            coverage["open_gaps"][0]["action"],
+            confidence=0.5, action="set", project=proj,
+        )
+    else:
+        na = _next_action(
+            "proxsynth_recon",
+            "No findings and no open gaps — broaden the surface with another recon target or a deeper crawl.",
+            confidence=0.4, target=target_url, mode="spider", project=proj,
+        )
 
     return {
         "status": "completed",
         "engine": "cognitive_hexagon",
         "project": proj,
         "target_url": target_url,
+        "reached_completion": reached_completion,
+        "final_phase": last_phase,
         "steps_count": len(steps_taken),
         "steps": steps_taken,
         "metrics": metrics,
-        "findings_summary": findings_list
+        "severity_breakdown": severity_breakdown,
+        "engagement_report": engagement_report,
+        "coverage_gaps": coverage,
+        "findings_summary": findings_list,
+        "next_action": na,
     }

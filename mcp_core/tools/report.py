@@ -664,7 +664,12 @@ async def run_pentest_command(
     """
     target_project = _resolve_project(project, allow_all=False)
     target_agent = (agent_id or "primary_agent").strip()
-    cmd_clean = command.strip()
+
+    # If a script body is supplied and `command` is empty/a marker, materialize the
+    # script to a temp file and run that — so captured/snooped scripts actually execute.
+    from backend.script_runner import resolve_execution_command, cleanup_temp
+    _mat_workdir = os.path.abspath(cwd) if (cwd and os.path.isdir(cwd)) else CURRENT_DIR
+    cmd_clean, _rerun_tmp = resolve_execution_command(command, script_content, _mat_workdir)
 
     # Query project settings for internal network scope allowance
     db = SessionLocal()
@@ -819,6 +824,7 @@ async def run_pentest_command(
         stderr_text = f"Subprocess invocation failure: {str(ex)}"
 
     duration_ms = int((time.time() - start_time) * 1000)
+    cleanup_temp(_rerun_tmp)
 
     cmd_log_payload = {
         "project": target_project,

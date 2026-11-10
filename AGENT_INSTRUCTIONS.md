@@ -3,7 +3,7 @@
 
 > **Release Version**: `v0.3.0-beta` (Autonomous Cognitive Testing Release)  
 > **Protocol**: Model Context Protocol (FastMCP 2.0+)  
-> **Registered Tools**: **104 Active FastMCP Security Tools (Full Mode) | 18 Consolidated Meta-Tools (Power Mode ~82.7%) | 6 Super-Tools / 9 Total (Cognitive Pentest Hexagon ~91.3% - 95% Token Reduction)**  
+> **Registered Tools**: **105 Active FastMCP Security Tools (Full Mode) | 19 Consolidated Meta-Tools (Power Mode ~80%) | 7 Super-Tools / 10 Total (Cognitive Pentest Hexagon ~90% Token Reduction, measured ~3,000 vs ~30,000 tokens)**  
 > **Default Ports**: FastAPI Dashboard & API `:8000` | Forward Interception Proxy `:8088` | DNS OAST `:5353` | LDAP OAST `:1390`  
 
 This operational document specifies how autonomous AI agents interface with the **Proxynth Security Testing Gateway**, autonomously navigate attack surfaces across Web, REST/GraphQL APIs, and Network Infrastructure, make deterministic testing decisions, and execute zero-human-intervention security campaigns.
@@ -143,8 +143,8 @@ Proxsynth offers three runtime tool-exposure modes configurable via the environm
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                      PROXSYNTH COGNITIVE PENTEST HEXAGON (6 SUPER-TOOLS)               │
-│                  Prompt Token Reduction: ~95% vs Full Mode (104 Tools)                 │
+│                      PROXSYNTH COGNITIVE PENTEST HEXAGON (7 SUPER-TOOLS)               │
+│              Prompt Token Reduction: ~90% vs Full Mode (10 vs 105 Tools)               │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 
  1. proxsynth_recon(target="...", mode="auto")
@@ -185,6 +185,16 @@ Proxsynth offers three runtime tool-exposure modes configurable via the environm
         - Evaluates Attack Surface Knowledge Graph and recent HTTP traffic
         - Automatically executes the single highest-leverage offensive testing action
         - Progresses the autonomous pentest lifecycle with zero human prompt loops
+
+ 7. proxsynth_execute(command="..." | script_content="...", project="...")
+    └─► SCRIPT / CLI RUNNER ──► AI ACTIVITY:
+        - Runs an external tool (nmap/sqlmap/ffuf/nuclei) or a custom script LOCALLY
+        - Proxied through the MITM engine, so HTTP it emits is still captured (auto-linked)
+        - Logged to AI Activity with full stdout/stderr — re-runnable from the web UI
+
+    DECISION RULE ─ pick your lane by what you are doing:
+        - ONE HTTP request / replay / diff        ──► proxsynth_traffic  (→ Proxy Traffic)
+        - External tool OR custom/multi-step script──► proxsynth_execute  (→ AI Activity)
 ```
 
 To configure Hexagon Mode for your agent client, set:

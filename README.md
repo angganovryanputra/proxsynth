@@ -5,9 +5,9 @@
 
 [![Release](https://img.shields.io/badge/Release-v0.3.0--beta-orange.svg)](#-overview)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
-[![Cognitive Hexagon](https://img.shields.io/badge/Cognitive%20Hexagon-6%20Super--Tools%20(95%25%20Token%20Cut)-ec4899.svg)](#12-the-cognitive-pentest-hexagon-mode-hexagon)
+[![Cognitive Hexagon](https://img.shields.io/badge/Cognitive%20Hexagon-7%20Super--Tools%20(90%25%20Token%20Cut)-ec4899.svg)](#12-the-cognitive-pentest-hexagon-mode-hexagon)
 [![FastMCP Tools](https://img.shields.io/badge/FastMCP%20Tools-104%20Registered%20(Full%20Mode)-8b5cf6.svg)](#-complete-fastmcp-tools-reference-98-tools)
-[![Power Mode](https://img.shields.io/badge/Power--Mode-18%20Meta--Tools%20(82.7%25%20Token%20Cut)-10b981.svg)](#option-b-power-mode-18-consolidated-meta-tools)
+[![Power Mode](https://img.shields.io/badge/Power--Mode-18%20Meta--Tools%20(80%25%20Token%20Cut)-10b981.svg)](#option-b-power-mode-18-consolidated-meta-tools)
 [![Two-Tier Orchestrator](https://img.shields.io/badge/Access%20Control-Two--Tier%20Orchestrator%20(3--Way%20Swap)-ec4899.svg)](#11-two-tier-hybrid-access-control--business-logic-orchestrator)
 [![Interactive Workbenches](https://img.shields.io/badge/UI%20Workbenches-Dual--Pane%20%2B%20Splitters-0ea5e9.svg)](#13-interactive-human-in-the-loop-pentest-workbenches--dual-pane-ui)
 [![API Guardrails](https://img.shields.io/badge/API%20Guardrails-Idempotency%20%2B%20RFC%207807-6366f1.svg)](#14-enterprise-api-contract-standardization--guardrails)
@@ -27,8 +27,8 @@ Traditional penetration testing proxies (*Burp Suite*, *Caido*, *mitmproxy*, *OW
 
 | Operational Bottleneck | Burp Suite / Caido / ZAP | PROXSYNTH Autonomous Solution |
 | :--- | :--- | :--- |
-| **Token Exhaustion** | Dumps 100KB–1MB raw HTML/CSS/JS into LLM prompts. | **90% Token Reduction:** LLM Semantic Body Distiller & Dynamic Noise Stripper. |
-| **Prompt Bloat (Schema)** | Massive tool registries bloat prompt context by ~36,000 tokens. | **Tri-Tier Registry:** Hexagon Mode exposes 6 intent-driven super-tools cutting prompt schema tokens by **~91.3% - 95%** with heuristic auto-decisions. |
+| **Token Exhaustion** | Dumps 100KB–1MB raw HTML/CSS/JS into LLM prompts. | **85–99% Token Reduction:** LLM Semantic Body Distiller auto-engages on large bodies (measured 99.2% on a 37 KB page). |
+| **Prompt Bloat (Schema)** | Massive tool registries bloat prompt context by ~30,000 tokens. | **Tri-Tier Registry:** Hexagon Mode exposes 7 intent-driven super-tools cutting prompt schema tokens by **~90%** (measured ~3,000 vs ~30,000) with heuristic auto-decisions. |
 | **Agent Amnesia & Loops** | Stateless; agent repeats tests, gets stuck in loops, and forgets state. | **Hypothesis Working Memory Ledger:** Tracks `PLANNED` ➔ `TESTING` ➔ `CONFIRMED` / `REFUTED` state transitions. |
 | **Subprocess Proxy Bypass** | CLI tools (`curl`, `nmap`, `nuclei`, `sqlmap`) bypass local proxy. | **Transparent Interception:** `sitecustomize.py` + `proxsynth-exec` CLI wrappers enforce proxying (:8088) and CA trust. |
 | **False-Positive Hallucinations** | Agent guesses XSS or SQLi from reflected strings. | **Deterministic Verification Gate:** Sandboxed Headless Chromium DOM Oracle with **Screenshot Proof** (`evidence/xss_proof_{hash}.png`) & Welch's t-test. |
@@ -60,7 +60,7 @@ flowchart TD
     end
 
     subgraph S3["3. COGNITIVE ORCHESTRATION ENGINE"]
-        HEX["Cognitive Pentest Hexagon<br/>(PROXSYNTH_TOOL_MODE=hexagon, ~95% Token Reduction)"]
+        HEX["Cognitive Pentest Hexagon<br/>(PROXSYNTH_TOOL_MODE=hexagon, ~91% Token Reduction)"]
         HEX --- H1["proxsynth_recon<br/>(Passive CT, Port Scan, JS Miner, Shadow Routes)"]
         HEX --- H2["proxsynth_traffic<br/>(Semantic Diffing, Distiller, WAF Auto-Heal)"]
         HEX --- H3["proxsynth_audit<br/>(Two-Tier Orchestrator, BOLA, BFLA, Logic, Fuzzing)"]
@@ -197,8 +197,8 @@ python -m backend.app
 
 Proxsynth operates natively with any MCP client (*Claude Desktop*, *Cursor*, *Windsurf*, *OpenCode*, *Hermes*, *Antigravity*).
 
-#### Option A: The Cognitive Pentest Hexagon (Recommended for AI Agents — Cuts Tokens by ~95%)
-In Hexagon Mode, Proxsynth registers **6 intent-driven super-tools** (9 total with project context), delivering maximum autonomy, zero hallucinated arguments, and an extreme **~95% prompt token reduction**:
+#### Option A: The Cognitive Pentest Hexagon (Recommended for AI Agents — Cuts Tokens by ~91%)
+In Hexagon Mode, Proxsynth registers **7 intent-driven super-tools** (10 total with project context), delivering maximum autonomy, zero hallucinated arguments, and a **~90% prompt token reduction** (measured ~3,000 vs ~30,000 tokens). Responses are emitted as compact JSON (~15% fewer output tokens per call) and large bodies auto-distill. The LLM picks its lane by tool name — `proxsynth_traffic` for a single HTTP request (→ Proxy Traffic) vs `proxsynth_execute` for an external tool / custom script (→ AI Activity, proxied + re-runnable):
 
 ```json
 {
@@ -255,14 +255,14 @@ Registers the complete granular suite of 104 modular security testing tools:
 
 ## ⚡ Dual-Mode FastMCP Registry (Power Mode vs. Full Mode)
 
-Standard MCP servers register dozens of granular tools. In agentic testing loops, dumping 90+ tool JSON schemas into the prompt consumes **~36,000+ tokens per inference turn**, leading to context truncation, high latency, and increased costs.
+Standard MCP servers register dozens of granular tools. In agentic testing loops, dumping 100+ tool JSON schemas into the prompt consumes **~30,000 tokens per inference turn** (measured), leading to context truncation, high latency, and increased costs.
 
 Proxsynth solves this with its **Dual-Mode Registry Pattern**:
 
 | Feature / Metric | Power Mode (`PROXSYNTH_TOOL_MODE=power`) | Full Mode (`PROXSYNTH_TOOL_MODE=full`) |
 | :--- | :--- | :--- |
-| **Registered FastMCP Tools** | **11 Consolidated Power Tools** | **97 Granular Tools** |
-| **Prompt Token Overhead** | **~4,500 Tokens (~87.5% reduction)** | ~36,000 Tokens |
+| **Registered FastMCP Tools** | **18 Consolidated Power Tools** | **104 Granular Tools** |
+| **Prompt Token Overhead** | **~5,900 Tokens (~80% reduction)** | ~30,000 Tokens |
 | **Recommended Environment** | Autonomous LLM Agents (Claude, Cursor, Antigravity) | Human Security Engineers / Automated CI Scripts |
 | **Action Routing** | Single tool dispatches multi-action parameters | Direct 1:1 functional tool invocation |
 | **Underlying Engine Access** | 100% full access to all backend capabilities | 100% full access to all backend capabilities |
@@ -485,8 +485,8 @@ Solves the critical problem of broken access control (BOLA, BFLA, Broken ACL, an
 
 ### 12. The Cognitive Pentest Hexagon (Mode: `hexagon`)
 * **Module:** [`backend/cognitive_hexagon.py`](file:///D:/0x13%20PROJECT/Proxsynth/backend/cognitive_hexagon.py)
-* **Registered Super-Tools:** 6 Core Super-Tools (9 Total with Project Context)
-* **Prompt Schema Token Reduction:** **~91.3% - 95% Savings** (~1,800 tokens vs ~36,000 tokens)
+* **Registered Super-Tools:** 7 Core Super-Tools (10 Total with Project Context)
+* **Prompt Schema Token Reduction:** **~90% Savings** (measured ~3,000 tokens vs ~30,000 tokens)
 
 Standard MCP servers expose 90+ granular functions, forcing the LLM to spend precious tokens memorizing fragile argument combinations. The Cognitive Pentest Hexagon reorganizes Proxsynth into **6 Intent-Driven Facets**:
 

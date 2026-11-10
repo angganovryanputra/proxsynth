@@ -13,13 +13,25 @@ import json
 from typing import Optional, Dict, Any, Literal
 
 from mcp_core.server import proxsynth_tool
+
+
+def _emit(res: Any) -> str:
+    """Serialize a super-tool result as compact JSON (no indent padding, keep UTF-8).
+
+    LLMs parse minified JSON identically to pretty-printed JSON, so dropping the
+    ``indent=2`` whitespace trims ~15% of output tokens on every hexagon call with
+    zero loss of fidelity — the token-efficiency half of the cognitive contract.
+    """
+    return json.dumps(res, separators=(",", ":"), ensure_ascii=False)
 from backend.cognitive_hexagon import (
     recon_intent_router,
     traffic_intent_router,
     audit_intent_router,
     session_intent_router,
     verify_export_intent_router,
-    autonomous_step_router
+    autonomous_step_router,
+    run_cognitive_hexagon_campaign,
+    _next_action,
 )
 
 
@@ -48,14 +60,14 @@ async def proxsynth_recon(
             max_pages=max_pages,
             concurrency=concurrency
         )
-        return json.dumps(res, indent=2)
+        return _emit(res)
     except Exception as ex:
-        return json.dumps({
+        return _emit({
             "status": "error",
             "facet": "recon",
             "target": target,
             "message": str(ex)
-        }, indent=2)
+        })
 
 
 @proxsynth_tool(name="proxsynth_traffic")
@@ -93,13 +105,13 @@ async def proxsynth_traffic(
             query_search=query_search,
             project=project
         )
-        return json.dumps(res, indent=2)
+        return _emit(res)
     except Exception as ex:
-        return json.dumps({
+        return _emit({
             "status": "error",
             "facet": "traffic",
             "message": str(ex)
-        }, indent=2)
+        })
 
 
 @proxsynth_tool(name="proxsynth_audit")
@@ -136,13 +148,13 @@ async def proxsynth_audit(
             project=project,
             auto_exploit=auto_exploit
         )
-        return json.dumps(res, indent=2)
+        return _emit(res)
     except Exception as ex:
-        return json.dumps({
+        return _emit({
             "status": "error",
             "facet": "audit",
             "message": str(ex)
-        }, indent=2)
+        })
 
 
 @proxsynth_tool(name="proxsynth_session")
@@ -173,13 +185,13 @@ async def proxsynth_session(
             login_url=login_url,
             project=project
         )
-        return json.dumps(res, indent=2)
+        return _emit(res)
     except Exception as ex:
-        return json.dumps({
+        return _emit({
             "status": "error",
             "facet": "session",
             "message": str(ex)
-        }, indent=2)
+        })
 
 
 @proxsynth_tool(name="proxsynth_verify_and_export")
@@ -204,37 +216,122 @@ async def proxsynth_verify_and_export(
             format=format,
             project=project
         )
-        return json.dumps(res, indent=2)
+        return _emit(res)
     except Exception as ex:
-        return json.dumps({
+        return _emit({
             "status": "error",
             "facet": "verify_and_export",
             "message": str(ex)
-        }, indent=2)
+        })
+
+
+@proxsynth_tool(name="proxsynth_execute")
+async def proxsynth_execute(
+    command: str = "",
+    script_content: Optional[str] = None,
+    reasoning: str = "",
+    tool_name: str = "terminal",
+    project: Optional[str] = None,
+    timeout: int = 60,
+    cwd: str = ""
+) -> str:
+    """
+    [HEXAGON SUPER-TOOL: SCRIPT & CLI EXECUTION -> AI ACTIVITY]
+    Runs an external security tool or a custom script LOCALLY, proxied through the MITM
+    engine so any HTTP it emits is still captured in Proxy Traffic (auto-linked), and
+    records the run in the AI Activity module with full stdout/stderr — re-runnable from
+    the Proxsynth web UI.
+
+    DECISION RULE (so you pick the right tool):
+    - Use proxsynth_execute when invoking an external tool (nmap, sqlmap, ffuf, nuclei,
+      gobuster) OR executing multi-step / custom script logic. Pass the script body as
+      `script_content` (it is run as a file) or a shell line as `command`.
+    - Use proxsynth_traffic instead for a SINGLE HTTP request/replay/diff (that path
+      records into Proxy Traffic, not AI Activity).
+    Safe-Mode guardrails + SSRF checks apply; execution is localhost-bound and proxied.
+    """
+    try:
+        from mcp_core.tools.report import run_pentest_command
+        raw = await run_pentest_command(
+            command=command,
+            reasoning=reasoning,
+            tool_name=tool_name,
+            project=project,
+            timeout=timeout,
+            cwd=cwd,
+            script_content=script_content,
+            output_format="json"
+        )
+        data = json.loads(raw) if isinstance(raw, str) and raw.strip().startswith("{") else {"raw_output": raw}
+
+        # Chain: if the run surfaced structured intel, point at the audit engine; otherwise
+        # suggest inspecting the traffic the process generated.
+        mined = data.get("mined_summary") or data.get("mined")
+        if mined:
+            na = _next_action(
+                "proxsynth_audit",
+                "Script output was mined into the knowledge graph; audit the newly surfaced endpoints.",
+                confidence=0.65, project=project
+            )
+        else:
+            na = _next_action(
+                "proxsynth_traffic",
+                "Inspect the HTTP traffic this script generated (search recent captured logs).",
+                confidence=0.55, action="search", query_search=(command or "")[:80], project=project
+            )
+        if isinstance(data, dict):
+            data["facet"] = "execute"
+            data["next_action"] = na
+        return _emit(data)
+    except Exception as ex:
+        return _emit({
+            "status": "error",
+            "facet": "execute",
+            "message": str(ex)
+        })
 
 
 @proxsynth_tool(name="proxsynth_autonomous_step")
 async def proxsynth_autonomous_step(
     project: Optional[str] = None,
     goal: str = "auto",
-    feedback: Optional[str] = None
+    feedback: Optional[str] = None,
+    target: Optional[str] = None,
+    run_to_completion: bool = False,
+    max_steps: int = 20
 ) -> str:
     """
-    [HEXAGON SUPER-TOOL: COGNITIVE OVERSEER & SINGLE-INTENT STEP EXECUTOR]
-    Master autonomous agent interface. Inspects Attack Surface Knowledge Graph and recent traffic,
-    selects the single next highest-leverage offensive testing action, and executes it immediately.
+    [HEXAGON SUPER-TOOL: COGNITIVE OVERSEER — SINGLE STEP OR FULL AUTONOMOUS ENGAGEMENT]
+    Master autonomous agent interface. Inspects the Attack Surface Knowledge Graph and recent
+    traffic, selects the single next highest-leverage offensive testing action, and executes it.
+
+    TWO MODES:
+    - Default (one step): returns the single action taken and a next_action telling you what to call
+      next. Re-call to advance the loop manually.
+    - Full engagement: pass `target='https://host/'` and/or `run_to_completion=True` to take a plain
+      "pentest <url>" request ALL THE WAY — recon (crawling the surface, following the domain->spider
+      handoff), then the overseer loop to coverage completion with a no-progress breaker, then an
+      aggregated engagement_report + residual coverage_gaps (identities to register, mutation traffic
+      to capture) + a next_action to export the dossier. One call, finished result.
     """
     try:
-        res = await autonomous_step_router(
-            project=project,
-            goal=goal,
-            feedback=feedback
-        )
-        return json.dumps(res, indent=2)
+        if run_to_completion or (target and target.strip()):
+            res = await run_cognitive_hexagon_campaign(
+                target_url=(target or "").strip(),
+                project=project or "default",
+                max_steps=max_steps
+            )
+        else:
+            res = await autonomous_step_router(
+                project=project,
+                goal=goal,
+                feedback=feedback
+            )
+        return _emit(res)
     except Exception as ex:
-        return json.dumps({
+        return _emit({
             "status": "error",
             "facet": "autonomous_step",
             "message": str(ex)
-        }, indent=2)
+        })
 

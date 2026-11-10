@@ -82,42 +82,17 @@ async def test_bola_idor(
     project: Optional[str] = None
 ) -> str:
     """
-    Executes an on-demand BOLA/IDOR shadow test on a specific logged endpoint (by Log ID).
-    Proxynth replays the request using registered secondary identities (attacker, unauthenticated)
-    and checks if unauthorized access succeeds.
+    On-demand Broken Access Control audit (BOLA / IDOR / BFLA) of a captured flow, by Log ID.
+    Proxsynth classifies which access-control tests the flow warrants, replays it under every
+    registered secondary identity (and unauthenticated), decides validity per vector with a
+    confidence, enumerates adjacent numeric object ids, and returns a machine-actionable
+    decision (VULNERABLE / LIKELY_SECURE / NOT_APPLICABLE / INCONCLUSIVE) plus a next_action
+    the LLM can follow to verify and export a confirmed finding.
     """
-    from backend.database import SessionLocal, HttpLog
-    from backend.bola_matrix import execute_bola_shadow_replay
+    from backend.bola_matrix import audit_bac_flow
     target_project = _resolve_project(project, allow_all=False)
-    db = SessionLocal()
-    try:
-        log = db.query(HttpLog).filter(HttpLog.id == log_id).first()
-        if not log:
-            return f"[!] Log #{log_id} not found."
-        req_hdrs = json.loads(log.request_headers) if log.request_headers else {}
-        finding = await execute_bola_shadow_replay(
-            log_id=log.id,
-            project=target_project,
-            url=log.url,
-            method=log.method,
-            req_headers=req_hdrs,
-            req_body=log.request_body,
-            orig_status=log.status_code,
-            orig_body=log.response_body
-        )
-        if finding:
-            return json.dumps({
-                "status": "VULNERABILITY_CONFIRMED",
-                "message": "BOLA/IDOR vulnerability detected! Unauthorized identity successfully accessed object data.",
-                "finding": finding
-            }, indent=2)
-        else:
-            return json.dumps({
-                "status": "CLEAN_OR_NO_DISCLOSURE",
-                "message": f"Shadow replays against Log #{log_id} returned authorization errors or identical denial as expected."
-            }, indent=2)
-    finally:
-        db.close()
+    res = await audit_bac_flow(log_id=log_id, project=target_project)
+    return json.dumps(res, indent=2)
 
 
 # ==============================================================================

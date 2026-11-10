@@ -605,18 +605,24 @@ async def get_traffic_history(
 async def get_log_detail(
     log_id: int,
     max_body_chars: Optional[int] = 100000,
-    distill: bool = False,
+    distill: Optional[bool] = None,
     reflected_query: Optional[str] = None
 ) -> str:
     """
     Retrieves complete headers, full request body, full response body, and triaged findings
     for a specific HTTP transaction by its Log ID.
-    When `distill=True`, compresses large HTML/JSON response bodies using Proxynth's Semantic
-    Security Distiller into a compact, high-density summary (saving up to 95% LLM tokens)
+
+    TOKEN-SMART DISTILLATION (`distill`):
+      - None (default) -> AUTO: large response bodies (> ~8 KB) are automatically distilled
+        into a compact, high-density security summary; small bodies are returned verbatim.
+        This keeps context lean by default without the agent having to remember a flag.
+      - True  -> always distill, regardless of size.
+      - False -> never distill; return the raw, uncompressed body (escape hatch for byte-exact
+        inspection of reflected XSS payloads, encoding edge cases, or sensitive leaks).
+    Distillation uses Proxynth's Semantic Security Distiller (saving up to ~95% LLM tokens)
     while highlighting reflected parameters, hidden form fields, and potential endpoints.
     Queries the central Proxynth Dashboard API first (with local database fallback) to ensure
     consistent access in cross-environment (WSL/Windows) setups.
-    Essential for bug bounty research to inspect reflected XSS, deep JSON responses, or sensitive leaks without truncation.
     """
     log_data = None
     source_info = "Dashboard API"
@@ -671,6 +677,14 @@ async def get_log_detail(
     res_body_prev = display_res_body[:max_len]
     distill_label = ""
 
+    # Adaptive distillation: None => auto-distill only when the body is large enough
+    # that raw bytes would waste context; explicit True/False override the heuristic.
+    AUTO_DISTILL_THRESHOLD = 8000  # chars (~2000 tokens)
+    if distill is None:
+        effective_distill = res_body_len > AUTO_DISTILL_THRESHOLD
+    else:
+        effective_distill = bool(distill)
+
     req_hdrs = log_data.get("request_headers", {})
     if isinstance(req_hdrs, (dict, list)):
         req_hdrs_str = json.dumps(req_hdrs, indent=2)
@@ -683,7 +697,7 @@ async def get_log_detail(
     else:
         res_hdrs_str = str(res_hdrs)
 
-    if distill and raw_res_body:
+    if effective_distill and raw_res_body:
         try:
             from backend.body_distiller import distill_response_body
             ct = ""

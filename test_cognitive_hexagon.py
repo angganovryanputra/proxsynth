@@ -208,16 +208,17 @@ async def test_03_audit_auto_routing():
         assert res_authz["routed_engine"] == "two_tier_access_control_orchestrator"
         assert res_authz["cvss_v4_baseline"]["cwe"] == "CWE-639"
 
-    # Numeric / pricing parameters -> auto-routes to Numeric Business Logic Fuzzer
-    with patch("backend.logic_fuzzer.audit_numeric_business_logic") as mock_logic:
-        mock_logic.return_value = {"tests_passed": 6, "vulnerabilities_found": 1}
+    # Numeric / pricing parameters -> auto-routes to the workflow-aware Business Logic auditor
+    with patch("backend.business_logic_auditor.audit_numeric_business_logic") as mock_logic:
+        mock_logic.return_value = {"status": "completed", "findings": []}
         res_logic = await audit_intent_router(
             target_url="http://store.local/api/checkout?item_id=5&price=100&qty=2",
             vuln_focus="auto",
             project=TEST_PROJECT
         )
         assert res_logic["status"] == "success"
-        assert res_logic["routed_engine"] == "numeric_logic_fuzzer"
+        assert res_logic["routed_engine"] == "business_logic_flow_auditor"
+        assert "NUMERIC" in res_logic["vectors_tested"]
         assert res_logic["cvss_v4_baseline"]["cwe"] == "CWE-840"
 
     # SSRF / redirect parameters -> auto-routes to OAST Canary Sprayer
@@ -247,6 +248,67 @@ async def test_03_audit_auto_routing():
         assert mock_fuzz.call_args[1]["base_url"] == "http://target.local/api/items"
 
     print("  -> Passed: Audit facet accurately routed multi-role access control, numeric logic, SSRF, and smart fuzzer.")
+
+
+async def test_03b_access_logic_chain():
+    print("[*] [3b] Testing Access-Control + Business-Logic Chain (>=80% confidence gate)...")
+    from backend import access_logic_chain
+
+    # Direct engine test: a >=0.8 access-control finding is CONFIRMED and drives next_action;
+    # a 0.75 numeric finding stays a review candidate and never confirms the flow alone.
+    async def fake_bac(log_id, project="default", enumerate_idor=True, ws_broadcast_callback=None):
+        return {"status": "success", "decision": "VULNERABLE", "confidence": 0.9,
+                "vectors_tested": ["BFLA"], "idor_enumeration": [],
+                "findings": [{"vector": "BFLA", "role": "user", "confidence": 0.9, "finding": {"id": 777}}]}
+
+    async def fake_logic(log_id, project="default", ws_broadcast_callback=None):
+        return {"status": "success", "decision": "VULNERABLE", "confidence": 0.75,
+                "vectors_tested": ["NUMERIC"], "engines_run": ["numeric_logic"],
+                "findings": [{"vector": "NUMERIC", "confidence": 0.75, "finding": {"id": 778}}]}
+
+    with patch("backend.bola_matrix.audit_bac_flow", fake_bac), \
+         patch("backend.business_logic_auditor.audit_business_logic_flow", fake_logic):
+        res = await access_logic_chain.audit_access_and_logic_chain(log_id=1, project=TEST_PROJECT)
+    assert res["decision"] == "VULNERABLE", res["decision"]
+    assert res["confirmed_count"] == 1 and res["candidate_count"] == 1, res
+    assert res["confidence"] == 0.9
+    assert res["findings"][0]["vector"] == "BFLA"
+    assert res["review_candidates"][0]["vector"] == "NUMERIC"
+    assert res["next_action"]["tool"] == "proxsynth_verify_and_export"
+    assert res["next_action"]["arguments"]["finding_id"] == 777
+    assert res["next_action"]["auto_executable"] is True
+
+    # Only sub-gate findings -> NEEDS_REVIEW, no auto-executable next_action.
+    async def fake_bac_weak(log_id, project="default", enumerate_idor=True, ws_broadcast_callback=None):
+        return {"status": "success", "decision": "LIKELY_SECURE", "confidence": 0.0,
+                "vectors_tested": ["BOLA"], "idor_enumeration": [], "findings": []}
+
+    with patch("backend.bola_matrix.audit_bac_flow", fake_bac_weak), \
+         patch("backend.business_logic_auditor.audit_business_logic_flow", fake_logic):
+        res2 = await access_logic_chain.audit_access_and_logic_chain(log_id=2, project=TEST_PROJECT)
+    assert res2["decision"] == "NEEDS_REVIEW", res2["decision"]
+    assert "next_action" not in res2 or res2.get("next_action", {}).get("auto_executable") is not True
+
+    # Router wiring: a captured flow (log_id) under 'auto' chains both engines.
+    db = SessionLocal()
+    try:
+        flow = HttpLog(project=TEST_PROJECT, method="POST", url="http://api.corp.local/api/orders/88/approve",
+                       host="api.corp.local", path="/api/orders/88/approve",
+                       request_headers="{}", request_body='{"status":"approved"}',
+                       status_code=200, flag_status="CLEAN")
+        db.add(flow); db.commit(); db.refresh(flow)
+        flow_id = flow.id
+    finally:
+        db.close()
+
+    with patch("backend.bola_matrix.audit_bac_flow", fake_bac), \
+         patch("backend.business_logic_auditor.audit_business_logic_flow", fake_logic):
+        res3 = await audit_intent_router(vuln_focus="auto", log_id=flow_id, project=TEST_PROJECT)
+    assert res3["status"] == "success"
+    assert res3["routed_engine"] == "access_and_logic_chain", res3.get("routed_engine")
+    assert res3["decision"] == "VULNERABLE"
+    assert res3["confidence_gate"] == 0.8
+    print("  -> Passed: chain confirms >=80% findings, holds weaker leads as candidates, and auto-routes a captured flow.")
 
 
 async def test_04_session_auto_routing():
@@ -340,31 +402,51 @@ async def test_06_autonomous_step_execution():
     assert res_empty["status"] == "success"
     assert res_empty["phase"] == "RECON_REQUIRED"
 
-    # Case B: Endpoints exist -> probes top attack vector
+    import urllib.parse as _urlparse
+    import backend.cognitive_hexagon as ch
+
+    # No-network stand-ins for the phases that would otherwise do real HTTP (auto-capture send
+    # in Step B3, chain replays in Step B2) so the state-machine order can be asserted offline.
+    async def fake_send(url=None, action="auto", method="GET", project=None, **kw):
+        wdb = SessionLocal()
+        try:
+            log = HttpLog(project=project or TEST_PROJECT, method=method, url=url,
+                          host="api.testcorp.local", path=_urlparse.urlparse(url).path,
+                          request_headers="{}", request_body="", status_code=200,
+                          response_body='{"ok":1}', flag_status="UNFLAGGED")
+            wdb.add(log); wdb.commit(); wdb.refresh(log); lid = log.id
+        finally:
+            wdb.close()
+        return {"status": "success", "action": "send", "log_id": lid, "status_code": 200, "url": url}
+
+    async def fake_chain(log_id, project="default", enumerate_idor=True, ws_broadcast_callback=None):
+        return {"status": "success", "decision": "LIKELY_SECURE", "confidence": 0.0,
+                "vectors_tested": ["BOLA"], "idor_enumeration": [], "findings": [],
+                "review_candidates": [], "engines_run": [], "sub_decisions": {}}
+
+    # Case B: a discovered GET object endpoint -> the overseer now AUTO-CAPTURES a flow first
+    # (new Step B3 priority), materializing traffic the chain can later test.
     db = SessionLocal()
     try:
         asset = TargetAsset(project=TEST_PROJECT, host="api.testcorp.local")
         db.add(asset)
         db.commit()
-
-        ep = TargetEndpoint(
-            asset_id=asset.id,
-            path="/api/accounts/1",
-            method="GET",
-            url="http://api.testcorp.local/api/accounts/1",
-            tested_status="UNTESTED"
-        )
-        db.add(ep)
+        db.add(TargetEndpoint(asset_id=asset.id, path="/api/accounts/1", method="GET",
+                              url="http://api.testcorp.local/api/accounts/1", tested_status="UNTESTED"))
         db.commit()
     finally:
         db.close()
 
-    from backend.access_control_orchestrator import AccessControlOrchestrator
-    with patch.object(AccessControlOrchestrator, "execute_full_campaign") as mock_orch:
-        mock_orch.return_value = {"findings_summary": {"total_flagged": 0}, "findings": []}
+    with patch.object(ch, "traffic_intent_router", fake_send):
         res_step = await autonomous_step_router(project=TEST_PROJECT)
-        assert res_step["status"] == "success"
-        assert res_step["phase"] in ["ENDPOINT_AUDIT", "VULNERABILITY_AUDIT"]
+    assert res_step["status"] == "success"
+    assert res_step["phase"] == "AUTO_CAPTURE", res_step["phase"]
+    db_c = SessionLocal()
+    try:
+        assert db_c.query(TargetEndpoint).filter(
+            TargetEndpoint.path == "/api/accounts/1").first().tested_status == "CAPTURED"
+    finally:
+        db_c.close()
 
     # Case C: Verification loop test - unverified finding is verified once, stamped, and not re-verified
     db = SessionLocal()
@@ -393,9 +475,11 @@ async def test_06_autonomous_step_execution():
     finally:
         db.close()
 
-    with patch("backend.verification_gate.verify_vulnerability_candidate") as mock_gate:
+    with patch("backend.verification_gate.verify_vulnerability_candidate") as mock_gate, \
+         patch.object(ch, "traffic_intent_router", fake_send), \
+         patch("backend.access_logic_chain.audit_access_and_logic_chain", fake_chain):
         mock_gate.return_value = {"verdict": "VERIFIED_EXPLOITABLE", "confidence": 0.99}
-        # First step: should detect unverified finding and verify it
+        # First step: should detect unverified finding and verify it (Step B precedes B2/B3)
         res_v1 = await autonomous_step_router(project=TEST_PROJECT)
         assert res_v1["status"] == "success"
         assert res_v1["phase"] == "VERIFICATION_AND_EXPORT"
@@ -410,14 +494,127 @@ async def test_06_autonomous_step_execution():
         finally:
             db_check.close()
 
-        # Second step: with orchestrator mocked, should not verify again, but proceed to next endpoint
-        with patch.object(AccessControlOrchestrator, "execute_full_campaign") as mock_orch2:
-            mock_orch2.return_value = {"findings_summary": {"total_flagged": 0}, "findings": []}
-            res_v2 = await autonomous_step_router(project=TEST_PROJECT)
-            assert res_v2["status"] == "success"
-            assert res_v2["phase"] != "VERIFICATION_AND_EXPORT"
+        # Second step: the finding is stamped, so it must not re-verify; it advances to another phase.
+        res_v2 = await autonomous_step_router(project=TEST_PROJECT)
+        assert res_v2["status"] == "success"
+        assert res_v2["phase"] != "VERIFICATION_AND_EXPORT"
 
     print("  -> Passed: Autonomous Step overseer evaluated state machine, resolved unverified findings without loops, and advanced.")
+
+
+async def test_06b_full_autonomous_campaign():
+    print("[*] [6b] Testing full autonomous engagement driver ('pentest <url>' -> finished)...")
+    import backend.cognitive_hexagon as ch
+    cleanup_test_data()
+
+    spider_calls = {"n": 0}
+
+    async def fake_spider(root_url, max_depth=2, max_pages=15, project="default"):
+        spider_calls["n"] += 1
+        db = SessionLocal()
+        try:
+            a = db.query(TargetAsset).filter(TargetAsset.project == project).first()
+            if not a:
+                a = TargetAsset(project=project, host="xxx.xxx.xyz"); db.add(a); db.commit(); db.refresh(a)
+            # Non-object paths so Step B3 auto-capture does not fire here — this test targets the
+            # recon handoff + loop-to-completion + residual gaps (auto-capture has its own test).
+            for p in ["/about", "/contact"]:
+                db.add(TargetEndpoint(asset_id=a.id, url="https://xxx.xxx.xyz" + p, path=p, tested_status="UNTESTED"))
+            db.commit()
+        finally:
+            db.close()
+        return {"discovered_endpoints": ["/api/orders/88", "/api/users/5"]}
+
+    async def fake_audit(target_url=None, vuln_focus="auto", project=None, **kw):
+        return {"status": "success", "facet": "audit", "routed_engine": "stub", "decision": "LIKELY_SECURE"}
+
+    # A bare domain must follow the recon domain->spider handoff before the audit loop,
+    # then run to COVERAGE_COMPLETE and surface the residual manual gaps.
+    with patch("backend.spider_engine.crawl_and_map_target", fake_spider), \
+         patch.object(ch, "audit_intent_router", fake_audit):
+        res = await ch.run_cognitive_hexagon_campaign(target_url="xxx.xxx.xyz", project=TEST_PROJECT, max_steps=20)
+
+    assert res["status"] == "completed", res["status"]
+    assert spider_calls["n"] >= 1, "spider never ran for a bare-domain target (recon handoff gap)"
+    assert res["reached_completion"] is True, res["final_phase"]
+    assert res["metrics"]["endpoints_mapped"] == 2, res["metrics"]
+    gaps = [g["gap"] for g in res["coverage_gaps"]["open_gaps"]]
+    assert "insufficient_identities" in gaps and "no_mutation_traffic" in gaps, gaps
+    assert res["next_action"]["tool"] == "proxsynth_session", res["next_action"]
+    assert "engagement_report" in res
+
+    # No-progress breaker: a router that never advances must halt, not spin.
+    async def stuck_step(project=None, goal="auto", feedback=None):
+        return {"status": "success", "phase": "VULNERABILITY_AUDIT", "action_taken": "same action"}
+
+    with patch.object(ch, "autonomous_step_router", stuck_step):
+        res2 = await ch.run_cognitive_hexagon_campaign(target_url="", project=TEST_PROJECT, max_steps=20, no_progress_limit=2)
+    assert res2["final_phase"] == "NO_PROGRESS_HALT", res2["final_phase"]
+    assert res2["steps_count"] < 20, res2["steps_count"]
+
+    cleanup_test_data()
+    print("  -> Passed: bare-domain recon handoff, loop-to-completion, residual-gap surfacing, and no-progress breaker.")
+
+
+async def test_06c_auto_capture_phase():
+    print("[*] [6c] Testing auto-capture (discovered GET object endpoint -> materialized flow)...")
+    import backend.cognitive_hexagon as ch
+    cleanup_test_data()
+
+    # A discovered, UNTESTED GET endpoint with an object id in the path — nothing captured yet.
+    db = SessionLocal()
+    try:
+        asset = TargetAsset(project=TEST_PROJECT, host="shop.local")
+        db.add(asset); db.commit(); db.refresh(asset)
+        db.add(TargetEndpoint(asset_id=asset.id, method="GET",
+                              url="http://shop.local/api/orders/88", path="/api/orders/88",
+                              tested_status="UNTESTED"))
+        # A state-changing endpoint must NOT be auto-sent (side-effect safety).
+        db.add(TargetEndpoint(asset_id=asset.id, method="POST",
+                              url="http://shop.local/api/orders/88/approve", path="/api/orders/88/approve",
+                              tested_status="UNTESTED"))
+        db.commit()
+    finally:
+        db.close()
+
+    sent = {"urls": []}
+
+    import urllib.parse as _urlparse
+
+    async def fake_send(url=None, action="auto", method="GET", project=None, **kw):
+        sent["urls"].append((method, url))
+        wdb = SessionLocal()
+        try:
+            log = HttpLog(project=project or TEST_PROJECT, method=method, url=url, host="shop.local",
+                          path=_urlparse.urlparse(url).path,
+                          request_headers="{}", request_body="", status_code=200,
+                          response_body='{"id":88,"owner":"victim"}', flag_status="UNFLAGGED")
+            wdb.add(log); wdb.commit(); wdb.refresh(log)
+            lid = log.id
+        finally:
+            wdb.close()
+        return {"status": "success", "facet": "traffic", "action": "send", "log_id": lid, "status_code": 200, "url": url}
+
+    with patch.object(ch, "traffic_intent_router", fake_send):
+        res = await autonomous_step_router(project=TEST_PROJECT)
+
+    assert res["phase"] == "AUTO_CAPTURE", res["phase"]
+    # Only the GET object endpoint was replayed; the POST approval endpoint was left untouched.
+    assert sent["urls"] == [("GET", "http://shop.local/api/orders/88")], sent["urls"]
+    assert res["capture_result"]["log_id"] is not None
+
+    db = SessionLocal()
+    try:
+        get_ep = db.query(TargetEndpoint).filter(TargetEndpoint.path == "/api/orders/88").first()
+        post_ep = db.query(TargetEndpoint).filter(TargetEndpoint.path == "/api/orders/88/approve").first()
+        assert get_ep.tested_status == "CAPTURED", get_ep.tested_status
+        assert post_ep.tested_status == "UNTESTED", post_ep.tested_status
+        assert db.query(HttpLog).filter(HttpLog.project == TEST_PROJECT, HttpLog.path == "/api/orders/88").count() == 1
+    finally:
+        db.close()
+
+    cleanup_test_data()
+    print("  -> Passed: GET object endpoint auto-captured (flow materialized), mutation endpoint left for manual/consent.")
 
 
 def test_07_fastmcp_mode_registration():
@@ -426,20 +623,21 @@ def test_07_fastmcp_mode_registration():
     # Full Mode: >= 100 tools
     assert len(tm.TOOL_PERMS) >= 100
 
-    # Power Mode: 18 tools
-    assert len(tm.POWER_MODE_TOOLS) == 18
+    # Power Mode: 19 tools
+    assert len(tm.POWER_MODE_TOOLS) == 19
 
-    # Hexagon Mode: Exactly 9 tools (6 super-tools + 3 context tools)
-    assert len(tm.HEXAGON_MODE_TOOLS) == 9
+    # Hexagon Mode: Exactly 10 tools (7 super-tools + 3 context tools)
+    assert len(tm.HEXAGON_MODE_TOOLS) == 10
 
-    # Ensure all 6 Hexagon super-tools are in HEXAGON_MODE_TOOLS
+    # Ensure all 7 Hexagon super-tools are in HEXAGON_MODE_TOOLS
     expected_super_tools = {
         "proxsynth_recon",
         "proxsynth_traffic",
         "proxsynth_audit",
         "proxsynth_session",
         "proxsynth_verify_and_export",
-        "proxsynth_autonomous_step"
+        "proxsynth_autonomous_step",
+        "proxsynth_execute"
     }
     assert expected_super_tools.issubset(tm.HEXAGON_MODE_TOOLS)
 
@@ -485,9 +683,12 @@ async def main():
         await test_01_recon_auto_routing()
         await test_02_traffic_auto_routing()
         await test_03_audit_auto_routing()
+        await test_03b_access_logic_chain()
         await test_04_session_auto_routing()
         await test_05_verify_export_auto_routing()
         await test_06_autonomous_step_execution()
+        await test_06b_full_autonomous_campaign()
+        await test_06c_auto_capture_phase()
         test_07_fastmcp_mode_registration()
         await test_08_fastmcp_tool_exception_handling()
     finally:

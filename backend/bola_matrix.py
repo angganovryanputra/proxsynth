@@ -7,6 +7,7 @@ Automatically tests observed object/resource requests against secondary identiti
 import re
 import json
 import asyncio
+import difflib
 import urllib.parse
 from typing import Dict, Any, List, Optional
 from datetime import datetime
@@ -15,6 +16,7 @@ import httpx
 from backend.database import SessionLocal, ActiveSession, HttpLog, Finding, Project
 from backend.security_utils import encrypt_secret, decrypt_secret
 from backend.user_agents import apply_rotating_user_agent
+from backend.diff_engine import detect_soft_errors, clean_dynamic_tokens
 
 # Patterns indicating an object/resource identifier in the path or query
 _RESOURCE_ID_PATH_REGEX = re.compile(r'/([a-zA-Z0-9_-]+)/([0-9]+|[a-f0-9-]{8,36})(?:/|$|\?)', re.IGNORECASE)
@@ -130,6 +132,57 @@ def get_identities_for_project(project: str = "default", domain: Optional[str] =
         db.close()
 
 
+def _bola_access_verdict(orig_body: str, shadow_body: str, res_id: str, res_status: int) -> Dict[str, Any]:
+    """
+    Decides whether a shadow-identity 2xx response is a *real* BOLA hit rather than a
+    public endpoint or the shadow identity's own data. The old heuristic flagged any 200
+    without a denial keyword, producing false positives on public resources. This oracle:
+      1. rejects soft-denials (200 bodies that actually say unauthorized / not found),
+      2. measures how similar the shadow body is to the legitimate owner's body
+         (normalized to ignore dynamic tokens like CSRF/UUIDs/timestamps),
+      3. checks whether the requested object id is echoed back in the shadow body.
+    A hit requires the shadow identity to have received substantially the OWNER'S object
+    data — the defining property of BOLA/IDOR.
+    """
+    shadow_body = shadow_body or ""
+    orig_body = orig_body or ""
+    body_lower = shadow_body.lower()
+
+    soft = detect_soft_errors(res_status, shadow_body)
+    if soft.get("is_soft_403") or soft.get("is_soft_404"):
+        return {"is_bola": False, "confidence": 0.0, "similarity": 0.0, "echo": False,
+                "reason": "Shadow response is a soft-denial (2xx body signals unauthorized/not-found)."}
+
+    if any(k in body_lower for k in _ERROR_DENIAL_KEYWORDS):
+        return {"is_bola": False, "confidence": 0.0, "similarity": 0.0, "echo": False,
+                "reason": "Shadow response contains an explicit access-denial phrase."}
+
+    if len(shadow_body.strip()) < 30:
+        return {"is_bola": False, "confidence": 0.0, "similarity": 0.0, "echo": False,
+                "reason": "Shadow response is too small to contain the owner's object data."}
+
+    na = clean_dynamic_tokens(orig_body[:150000])
+    nb = clean_dynamic_tokens(shadow_body[:150000])
+    similarity = round(difflib.SequenceMatcher(None, na, nb).ratio(), 3) if (na and nb) else 0.0
+    echo = bool(res_id) and (res_id.lower() in body_lower)
+
+    # Same-schema JSON for two different users already scores ~0.7, so a pure-similarity
+    # hit needs to be near-identical (>=0.85). The object-id echo is the stronger signal:
+    # the owner's id reflected in the shadow body means the owner's record itself leaked.
+    if similarity >= 0.85 or (echo and similarity >= 0.3):
+        conf = min(0.95, 0.6 + similarity * 0.3 + (0.1 if echo else 0.0))
+        reason = (
+            f"Shadow identity received data {int(similarity * 100)}% similar to the owner's response"
+            + (" and the requested object id is echoed back" if echo else "")
+            + " — the owner's object leaked across identities."
+        )
+        return {"is_bola": True, "confidence": round(conf, 2), "similarity": similarity, "echo": echo, "reason": reason}
+
+    return {"is_bola": False, "confidence": round(0.3 + similarity * 0.3, 2), "similarity": similarity, "echo": echo,
+            "reason": (f"Shadow identity got HTTP {res_status} but the body is only {int(similarity * 100)}% "
+                       "similar to the owner's — likely its own or empty data, not the owner's object.")}
+
+
 async def execute_bola_shadow_replay(
     log_id: int,
     project: str,
@@ -153,6 +206,13 @@ async def execute_bola_shadow_replay(
     domain = (parsed.hostname or "").lower()
     if not domain:
         return None
+
+    # Resource id under test (for the echo check in the similarity oracle)
+    _rid_match = _RESOURCE_ID_PATH_REGEX.search(parsed.path)
+    res_id = _rid_match.group(2) if _rid_match else ""
+    if not res_id and parsed.query:
+        _rid_q = _RESOURCE_ID_PARAM_REGEX.search(parsed.query)
+        res_id = _rid_q.group(2) if _rid_q else ""
 
     db = SessionLocal()
     try:
@@ -234,23 +294,24 @@ async def execute_bola_shadow_replay(
                 # 2. Body does NOT contain typical denial phrases
                 # 3. Body length is substantial (>50 bytes) and within 30% of original body, or returns JSON
                 if res_status in [200, 201]:
-                    body_lower = res_body.lower()
-                    has_denial = any(k in body_lower for k in _ERROR_DENIAL_KEYWORDS)
-
-                    if not has_denial and len(res_body) > 30:
-                        # High confidence BOLA
+                    verdict = _bola_access_verdict(orig_body, res_body, res_id, res_status)
+                    if verdict["is_bola"]:
+                        # Confirmed via the response-similarity oracle (not merely a 200 status)
                         evidence_str = (
-                            f"Original Identity: 200 OK (Len: {len(orig_body)})\n"
-                            f"Shadow Identity [{role_name.upper()}]: {res_status} OK (Len: {len(res_body)})\n"
-                            f"Response Snippet:\n{res_body[:300]}"
+                            f"Owner (primary): HTTP {orig_status}, {len(orig_body)} bytes\n"
+                            f"Shadow [{role_name.upper()}]: HTTP {res_status}, {len(res_body)} bytes\n"
+                            f"Body similarity to owner: {int(verdict['similarity'] * 100)}% | object id echoed: {verdict['echo']} | confidence: {verdict['confidence']}\n"
+                            f"Verdict: {verdict['reason']}\n"
+                            f"Response snippet:\n{res_body[:300]}"
                         )
 
                         severity = "CRITICAL" if role_name == "unauthenticated" else "HIGH"
                         title = f"Broken Object Level Authorization (BOLA/IDOR) on {parsed.path} via [{role_name}]"
                         description = (
-                            f"Endpoint '{url}' allowed unauthorized access to object/resource data when tested "
-                            f"using identity role '{role_name}'. The server returned HTTP {res_status} with full data "
-                            f"instead of rejecting unauthorized access (HTTP 401/403)."
+                            f"Endpoint '{url}' returned the owner's object data (HTTP {res_status}, "
+                            f"{int(verdict['similarity'] * 100)}% similar to the legitimate owner response) when "
+                            f"replayed with identity role '{role_name}', instead of rejecting with HTTP 401/403. "
+                            f"This confirms broken object-level authorization."
                         )
                         remediation = (
                             "Enforce strict object-level authorization checks on the server side. Validate that "
@@ -286,6 +347,8 @@ async def execute_bola_shadow_replay(
                                 db_write.commit()
                                 db_write.refresh(finding)
                                 finding_dict = finding.to_dict()
+                                finding_dict["confidence"] = verdict["confidence"]
+                                finding_dict["similarity"] = verdict["similarity"]
 
                                 if ws_broadcast_callback:
                                     try:
@@ -305,6 +368,276 @@ async def execute_bola_shadow_replay(
             continue
 
     return None
+
+
+# ============================================================================
+# UNIFIED BROKEN ACCESS CONTROL (BAC) AUDIT — BOLA / IDOR / BFLA
+# ============================================================================
+
+# Privilege ranking of identity roles (higher = more privileged). Used to pick
+# valid lower-privilege actors for vertical (BFLA) escalation tests.
+_PRIV_RANK = {
+    "unauthenticated": 0, "anonymous": 0, "guest": 1, "public": 1,
+    "viewer": 2, "reader": 2, "user": 3, "customer": 3, "member": 3,
+    "attacker": 3, "victim": 3, "editor": 4, "author": 4,
+    "manager": 5, "staff": 5, "operator": 5, "primary": 5,
+    "admin": 9, "administrator": 9, "superadmin": 10, "root": 10,
+}
+
+
+def _priv_rank(role: str) -> int:
+    return _PRIV_RANK.get((role or "").strip().lower(), 3)
+
+
+# Paths that expose privileged / function-level operations (BFLA candidates)
+_PRIVILEGED_FUNC_REGEX = re.compile(
+    r'/(admin|administrator|manage|management|internal|console|config|settings|'
+    r'roles?|permissions?|privileges?|approve|grant|revoke|'
+    r'promote|demote|disable|enable|ban|suspend|audit|system|billing|payouts?)'
+    r'(?:/|$|\?)', re.IGNORECASE
+)
+
+
+def classify_bac_vectors(url: str, method: str, path: str = "", req_body: str = "") -> List[str]:
+    """Decide which Broken Access Control tests a captured flow warrants:
+    BOLA (object id present), IDOR (numeric/enumerable id), BFLA (privileged
+    function or state-changing mutation)."""
+    m = (method or "GET").upper()
+    p = path or urllib.parse.urlparse(url).path
+    vectors: List[str] = []
+    if is_candidate_for_bola(url, m, req_body):
+        vectors.append("BOLA")
+        rid = _RESOURCE_ID_PATH_REGEX.search(urllib.parse.urlparse(url).path)
+        if rid and rid.group(2).isdigit():
+            vectors.append("IDOR")
+    if _PRIVILEGED_FUNC_REGEX.search(p) or m in ("DELETE", "PUT", "PATCH"):
+        vectors.append("BFLA")
+    return list(dict.fromkeys(vectors))
+
+
+def _bfla_access_verdict(actor_role: str, res_status: int, res_body: str, state_changing: bool) -> Dict[str, Any]:
+    """Vertical-escalation oracle: a *lower-privileged* identity that performs a
+    privileged function (2xx, no denial) is BFLA."""
+    if _priv_rank(actor_role) > 3:
+        return {"is_vuln": False, "confidence": 0.0, "reason": "Actor is not a lower-privileged identity."}
+    if not (200 <= (res_status or 0) < 300):
+        return {"is_vuln": False, "confidence": 0.0, "reason": f"Privileged function correctly rejected the actor (HTTP {res_status})."}
+    body = res_body or ""
+    soft = detect_soft_errors(res_status, body)
+    if soft.get("is_soft_403") or soft.get("is_soft_404"):
+        return {"is_vuln": False, "confidence": 0.0, "reason": "The 2xx body is actually a soft-denial."}
+    if any(k in body.lower() for k in _ERROR_DENIAL_KEYWORDS):
+        return {"is_vuln": False, "confidence": 0.0, "reason": "Response contains an explicit denial phrase."}
+    conf = 0.9 if actor_role.lower() == "unauthenticated" else 0.82
+    if state_changing:
+        conf = min(0.95, conf + 0.05)
+    return {"is_vuln": True, "confidence": round(conf, 2),
+            "reason": f"Lower-privileged identity '{actor_role}' executed the privileged function (HTTP {res_status}, no denial)."}
+
+
+def _apply_identity_headers(req_headers: Dict[str, Any], cookies, auth_hdrs, bearer_tok) -> Dict[str, Any]:
+    """Build request headers for a replay under a different identity: strip the original
+    auth, apply the candidate identity's creds, rotate the User-Agent."""
+    h = {k: v for k, v in (req_headers or {}).items()
+         if k.lower() not in ("cookie", "authorization", "x-access-token", "x-auth-token", "session-id")}
+    if cookies:
+        cs = "; ".join(f"{c['name']}={c['value']}" for c in cookies if 'name' in c and 'value' in c)
+        if cs:
+            h["Cookie"] = cs
+    for ah_k, ah_v in (auth_hdrs or {}).items():
+        h[ah_k] = ah_v
+    if bearer_tok:
+        h["Authorization"] = f"Bearer {bearer_tok}"
+    h, _ = apply_rotating_user_agent(h, force_rotate=True)
+    return h
+
+
+def _bac_identities(project: str, domain: str) -> List[tuple]:
+    """Secondary identities registered for the domain, plus an implicit unauthenticated one."""
+    out: List[tuple] = []
+    db = SessionLocal()
+    try:
+        rows = db.query(ActiveSession).filter(
+            ActiveSession.project == project,
+            ActiveSession.identity_role != "primary"
+        ).all()
+        for s in rows:
+            stored = (s.domain or "").lower().split(":")[0].strip("/")
+            if not stored:
+                continue
+            if (domain == stored or domain.endswith("." + stored)
+                    or stored.endswith("." + domain) or (stored in domain and len(stored) > 3)):
+                st = s.get_decrypted_state()
+                out.append((s.identity_role, st.get("cookies", []), st.get("auth_headers", {}), st.get("bearer_token", "")))
+    finally:
+        db.close()
+    out.append(("unauthenticated", [], {}, ""))
+    return out
+
+
+async def _replay_once(method: str, url: str, headers: Dict[str, Any], body: str) -> tuple:
+    async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=8.0, proxy=None, trust_env=False) as client:
+        res = await client.request(method=method, url=url, headers=headers, content=body if body else None)
+        return res.status_code, (res.text or "")
+
+
+def _record_bac_finding(log_id, title, severity, category, evidence, description, remediation, confidence) -> Dict[str, Any]:
+    db = SessionLocal()
+    try:
+        log_obj = db.query(HttpLog).filter(HttpLog.id == log_id).first()
+        if log_obj:
+            log_obj.flag_status = "CONFIRMED" if confidence >= 0.7 else "POTENTIAL"
+        existing = db.query(Finding).filter(Finding.log_id == log_id, Finding.title == title).first()
+        if existing:
+            db.commit()
+            d = existing.to_dict(); d["confidence"] = confidence
+            return d
+        f = Finding(log_id=log_id, title=title, severity=severity, category=category,
+                    evidence=evidence, description=description, remediation=remediation)
+        db.add(f); db.commit(); db.refresh(f)
+        d = f.to_dict(); d["confidence"] = confidence
+        return d
+    finally:
+        db.close()
+
+
+async def audit_bac_flow(log_id: int, project: str = "default", enumerate_idor: bool = True,
+                         ws_broadcast_callback=None) -> Dict[str, Any]:
+    """
+    Specific, on-demand Broken Access Control audit of a single captured flow.
+    Classifies which of BOLA / IDOR / BFLA apply, replays the flow under every registered
+    secondary identity (and unauthenticated), decides validity per vector with a confidence,
+    optionally enumerates adjacent numeric ids (IDOR), and returns a machine-actionable
+    decision an LLM can act on directly.
+    """
+    db = SessionLocal()
+    try:
+        log = db.query(HttpLog).filter(HttpLog.id == log_id).first()
+        if not log:
+            return {"status": "error", "decision": "NOT_FOUND", "message": f"Log #{log_id} not found."}
+        url = log.url
+        method = (log.method or "GET").upper()
+        path = log.path or urllib.parse.urlparse(url).path
+        req_body = log.request_body or ""
+        orig_status = log.status_code or 0
+        orig_body = log.response_body or ""
+        try:
+            req_headers = json.loads(log.request_headers) if log.request_headers else {}
+        except Exception:
+            req_headers = {}
+    finally:
+        db.close()
+
+    vectors = classify_bac_vectors(url, method, path, req_body)
+    domain = (urllib.parse.urlparse(url).hostname or "").lower()
+
+    if not vectors:
+        return {"status": "success", "log_id": log_id, "decision": "NOT_APPLICABLE", "vectors_tested": [],
+                "reason": "No object id or privileged function in this flow.",
+                "recommendation": "Capture a flow that reads an object by id (e.g. /orders/5567) or calls a management/admin function."}
+    if not (200 <= orig_status < 300):
+        return {"status": "success", "log_id": log_id, "decision": "INCONCLUSIVE", "vectors_candidate": vectors,
+                "reason": f"Original request returned HTTP {orig_status}; a successful (2xx) baseline is needed to compare against.",
+                "recommendation": "Re-capture the flow with a valid privileged/owner session so the baseline is 2xx."}
+
+    rid = _RESOURCE_ID_PATH_REGEX.search(urllib.parse.urlparse(url).path)
+    res_id = rid.group(2) if rid else ""
+    state_changing = method in ("POST", "PUT", "PATCH", "DELETE")
+
+    identities = _bac_identities(project, domain)
+    findings: List[Dict[str, Any]] = []
+    tested: List[str] = []
+
+    for role, cookies, auth_hdrs, bearer in identities:
+        headers = _apply_identity_headers(req_headers, cookies, auth_hdrs, bearer)
+        try:
+            st, body = await _replay_once(method, url, headers, req_body)
+        except Exception:
+            continue
+        tested.append(role)
+
+        if "BOLA" in vectors or "IDOR" in vectors:
+            v = _bola_access_verdict(orig_body, body, res_id, st)
+            if v["is_bola"]:
+                sev = "CRITICAL" if role == "unauthenticated" else "HIGH"
+                vec = "IDOR" if ("IDOR" in vectors and res_id.isdigit()) else "BOLA"
+                title = f"BOLA/IDOR on {path} via [{role}]"
+                fd = _record_bac_finding(
+                    log_id, title, sev, "Broken Object Level Authorization (BOLA/IDOR)",
+                    f"Owner HTTP {orig_status} ({len(orig_body)}b) vs [{role}] HTTP {st} ({len(body)}b); "
+                    f"similarity {int(v['similarity'] * 100)}%, object-id echoed {v['echo']}, confidence {v['confidence']}.\n{body[:300]}",
+                    f"Identity '{role}' retrieved the owner's object ({int(v['similarity'] * 100)}% similar) instead of being denied.",
+                    "Enforce object-level ownership checks server-side before returning or mutating records.", v["confidence"])
+                findings.append({"vector": vec, "role": role, "confidence": v["confidence"], "finding": fd})
+
+        if "BFLA" in vectors:
+            v = _bfla_access_verdict(role, st, body, state_changing)
+            if v["is_vuln"]:
+                sev = "CRITICAL" if role == "unauthenticated" else "HIGH"
+                title = f"BFLA (function-level escalation) on {path} via [{role}]"
+                fd = _record_bac_finding(
+                    log_id, title, sev, "Broken Function Level Authorization (BFLA)",
+                    f"[{role}] (priv rank {_priv_rank(role)}) executed {method} {path} -> HTTP {st}. {v['reason']}\n{body[:300]}",
+                    f"Lower-privileged identity '{role}' executed a privileged function that should require elevated authorization.",
+                    "Enforce role/permission checks on every privileged function server-side, not only in the UI.", v["confidence"])
+                findings.append({"vector": "BFLA", "role": role, "confidence": v["confidence"], "finding": fd})
+
+    # IDOR sequential enumeration (numeric id) using the first authenticated secondary identity
+    enum_hits: List[Dict[str, Any]] = []
+    if enumerate_idor and "IDOR" in vectors and res_id.isdigit():
+        try:
+            base = int(res_id)
+            attacker = next((i for i in identities if i[0] != "unauthenticated"), None)
+            if attacker:
+                headers = _apply_identity_headers(req_headers, attacker[1], attacker[2], attacker[3])
+                for delta in (-1, 1, 2):
+                    cand = base + delta
+                    if cand < 0:
+                        continue
+                    cand_url = url.replace(f"/{res_id}", f"/{cand}", 1)
+                    try:
+                        st, body = await _replay_once(method, cand_url, headers, req_body)
+                    except Exception:
+                        continue
+                    if 200 <= st < 300 and len(body) > 30 and not any(k in body.lower() for k in _ERROR_DENIAL_KEYWORDS):
+                        enum_hits.append({"id": cand, "status": st, "bytes": len(body)})
+        except Exception:
+            pass
+
+    for fd in findings:
+        if ws_broadcast_callback and fd.get("finding"):
+            try:
+                await ws_broadcast_callback({"type": "BOLA_HIT", "finding": fd["finding"], "url": url,
+                                             "role": fd["role"], "vector": fd["vector"]})
+            except Exception:
+                pass
+
+    vulnerable = len(findings) > 0 or len(enum_hits) >= 2
+    best_conf = max([f["confidence"] for f in findings], default=(0.75 if len(enum_hits) >= 2 else 0.0))
+    decision = "VULNERABLE" if vulnerable else "LIKELY_SECURE"
+    recommendation = (
+        "Broken access control reproduced — report it and confirm impact (reading/modifying another "
+        "tenant's data or executing a privileged action)."
+        if vulnerable else
+        "No unauthorized access reproduced across the tested identities. Register a true low-privilege "
+        "identity for deeper BFLA coverage, or treat this flow as access-controlled."
+    )
+    first_fid = findings[0]["finding"].get("id") if (findings and findings[0].get("finding")) else None
+    result = {
+        "status": "success", "log_id": log_id, "decision": decision, "confidence": round(best_conf, 2),
+        "vectors_tested": vectors, "identities_tested": tested,
+        "findings_count": len(findings), "findings": findings,
+        "idor_enumeration": enum_hits, "recommendation": recommendation,
+    }
+    if vulnerable and first_fid:
+        result["next_action"] = {
+            "tool": "proxsynth_verify_and_export",
+            "arguments": {"finding_id": first_fid, "project": project},
+            "rationale": "Confirmed broken-access-control finding — generate the reproducible PoC and dossier.",
+            "confidence": round(best_conf, 2),
+            "auto_executable": best_conf >= 0.7,
+        }
+    return result
 
 
 def get_bola_matrix_data(project: str = "default") -> Dict[str, Any]:

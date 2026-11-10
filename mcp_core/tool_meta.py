@@ -7,7 +7,7 @@ MCP-standard ToolAnnotations (readOnlyHint, destructiveHint), and outputSchemas.
 from typing import Dict, Any, Set
 from mcp.types import ToolAnnotations
 
-# Dual-Mode Registry: FastMCP Power Mode active tool set (~87.5% prompt token reduction)
+# Dual-Mode Registry: FastMCP Power Mode active tool set (~80% prompt token reduction, measured)
 POWER_MODE_TOOLS: Set[str] = {
     # 7 High-Leverage Consolidated Multi-Action Power Tools + Auto-Pilot
     "manage_pentest_execution",
@@ -19,28 +19,30 @@ POWER_MODE_TOOLS: Set[str] = {
     "manage_testing_agenda",
     "run_autonomous_autopilot",
     "run_autopilot_swarm",
-    # 6 Cognitive Pentest Hexagon Super-Tools
+    # 7 Cognitive Pentest Hexagon Super-Tools
     "proxsynth_recon",
     "proxsynth_traffic",
     "proxsynth_audit",
     "proxsynth_session",
     "proxsynth_verify_and_export",
     "proxsynth_autonomous_step",
+    "proxsynth_execute",
     # Essential Project Workspace Context & Security Harness Manifest
     "set_active_project",
     "get_active_project",
     "get_tool_harness_manifest",
 }
 
-# Hexagon-Mode Registry: FastMCP Cognitive Pentest Hexagon active tool set (~95% prompt token reduction)
+# Hexagon-Mode Registry: FastMCP Cognitive Pentest Hexagon active tool set (~91% prompt token reduction, measured ~2.6k vs ~30k)
 HEXAGON_MODE_TOOLS: Set[str] = {
-    # 6 Cognitive Pentest Hexagon Super-Tools
+    # 7 Cognitive Pentest Hexagon Super-Tools
     "proxsynth_recon",
     "proxsynth_traffic",
     "proxsynth_audit",
     "proxsynth_session",
     "proxsynth_verify_and_export",
     "proxsynth_autonomous_step",
+    "proxsynth_execute",
     # Essential Project Workspace Context & Security Harness Manifest
     "set_active_project",
     "get_active_project",
@@ -185,6 +187,7 @@ TOOL_PERMS: Dict[str, Dict[str, Any]] = {
     "proxsynth_session": {"read_only": False, "destructive": False, "category": "session"},
     "proxsynth_verify_and_export": {"read_only": False, "destructive": False, "category": "export"},
     "proxsynth_autonomous_step": {"read_only": False, "destructive": False, "category": "autonomous"},
+    "proxsynth_execute": {"read_only": False, "destructive": False, "category": "execution"},
 }
 
 # Alias for backward compatibility
